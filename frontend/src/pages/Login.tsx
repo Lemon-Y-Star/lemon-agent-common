@@ -1,11 +1,9 @@
 import { FormEvent, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { apiLogin } from '../api/auth'
 import { ApiError, storeSession } from '../api/client'
 
 /** 登录页：成功后存会话并进入工作台。 */
 export default function Login() {
-  const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -22,10 +20,11 @@ export default function Login() {
         username: result.username,
         role: result.role,
       })
-      navigate('/', { replace: true })
+      // 整页导航而不是 SPA navigate：登录态已落 localStorage，刷新后首渲染即已登录，
+      // 避免 Router transition 渲染期三元判定与 <Navigate> 的时序竞态（实测会把路由弹回 /login）
+      window.location.assign('/')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '登录失败，请稍后重试')
-    } finally {
       setBusy(false)
     }
   }

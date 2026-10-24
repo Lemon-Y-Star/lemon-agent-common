@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiChangePassword } from '../api/auth'
 import { ApiError, clearSession, getStoredUser } from '../api/client'
 
@@ -85,7 +86,7 @@ export default function Account() {
             <p>
               试用可以使用平台提供的模型。需要个人模型时，创建自己的连接，并明确是否允许辅助功能使用平台模型。
             </p>
-            <a href="#/models">管理模型连接 →</a>
+            <Link to="/models">管理模型连接 →</Link>
           </div>
           <div className="step">
             <h3>3 · 配置并启用</h3>
