@@ -138,6 +138,8 @@ public class RunExecutor {
                 systemPrompt, context, userInput);
 
         // ③ 流式执行 + token 攒批（listener 回调保证单线程串行）
+        // fullOutput 累积完整正文（run_completed 权威值）；tokenBuf 只做攒批窗口，flush 即清空
+        StringBuilder fullOutput = new StringBuilder();
         StringBuilder tokenBuf = new StringBuilder();
         long[] lastFlushAt = {System.currentTimeMillis()};
         long[] usage = new long[2];
@@ -151,6 +153,7 @@ public class RunExecutor {
                     // 中断模型流；终态与 run_cancelled 事件由取消接口负责
                     throw new IllegalStateException("RUN_CANCELLED");
                 }
+                fullOutput.append(delta);
                 tokenBuf.append(delta);
                 boolean byChars = tokenBuf.length() >= FLUSH_EVERY_CHARS;
                 boolean byTime = System.currentTimeMillis() - lastFlushAt[0] >= FLUSH_EVERY_MILLIS;
@@ -182,7 +185,7 @@ public class RunExecutor {
         if (isTerminal(run)) {
             return;
         }
-        String outputText = tokenBuf.toString();
+        String outputText = fullOutput.toString();
         if (completed[0]) {
             int rows = runRepository.finish(runId, RunStatus.COMPLETED.name(),
                     outputText, null, null, (int) usage[0], (int) usage[1]);

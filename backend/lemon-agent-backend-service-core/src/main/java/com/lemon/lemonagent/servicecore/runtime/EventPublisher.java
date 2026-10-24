@@ -2,6 +2,7 @@ package com.lemon.lemonagent.servicecore.runtime;
 
 import com.lemon.lemonagent.dal.entity.AgentRunEventEntity;
 import com.lemon.lemonagent.dal.repository.AgentRunEventRepository;
+import com.lemon.lemonagent.model.runtime.RuntimeEventType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -155,12 +156,22 @@ public class EventPublisher {
         if (list == null || list.isEmpty()) {
             return;
         }
+        boolean terminal = eventType.equals(RuntimeEventType.RUN_COMPLETED.wireName())
+                || eventType.equals(RuntimeEventType.RUN_FAILED.wireName())
+                || eventType.equals(RuntimeEventType.RUN_CANCELLED.wireName());
         for (SseEmitter emitter : list) {
             try {
                 emitter.send(SseEmitter.event().id(String.valueOf(seq)).name(eventType).data(payload));
+                // 终态事件是最后一个 seq：写完立即 complete，释放连接（不留给前端挂死）
+                if (terminal) {
+                    emitter.complete();
+                }
             } catch (Exception e) {
                 log.debug("SSE 推送失败（客户端断开），等待清理回调移除: runId={}", runId);
             }
+        }
+        if (terminal) {
+            emitters.remove(runId);
         }
     }
 
