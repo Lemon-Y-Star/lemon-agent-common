@@ -23,7 +23,7 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
 
     private static final String COLUMNS =
             "id, session_id, user_id, client_request_id, status, strategy, trace_id, last_seq, "
-                    + "output_text, error_code, error_msg, input_tokens, output_tokens, started_at, ended_at";
+                    + "output_text, error_code, error_msg, pending_approval_json, input_tokens, output_tokens, started_at, ended_at";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -42,6 +42,7 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
             e.setOutputText(rs.getString("output_text"));
             e.setErrorCode(rs.getString("error_code"));
             e.setErrorMsg(rs.getString("error_msg"));
+            e.setPendingApprovalJson(rs.getString("pending_approval_json"));
             e.setInputTokens((Integer) rs.getObject("input_tokens"));
             e.setOutputTokens((Integer) rs.getObject("output_tokens"));
             e.setStartedAt(toInstant(rs.getTimestamp("started_at")));
@@ -169,6 +170,27 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     @Override
     public int updateLastSeq(Long id, long seq) {
         return jdbcTemplate.update("UPDATE agent_run SET last_seq = ? WHERE id = ?", seq, id);
+    }
+
+    @Override
+    public int suspend(Long id, String approvalId, String pendingJson) {
+        return jdbcTemplate.update(
+                "UPDATE agent_run SET status = 'BLOCKED', pending_approval_json = ? "
+                        + "WHERE id = ? AND status = 'RUNNING'",
+                pendingJson, id);
+    }
+
+    @Override
+    public int clearPendingApproval(Long id) {
+        return jdbcTemplate.update(
+                "UPDATE agent_run SET pending_approval_json = NULL WHERE id = ?", id);
+    }
+
+    @Override
+    public List<AgentRunEntity> findByStatus(String status, int limit) {
+        return jdbcTemplate.query(
+                "SELECT " + COLUMNS + " FROM agent_run WHERE status = ? ORDER BY id LIMIT ?",
+                mapper, status, limit);
     }
 
     @Override

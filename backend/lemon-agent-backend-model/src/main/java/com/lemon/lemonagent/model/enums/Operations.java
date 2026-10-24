@@ -41,6 +41,9 @@ public final class Operations {
     /** 取消运行 */
     public static final String RUN_CANCEL = "RUN_CANCEL";
 
+    /** 提交审批决定 */
+    public static final String APPROVAL_SUBMIT = "APPROVAL_SUBMIT";
+
     private Operations() {
     }
 

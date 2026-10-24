@@ -1,5 +1,7 @@
 package com.lemon.lemonagent.web;
 
+import com.lemon.lemonagent.model.runtime.ApprovalReq;
+import com.lemon.lemonagent.model.runtime.ApprovalResp;
 import com.lemon.lemonagent.model.runtime.CancelRunReq;
 import com.lemon.lemonagent.model.runtime.CancelRunResp;
 import com.lemon.lemonagent.model.runtime.CreateRunReq;
@@ -121,6 +123,29 @@ public class AgentRunController {
         request.fillRoute(source);
         return optUtil.exec(request, new CancelRunResp(), req ->
                 AssertUtils.notNull(req.getRunId(), "运行 ID 不能为空"));
+    }
+
+    /**
+     * 提交审批决定（契约 4.8）：APPROVE → RUNNING（拿 lastSeq 续流）；REJECT → FAILED(TOOL_REJECTED)。
+     *
+     * @param runId  运行 ID
+     * @param request 审批决定
+     * @param userId  归属用户
+     * @param source  调用来源
+     * @return 提交后的运行状态
+     */
+    @PostMapping("/{runId}/approval")
+    public ApprovalResp approval(@PathVariable Long runId,
+                                 @RequestBody ApprovalReq request,
+                                 @RequestAttribute("lemon.userId") Long userId,
+                                 @RequestHeader(value = "X-Source", defaultValue = "web") String source) {
+        request.setRunId(runId);
+        request.setUserId(userId);
+        request.fillRoute(source);
+        return optUtil.exec(request, new ApprovalResp(), req -> {
+            AssertUtils.notBlank(req.getApprovalId(), "approvalId 不能为空");
+            AssertUtils.notBlank(req.getDecision(), "decision 不能为空");
+        });
     }
 
     /**

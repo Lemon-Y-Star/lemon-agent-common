@@ -10,6 +10,8 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -20,12 +22,13 @@ import java.util.List;
  * {@link ModelPort} 的 Spring AI 2.0 实现（OpenAI 兼容流式）。
  *
  * <p>防腐边界：{@code org.springframework.ai.*} 与 Reactor 的 {@code Flux} 只存在于本模块——
- * 出口是 {@link Listener} 的阻塞式回调（实现内部 {@code blockingForEach} 消费流），
- * service-core 的编排代码里不出现任何响应式类型（BUILD-SPEC §2.1 ①）。</p>
+ * 出口是 {@link Listener} 的阻塞式回调，service-core 的编排代码里不出现任何响应式类型。</p>
  *
- * <p>Spring AI 2.0 的变化：模型按请求构造（每次运行用用户自己的 BYOK 连接 + 模型名，
- * builder 的 {@code options(...)} 里直接给 baseUrl / apiKey，无需预建全局 Bean）。
- * 每次运行 new 一个 ChatModel 的成本可忽略（底层 HTTP 客户端轻量），换来的是连接级隔离。</p>
+ * <p><b>工具调用（2.0 行为，探针实测）</b>：Spring AI 2.0 的 {@code stream()} 不做内部工具
+ * 执行（1.x 的 internalToolExecutionEnabled 已移除）——模型的工具调用直接出现在流末尾
+ * chunk 的 {@code AssistantMessage.getToolCalls()} 里。本实现收集后经
+ * {@link Listener#onToolCalls} 上抛，执行/审批的决策权在 RunExecutor。
+ * 工具定义经 {@code OpenAiChatOptions.toolCallbacks}（仅提供 schema 给模型，call() 不执行）。</p>
  */
 @Component
 public class SpringAiModelPort implements ModelPort {
@@ -35,11 +38,16 @@ public class SpringAiModelPort implements ModelPort {
     @Override
     public void stream(ModelRequest request, Listener listener) {
         try {
+            List<ToolCallback> callbacks = request.tools() == null ? List.of() : request.tools().stream()
+                    .<ToolCallback>map(spec -> new DeferredToolCallback(spec))
+                    .toList();
+
             OpenAiChatModel chatModel = OpenAiChatModel.builder()
                     .options(OpenAiChatOptions.builder()
                             .baseUrl(request.baseUrl())
                             .apiKey(request.apiKey())
                             .model(request.model())
+                            .toolCallbacks(callbacks)
                             .build())
                     .build();
 
@@ -56,25 +64,56 @@ public class SpringAiModelPort implements ModelPort {
             }
             messages.add(new UserMessage(request.userInput()));
 
+            List<AssistantMessage.ToolCall> pendingCalls = new ArrayList<>();
             Flux<ChatResponse> flux = chatModel.stream(new Prompt(messages));
-            // 阻塞式消费：把 Reactor 边界锁死在本模块内（BUILD-SPEC §2.3）
+            // 阻塞式消费：把 Reactor 边界锁死在本模块内（BUILD-SPEC §2.1 ①）
             flux.doOnNext(resp -> {
-                if (resp.getResult() != null && resp.getResult().getOutput() != null
-                        && resp.getResult().getOutput().getText() != null) {
-                    listener.onChunk(resp.getResult().getOutput().getText());
+                if (resp.getResult() != null && resp.getResult().getOutput() != null) {
+                    var output = resp.getResult().getOutput();
+                    if (output.getText() != null && !output.getText().isEmpty()) {
+                        listener.onChunk(output.getText());
+                    }
+                    if (output instanceof AssistantMessage assistant
+                            && assistant.getToolCalls() != null && !assistant.getToolCalls().isEmpty()) {
+                        pendingCalls.addAll(assistant.getToolCalls());
+                    }
                 }
                 if (resp.getMetadata() != null && resp.getMetadata().getUsage() != null) {
                     var usage = resp.getMetadata().getUsage();
                     listener.onUsage(usage.getPromptTokens(), usage.getCompletionTokens());
                 }
-            }).doOnComplete(listener::onComplete)
-              .doOnError(listener::onError)
-              .blockLast();
-            // blockLast 正常返回时 onComplete 已由 doOnComplete 触发；异常时 doOnError 触发并上抛
+            }).blockLast();
+
+            if (!pendingCalls.isEmpty()) {
+                // 模型请求调用工具：决策权交给调用方（审批挂起 / 直接执行）
+                listener.onToolCalls(pendingCalls.stream()
+                        .map(c -> new ModelPort.ModelToolCall(c.id(), c.name(), c.arguments()))
+                        .toList());
+            } else {
+                listener.onComplete();
+            }
         } catch (Exception e) {
-            // 流中途异常（网络断 / 鉴权失败 / 模型 4xx-5xx）统一走 onError，不再向外抛
             log.warn("模型流式调用失败: {}", e.getMessage());
             listener.onError(e);
+        }
+    }
+
+    /** 壳回调：只提供工具定义给模型，call() 永远不该被调（执行由 RunExecutor 决策）。 */
+    private record DeferredToolCallback(ModelPort.ToolSpec spec) implements ToolCallback {
+
+        @Override
+        public ToolDefinition getToolDefinition() {
+            return ToolDefinition.builder()
+                    .name(spec.name())
+                    .description(spec.description())
+                    .inputSchema(spec.inputSchema())
+                    .build();
+        }
+
+        @Override
+        public String call(String toolInput) {
+            throw new UnsupportedOperationException(
+                    "工具执行由 RunExecutor 决策（审批/直执行），不经 Spring AI 内部循环");
         }
     }
 

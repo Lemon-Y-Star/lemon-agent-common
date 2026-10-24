@@ -11,6 +11,18 @@ public enum RuntimeEventType {
     /** 模型增量输出：{delta, index, stepIndex}（攒批后 delta 变长） */
     TOKEN("token"),
 
+    /** 决定调用工具：{callId, toolName, args, riskLevel, stepIndex, ts} */
+    TOOL_CALL("tool_call"),
+
+    /** 工具返回：{callId, ok, durationMs, resultBrief, resultChars, ts} */
+    TOOL_RESULT("tool_result"),
+
+    /** 高风险工具/审批节点需要审批：{approvalId, kind, toolName?, args?, riskLevel, expiresAt, ts} */
+    APPROVAL_REQUIRED("approval_required"),
+
+    /** 审批有结果：{approvalId, decision, operator, ts} */
+    APPROVAL_RESOLVED("approval_resolved"),
+
     /** 正常结束：{runId, outputText, usage:{inputTokens, outputTokens}, ts}——outputText 是权威正文 */
     RUN_COMPLETED("run_completed"),
 

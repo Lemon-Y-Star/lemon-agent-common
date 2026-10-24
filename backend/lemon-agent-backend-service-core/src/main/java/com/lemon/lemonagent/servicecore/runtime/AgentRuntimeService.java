@@ -4,6 +4,7 @@ import com.lemon.lemonagent.dal.entity.AgentMessageEntity;
 import com.lemon.lemonagent.dal.entity.AgentRunEntity;
 import com.lemon.lemonagent.dal.entity.AgentSessionEntity;
 import com.lemon.lemonagent.dal.repository.AgentMessageRepository;
+import com.lemon.lemonagent.dal.repository.AgentRunEventRepository;
 import com.lemon.lemonagent.dal.repository.AgentRunRepository;
 import com.lemon.lemonagent.dal.repository.AgentSessionRepository;
 import com.lemon.lemonagent.model.runtime.ModelPort;
@@ -25,6 +26,7 @@ import com.lemon.architecture.model.ResultCodes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -60,6 +62,8 @@ public class AgentRuntimeService {
 
     private final AgentMessageRepository messageRepository;
 
+    private final AgentRunEventRepository eventRepository;
+
     private final EventPublisher eventPublisher;
 
     private final RunExecutor runExecutor;
@@ -71,11 +75,13 @@ public class AgentRuntimeService {
     public AgentRuntimeService(AgentSessionRepository sessionRepository,
                                AgentRunRepository runRepository,
                                AgentMessageRepository messageRepository,
+                               AgentRunEventRepository eventRepository,
                                EventPublisher eventPublisher,
                                RunExecutor runExecutor) {
         this.sessionRepository = sessionRepository;
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
+        this.eventRepository = eventRepository;
         this.eventPublisher = eventPublisher;
         this.runExecutor = runExecutor;
     }
@@ -279,7 +285,8 @@ public class AgentRuntimeService {
         data.setLastSeq(run.getLastSeq());
         data.setErrorCode(run.getErrorCode());
         data.setErrorMsg(run.getErrorMsg());
-        data.setPendingApproval(null);
+        Map<String, Object> pending = parsePending(run.getPendingApprovalJson());
+        data.setPendingApproval(pending.isEmpty() ? null : pending);
         data.setGraph(null);
         if (run.getInputTokens() != null || run.getOutputTokens() != null) {
             com.lemon.lemonagent.model.runtime.RunDetailData.Usage usage =
@@ -294,16 +301,116 @@ public class AgentRuntimeService {
     }
 
     /**
-     * 提交审批决定（契约 4.8）。v2 增量 1 无工具审批：任何 run 都不会 BLOCKED，
-     * 因此必然 409 ILLEGAL_STATE——端点先行就位，v2.1 工具链路接入后由 kind 分流恢复动作。
+     * 提交审批决定（契约 4.8）：仅 BLOCKED + approvalId 一致才接受；幂等：同 approvalId
+     * 重复提交返回当前状态；APPROVE → RUNNING + 异步续跑；REJECT → FAILED(TOOL_REJECTED)。
      */
     public RunStatusData approval(Long userId, Long runId, String approvalId, String decision, String comment) {
         AgentRunEntity run = requireRun(userId, runId);
         RunStatus status = RunStatus.valueOf(run.getStatus());
         if (status != RunStatus.BLOCKED) {
+            // 幂等：该 approvalId 已处理过 → 返回当前状态不报错（契约 4.8 行为细则）
+            if (approvalAlreadyResolved(runId, approvalId)) {
+                return new RunStatusData(runId, run.getStatus(), run.getLastSeq());
+            }
             throw new BusinessException("ILLEGAL_STATE", "当前运行没有待审批项（状态 " + status.name() + "）");
         }
-        throw new BusinessException("APPROVAL_MISMATCH", "审批项不存在或已处理");
+        Map<String, Object> pending = parsePending(run.getPendingApprovalJson());
+        if (!approvalId.equals(String.valueOf(pending.get("approvalId")))) {
+            throw new BusinessException("APPROVAL_MISMATCH", "审批项不匹配或已过期");
+        }
+
+        boolean approved = "APPROVE".equalsIgnoreCase(decision);
+        if (!approved && !"REJECT".equalsIgnoreCase(decision)) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "decision 必须为 APPROVE 或 REJECT");
+        }
+
+        // 状态迁移先行（原子闸）：APPROVE → RUNNING 续跑；REJECT → FAILED(TOOL_REJECTED)
+        int rows = runRepository.transition(runId, RunStatus.BLOCKED.name(),
+                approved ? RunStatus.RUNNING.name() : RunStatus.FAILED.name(),
+                approved ? null : "TOOL_REJECTED",
+                approved ? null : "你拒绝了本次工具调用，任务已终止。");
+        if (rows == 0) {
+            throw new BusinessException("ILLEGAL_STATE", "运行状态已变化，请刷新后重试");
+        }
+        runRepository.clearPendingApproval(runId);
+
+        appendApprovalResolved(runId, approvalId, approved ? "APPROVE" : "REJECT");
+
+        if (approved) {
+            // 异步续跑：执行工具 → tool_result → 继续模型循环
+            runExecutor.resumeApproved(run,
+                    String.valueOf(pending.get("toolName")),
+                    (Map<String, Object>) pending.get("args"));
+        } else {
+            appendEvent(runId, RuntimeEventType.RUN_FAILED, objectMapper.writeValueAsString(Map.of(
+                    "runId", runId,
+                    "errorCode", "TOOL_REJECTED",
+                    "errorMsg", "你拒绝了本次工具调用，任务已终止。",
+                    "ts", System.currentTimeMillis())));
+        }
+        AgentRunEntity current = requireRun(userId, runId);
+        return new RunStatusData(runId, current.getStatus(), current.getLastSeq());
+    }
+
+    /**
+     * 审批超时扫描（BUILD-SPEC §1.3：approval-timeout-seconds）：BLOCKED 超时 →
+     * FAILED(APPROVAL_TIMEOUT)，审批自动拒绝（approval_resolved TIMEOUT + run_failed）。
+     * 由组合根的 @EnableScheduling 驱动，30 秒一轮。
+     */
+    @Scheduled(fixedDelay = 30_000)
+    public void scanExpiredApprovals() {
+        List<AgentRunEntity> blocked = runRepository.findByStatus(RunStatus.BLOCKED.name(), 100);
+        long now = System.currentTimeMillis();
+        for (AgentRunEntity run : blocked) {
+            Map<String, Object> pending = parsePending(run.getPendingApprovalJson());
+            long expiresAt = Long.parseLong(String.valueOf(pending.getOrDefault("expiresAt", "0")));
+            if (expiresAt > 0 && expiresAt < now) {
+                int rows = runRepository.transition(run.getId(), RunStatus.BLOCKED.name(),
+                        RunStatus.FAILED.name(), "APPROVAL_TIMEOUT",
+                        "审批超时，本次操作已自动拒绝。");
+                if (rows > 0) {
+                    runRepository.clearPendingApproval(run.getId());
+                    appendApprovalResolved(run.getId(),
+                            String.valueOf(pending.get("approvalId")), "TIMEOUT");
+                    appendEvent(run.getId(), RuntimeEventType.RUN_FAILED, objectMapper.writeValueAsString(Map.of(
+                            "runId", run.getId(),
+                            "errorCode", "APPROVAL_TIMEOUT",
+                            "errorMsg", "审批超时，本次操作已自动拒绝。",
+                            "ts", System.currentTimeMillis())));
+                    log.info("审批超时自动拒绝 runId:{} approvalId:{}", run.getId(), pending.get("approvalId"));
+                }
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parsePending(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, Map.class);
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    private boolean approvalAlreadyResolved(Long runId, String approvalId) {
+        return eventRepository.findByRunAfter(runId, 0).stream()
+                .anyMatch(e -> "approval_resolved".equals(e.getEventType())
+                        && String.valueOf(e.getPayload()).contains(approvalId));
+    }
+
+    private void appendApprovalResolved(Long runId, String approvalId, String decision) {
+        appendEvent(runId, RuntimeEventType.APPROVAL_RESOLVED, objectMapper.writeValueAsString(Map.of(
+                "approvalId", approvalId,
+                "decision", decision,
+                "operator", "USER",
+                "ts", System.currentTimeMillis())));
+    }
+
+    private void appendEvent(Long runId, RuntimeEventType type, String payload) {
+        eventPublisher.append(runId, type.wireName(), payload);
     }
 
     /**

@@ -41,6 +41,9 @@ public class AgentRunEntity {
     /** 用户可读错误 */
     private String errorMsg;
 
+    /** BLOCKED 态审批快照 JSON（kind/approvalId/toolName/args/riskLevel/expiresAt） */
+    private String pendingApprovalJson;
+
     /** 输入 tokens */
     private Integer inputTokens;
 

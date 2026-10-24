@@ -109,6 +109,33 @@ public interface AgentRunRepository {
     int updateLastSeq(Long id, long seq);
 
     /**
+     * 挂起（原子）：RUNNING→BLOCKED + 写审批快照，同一条 UPDATE 完成状态与快照的原子变更。
+     *
+     * @param id         入参：运行 ID
+     * @param approvalId 入参：审批 ID
+     * @param pendingJson 入参：审批快照 JSON
+     * @return 出参：影响行数（0 = 状态已变化，放弃挂起）
+     */
+    int suspend(Long id, String approvalId, String pendingJson);
+
+    /**
+     * 清空审批快照（审批通过后调用）。
+     *
+     * @param id 入参：运行 ID
+     * @return 出参：影响行数
+     */
+    int clearPendingApproval(Long id);
+
+    /**
+     * 按状态查运行（审批超时扫描用）。
+     *
+     * @param status 入参：状态
+     * @param limit  入参：上限
+     * @return 出参：运行列表
+     */
+    List<AgentRunEntity> findByStatus(String status, int limit);
+
+    /**
      * 进程重启的孤儿收口：把遗留的 RUNNING/BLOCKED run 标为 FAILED(INTERRUPTED)。
      *
      * @return 出参：受影响的运行数

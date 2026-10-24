@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * LemonAgent 平台后端启动入口。
@@ -15,6 +16,7 @@ import org.springframework.context.annotation.Bean;
  * scanBasePackages 覆盖全部应用层（model / dal / service-core / service / web），
  * 保证各模块里的 Controller 与 Handler 被 Spring 发现。</p>
  */
+@EnableScheduling
 @SpringBootApplication(scanBasePackages = "com.lemon.lemonagent")
 public class Application {
 
