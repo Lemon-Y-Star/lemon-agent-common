@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lemon</groupId>
+        <artifactId>lemon-agent-backend</artifactId>
+        <version>1.0.0</version>
+    </parent>
+    <artifactId>lemon-agent-backend-util</artifactId>
+    <description>工具层：应用级工具类</description>
+    <dependencies>
+        <dependency>
+            <groupId>com.lemon</groupId>
+            <artifactId>architecture-util</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lemon-agent-backend-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- 纯工具类单测（不依赖 Spring 上下文） -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

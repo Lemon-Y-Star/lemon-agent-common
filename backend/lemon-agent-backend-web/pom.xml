@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lemon</groupId>
+        <artifactId>lemon-agent-backend</artifactId>
+        <version>1.0.0</version>
+    </parent>
+    <artifactId>lemon-agent-backend-web</artifactId>
+    <description>Web 层：控制器与接口定义</description>
+    <dependencies>
+        <dependency>
+            <groupId>com.lemon</groupId>
+            <artifactId>architecture-web</artifactId>
+        </dependency>
+        <!-- 控制器直接使用 OptUtil（service-core）与 AssertUtils（util），
+             其余框架构件由 starter 在 bootstrap 侧自动装配，这里不直接引 -->
+        <dependency>
+            <groupId>com.lemon</groupId>
+            <artifactId>architecture-service-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.lemon</groupId>
+            <artifactId>architecture-util</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lemon-agent-backend-service</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lemon-agent-backend-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lemon-agent-backend-util</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lemon-agent-backend-service-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+        <!-- 测试：@SpringBootTest / SpringRunner / JUnit5 / Mockito 等，版本由 spring-boot-starter-parent 管理 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

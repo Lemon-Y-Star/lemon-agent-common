@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.0</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.lemon</groupId>
+    <artifactId>lemon-agent-backend</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+    <name>lemon-agent-backend</name>
+    <description>AI Agent 应用脚手架：多模块分层结构（bootstrap / model / util / service-core / service / web）</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.release>21</maven.compiler.release>
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <google.adk.version>1.9.0</google.adk.version>
+        <!-- 供 JaCoCo prepare-agent 注入；无覆盖率代理时保持空串，避免 surefire argLine 解析失败 -->
+        <architecture.version>1.0.4</architecture.version>
+        <argLine></argLine>
+    </properties>
+
+    <modules>
+        <module>lemon-agent-backend-model</module>
+        <module>lemon-agent-backend-dal</module>
+        <module>lemon-agent-backend-util</module>
+        <module>lemon-agent-backend-service-core</module>
+        <module>lemon-agent-backend-service</module>
+        <module>lemon-agent-backend-web</module>
+        <module>lemon-agent-backend-bootstrap</module>
+    </modules>
+
+    <!-- 框架构件（architecture-*）来自 NAS Gitea Maven 私服 -->
+    <repositories>
+        <repository>
+            <id>gitea-lemon</id>
+            <url>http://192.168.5.250:18000/api/packages/lemon/maven</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- BOM 对齐框架全部模块版本；升级框架只需改这一个版本号 -->
+            <dependency>
+                <groupId>com.lemon</groupId>
+                <artifactId>architecture-dependencies</artifactId>
+                <version>${architecture.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.adk</groupId>
+                <artifactId>google-adk</artifactId>
+                <version>${google.adk.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.adk</groupId>
+                <artifactId>google-adk-dev</artifactId>
+                <version>${google.adk.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.adk</groupId>
+                <artifactId>google-adk-spring-ai</artifactId>
+                <version>${google.adk.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.adk.samples</groupId>
+                <artifactId>google-adk-sample-helloworld</artifactId>
+                <version>${google.adk.version}</version>
+            </dependency>
+
+
+            <dependency>
+                <groupId>com.google.adk</groupId>
+                <artifactId>google-adk-contrib-langchain4j</artifactId>
+                <version>0.2.0</version>
+            </dependency>
+
+            <!--            <dependency>-->
+            <!--                <groupId>dev.langchain4j</groupId>-->
+            <!--                <artifactId>langchain4j-core</artifactId>-->
+            <!--                <version>1.4.0</version>-->
+            <!--            </dependency>-->
+
+            <!--            <dependency>-->
+            <!--                <groupId>dev.langchain4j</groupId>-->
+            <!--                <artifactId>langchain4j-open-ai</artifactId>-->
+            <!--                <version>1.4.0</version>-->
+            <!--            </dependency>-->
+
+            <!-- spring ai 2.0.1 (面向 Spring Boot 4.1 / Spring Framework 7) -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>2.0.1</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- https://github.com/spring-ai-community/spring-ai-agent-utils
+                 SkillsTool 技能包装配；选 0.13.0：其依赖 spring-ai-client-chat 2.0.1，与本项目 Spring AI 对齐
+                 （0.4.2 及更早版本面向 Spring AI 1.x，不可用） -->
+            <dependency>
+                <groupId>org.springaicommunity</groupId>
+                <artifactId>spring-ai-agent-utils</artifactId>
+                <version>0.13.0</version>
+            </dependency>
+
+            <!-- 强制对齐 MCP Java SDK 到 2.0.0：spring-ai-mcp 2.0.1 编译依赖此版本，
+                 google-adk-spring-ai 1.9.0 会显式拉入 1.1.2 顶替它，导致
+                 NoSuchMethodError: McpSchema$Tool.inputSchema() 返回 java.util.Map 缺失。
+                 根项目 dependencyManagement 优先级最高，强制全 reactor 统一用 2.0.0。 -->
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp</artifactId>
+                <version>2.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-core</artifactId>
+                <version>2.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-json-jackson3</artifactId>
+                <version>2.0.0</version>
+            </dependency>
+
+            <!-- langchain4j https://mvnrepository.com/artifact/dev.langchain4j/langchain4j-bom -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>1.4.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+
+
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.9</version>
+            </dependency>
+
+
+            <dependency>
+                <groupId>commons-codec</groupId>
+                <artifactId>commons-codec</artifactId>
+                <version>1.15</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>1.18.46</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>21</release>
+                    <proc>full</proc>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

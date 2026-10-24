@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lemon</groupId>
+        <artifactId>lemon-agent-backend</artifactId>
+        <version>1.0.0</version>
+    </parent>
+    <artifactId>lemon-agent-backend-model</artifactId>
+    <description>模型层：请求/响应/数据对象，继承框架 BaseReq / BaseResult</description>
+    <dependencies>
+        <dependency>
+            <groupId>com.lemon</groupId>
+            <artifactId>architecture-model</artifactId>
+        </dependency>
+        <!-- Google ADK：AiAgentRegisterVO 持有 InMemoryRunner 执行对象，版本由根 pom dependencyManagement 统一管理 -->
+        <dependency>
+            <groupId>com.google.adk</groupId>
+            <artifactId>google-adk</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot</artifactId>
+            <!-- 仅编译期使用 @ConfigurationProperties 注解，运行期由启动模块提供 -->
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

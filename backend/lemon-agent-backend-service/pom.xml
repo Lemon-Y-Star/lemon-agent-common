@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lemon</groupId>
+        <artifactId>lemon-agent-backend</artifactId>
+        <version>1.0.0</version>
+    </parent>
+    <artifactId>lemon-agent-backend-service</artifactId>
+    <description>服务层：业务编排与 @HandlerRoute 业务处理器</description>
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lemon-agent-backend-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lemon-agent-backend-service-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>

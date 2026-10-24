@@ -1,0 +1,29 @@
+server:
+  port: 18090
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/lemon_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${LEMON_DB_USER:root}
+    password: ${LEMON_DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+lemon:
+  # 连接密钥的 AES-256 加密密钥（Base64 32 字节）；生产从环境变量/密管系统注入，禁止提交真实值
+  crypto:
+    secret: ${LEMON_CRYPTO_SECRET:Y9tV2wK7qFzP3mXaR8uE5sB1nC6dH0jL4gT2yVoQxZk=}
+  auth:
+    token-ttl-hours: 8
+  model-conn:
+    # baseUrl 主机白名单（PRD FR-13 allowedHosts）；逗号分隔
+    allowed-hosts: api.siliconflow.cn,api.deepseek.com,api.openai.com,dashscope.aliyuncs.com,apis.itedus.cn,api.shuaiapi.com,localhost,127.0.0.1
+    auxiliary-purposes: 路由、规划及摘要等辅助对话,知识索引与检索向量,重排
+
+logging:
+  level:
+    com.lemon.lemonagent: INFO
+    com.lemon.architecture: INFO
