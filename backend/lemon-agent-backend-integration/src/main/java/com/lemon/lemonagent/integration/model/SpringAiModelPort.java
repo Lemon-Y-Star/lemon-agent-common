@@ -52,6 +52,7 @@ public class SpringAiModelPort implements ModelPort {
                     .build();
 
             List<Message> messages = new ArrayList<>();
+            log.debug("模型请求 model={} systemPrompt={}", request.model(), request.systemPrompt());
             if (request.systemPrompt() != null && !request.systemPrompt().isBlank()) {
                 messages.add(new org.springframework.ai.chat.messages.SystemMessage(request.systemPrompt()));
             }

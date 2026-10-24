@@ -13,6 +13,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,8 +23,8 @@ import java.util.List;
 public class AgentRunJdbcRepository implements AgentRunRepository {
 
     private static final String COLUMNS =
-            "id, session_id, user_id, client_request_id, status, strategy, trace_id, last_seq, "
-                    + "output_text, error_code, error_msg, pending_approval_json, input_tokens, output_tokens, started_at, ended_at";
+            "id, session_id, agent_id, user_id, client_request_id, status, strategy, trace_id, last_seq, "
+                    + "output_text, error_code, error_msg, pending_approval_json, input_tokens, output_tokens, started_at, ended_at, created_at, updated_at";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -33,6 +34,8 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
             AgentRunEntity e = new AgentRunEntity();
             e.setId(rs.getLong("id"));
             e.setSessionId(rs.getLong("session_id"));
+            long agentId = rs.getLong("agent_id");
+            e.setAgentId(rs.wasNull() ? null : agentId);
             e.setUserId(rs.getLong("user_id"));
             e.setClientRequestId(rs.getString("client_request_id"));
             e.setStatus(rs.getString("status"));
@@ -47,6 +50,8 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
             e.setOutputTokens((Integer) rs.getObject("output_tokens"));
             e.setStartedAt(toInstant(rs.getTimestamp("started_at")));
             e.setEndedAt(toInstant(rs.getTimestamp("ended_at")));
+            e.setCreatedAt(toInstant(rs.getTimestamp("created_at")));
+            e.setUpdatedAt(toInstant(rs.getTimestamp("updated_at")));
             return e;
         }
     };
@@ -61,17 +66,22 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO agent_run (session_id, user_id, client_request_id, status, strategy, trace_id, "
-                            + "last_seq, started_at) VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT INTO agent_run (session_id, agent_id, user_id, client_request_id, status, strategy, "
+                            + "trace_id, last_seq, started_at) VALUES (?,?,?,?,?,?,?,?,?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setLong(1, e.getSessionId());
-            ps.setLong(2, e.getUserId());
-            ps.setString(3, e.getClientRequestId());
-            ps.setString(4, e.getStatus());
-            ps.setString(5, e.getStrategy());
-            ps.setString(6, e.getTraceId());
-            ps.setLong(7, e.getLastSeq());
-            ps.setTimestamp(8, Timestamp.from(now));
+            if (e.getAgentId() == null) {
+                ps.setNull(2, Types.BIGINT);
+            } else {
+                ps.setLong(2, e.getAgentId());
+            }
+            ps.setLong(3, e.getUserId());
+            ps.setString(4, e.getClientRequestId());
+            ps.setString(5, e.getStatus());
+            ps.setString(6, e.getStrategy());
+            ps.setString(7, e.getTraceId());
+            ps.setLong(8, e.getLastSeq());
+            ps.setTimestamp(9, Timestamp.from(now));
             return ps;
         }, keys);
         e.setId(keys.getKey().longValue());

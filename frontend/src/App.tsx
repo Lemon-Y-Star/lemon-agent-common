@@ -1,7 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { getToken } from './api/client'
+import Agents from './pages/Agents'
 import Chat from './pages/Chat'
+import Admin from './pages/Admin'
 import Runs from './pages/Runs'
+import Usage from './pages/Usage'
 import Layout from './components/Layout'
 import Account from './pages/Account'
 import Login from './pages/Login'
@@ -21,9 +24,12 @@ export default function App() {
       <Route element={loggedIn ? <Layout /> : <Navigate to="/login" replace />}>
         <Route path="/" element={<Navigate to="/chat" replace />} />
         <Route path="/runs" element={<Runs />} />
+        <Route path="/usage" element={<Usage />} />
+        <Route path="/admin" element={<Admin />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="/chat/:sessionId" element={<Chat />} />
         <Route path="/account" element={<Account />} />
+        <Route path="/agents" element={<Agents />} />
         <Route path="/models" element={<ModelConnections />} />
         <Route path="/mcps" element={<Mcps />} />
       </Route>

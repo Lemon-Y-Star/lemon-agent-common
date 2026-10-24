@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { apiLogout } from '../api/auth'
+import InboxBell from './InboxBell'
 import { clearSession, getStoredUser } from '../api/client'
 import { ToastHost, toast } from './Toast'
 
@@ -32,12 +33,18 @@ export default function Layout() {
 
   const crumb =
     location.pathname.startsWith('/chat') ? '对话'
+      : location.pathname.startsWith('/agents')
+      ? '我的 Agent'
       : location.pathname.startsWith('/models')
       ? '模型连接'
       : location.pathname.startsWith('/mcps')
       ? 'MCP 连接与工具'
       : location.pathname.startsWith('/runs')
       ? '运行历史'
+      : location.pathname.startsWith('/usage')
+      ? '用量与额度'
+      : location.pathname.startsWith('/admin')
+      ? '网站统计'
       : '开始使用与账户'
 
   async function onLogout() {
@@ -61,7 +68,9 @@ export default function Layout() {
           <NavLink className="nav-item" to="/chat">
             💬 对话
           </NavLink>
-          <NavPending>🤖 我的 Agent</NavPending>
+          <NavLink className="nav-item" to="/agents">
+            🤖 我的 Agent
+          </NavLink>
           <NavLink className="nav-item" to="/models">
             🔌 模型连接
           </NavLink>
@@ -79,7 +88,9 @@ export default function Layout() {
         </div>
         <div className="nav-group">
           <div className="gt">观测</div>
-          <NavPending>📈 用量与额度</NavPending>
+          <NavLink className="nav-item" to="/usage">
+            📈 用量与额度
+          </NavLink>
           <NavPending>🔭 LLM 观测</NavPending>
           <NavLink className="nav-item" to="/mcps">
             🔧 MCP 连接与工具
@@ -94,7 +105,9 @@ export default function Layout() {
         </div>
         <div className="nav-group">
           <div className="gt">管理</div>
-          <NavPending>📊 网站统计</NavPending>
+          <NavLink className="nav-item" to="/admin">
+            📊 网站统计
+          </NavLink>
         </div>
         <div className="footer-note">v1 · 平台基座</div>
       </aside>
@@ -105,6 +118,7 @@ export default function Layout() {
             LemonAgent / <b>{crumb}</b>
           </div>
           <div className="right">
+            <InboxBell />
             <span className="tag gray">{user?.role?.toUpperCase() ?? 'USER'}</span>
             <span style={{ fontSize: '12.5px', color: 'var(--muted)' }}>{user?.username ?? ''}</span>
             <div

@@ -17,6 +17,9 @@ public class CreateRunReq extends BaseReq {
     /** 会话 ID（空 = 懒创建） */
     private Long sessionId;
 
+    /** 挂载的 Agent（空 = 平台默认助手） */
+    private Long agentId;
+
     /** 用户输入（1..4000 字符） */
     private String input;
 

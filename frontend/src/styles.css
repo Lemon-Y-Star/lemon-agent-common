@@ -159,3 +159,10 @@ tr:hover td{background:#fafbfe}
 .sess-item:hover .sess-actions{display:inline-flex}
 .sess-item .sess-actions .btn{padding:1px 6px;font-size:11px;border:none;background:transparent}
 .sess-item .sess-actions .btn:hover{background:#f3f4f6}
+
+/* ---------- v2.5 收件箱铃铛 / 通知列表 ---------- */
+.bell .dot{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;
+  background:#ef4444;color:#fff;font-size:10px;line-height:16px;text-align:center;font-weight:600}
+.list-item{display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid var(--border)}
+.list-item:hover{background:#f6f7fb}
+.list-item:last-child{border-bottom:none}

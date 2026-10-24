@@ -7,10 +7,13 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 
 | 版本 | 范围 | 状态 |
 |---|---|---|
-| v1（本版） | 平台基座：账号认证（登录 / 登出 / 身份 / 改密）+ 模型连接管理 + MCP 连接管理（平台公共 11 个预置 + 用户自建），React + TS 前端 | ✅ |
-| v2.0（本版） | 对话运行时·纯对话：会话 / 运行 / SSE 事件流（seq 连续 + 断线重连）/ 取消 / 运行历史；Spring AI 2.0 流式（BYOK 防腐层） | ✅ |
+| v1 | 平台基座：账号认证（登录 / 登出 / 身份 / 改密）+ 模型连接管理 + MCP 连接管理（平台公共 11 个预置 + 用户自建），React + TS 前端 | ✅ |
+| v2.0 | 对话运行时·纯对话：会话 / 运行 / SSE 事件流（seq 连续 + 断线重连）/ 取消 / 运行历史；Spring AI 2.0 流式（BYOK 防腐层） | ✅ |
 | v2.1 | 工具调用 + 审批挂起（demo_ticket 可见效果，BLOCKED 态 + approval 端点） | ✅ |
-| v2.2（本版） | 会话深链路由（/chat/:sessionId 刷新定位）+ 运行历史页（FR-18.5 左列表右详情） | ✅ |
+| v2.2 | 会话深链路由（/chat/:sessionId 刷新定位）+ 运行历史页（FR-18.5 左列表右详情） | ✅ |
+| v2.3 | 知识检索切片：`search_docs` 接 PgVector 真检索（Agentic RAG；embedding 未配置时工具不注册） | ✅ |
+| v2.4 | 会话管理全闭环：重命名 / 删除（run → event → message → session 级联）/ 深链复用 | ✅ |
+| v2.5（本版） | Agent 管理（FR-6 最小充分版：平台公共只读 + 自建增删改 + 对话页挂载）+ 用量与额度（FR-16）+ 网站统计（FR-22.1，admin）+ 收件箱派生通知（FR-21） | ✅ |
 | v3+ | Agent 搭建（策略模板 / 节点编辑器 / 执行图） | 规划中 |
 
 ## 结构
@@ -45,6 +48,24 @@ lemon-agent-common/
 - **模型防腐**：`ModelPort` 纯接口在 model，Spring AI 2.0 流式实现在 integration
   （`org.springframework.ai.*` 与 Reactor 不出该模块）；模型按用户的 BYOK 连接构造。
 - **进程重启收口**：启动期把遗留 RUNNING/BLOCKED run 标 FAILED(INTERRUPTED)（契约 §6.2）。
+
+## v2.5 Agent 管理与观测实现要点（FR-6 / FR-16 / FR-21 / FR-22.1 最小充分版）
+
+- **一表分治**：`agent_config` 用 `user_id IS NULL` 表示平台公共 Agent（所有人可见、只读），
+  自建 Agent 按 (id, user_id) 双键收口——越权与不存在同样返回 `NOT_FOUND`（不泄漏存在性），
+  改/删平台 Agent 返回 `FORBIDDEN`。
+- **挂载语义（PRD S2「跟随已启用版本」）**：`agent_run.agent_id` 落库为事实，执行期按 `run.agent_id`
+  **回查**配置——系统提示词由 Agent 的 instruction 决定，模型连接优先级 = Agent 绑定 > 用户最新启用。
+  执行器不持有 Agent 内存态：审批挂起跨 HTTP 恢复、进程重启后语义一致（与 `pending_approval_json` 同口径）。
+- **平台提示词不下发**：列表接口对平台 Agent 返回 `instruction = null`，避免照抄平台提示词自建同名 Agent
+  绕过版本管理；只有自建 Agent 回传明文。
+- **版本号归库**：`UPDATE ... SET version = version + 1` 后**回读实体**再返回，响应体 version / updatedAt
+  与库一致（否则前端看到版本不动、updatedAt 不刷新）。
+- **派生通知不建表**：收件箱 = 待审批（BLOCKED）+ 近 7 天失败运行；已读语义由前端 localStorage 的最后查看时间承载。
+- **管理端**：`/api/v1/admin/stats` 先查 `user_account.role` 再放行（仅 `admin`），聚合走 MySQL 直查，不做缓存。
+- **已知环境限制（非代码问题）**：`api.shuaiapi.com` 中转的 `deepseek-v4.1-flash-0910` 在请求**带 `tools`** 时会忽略
+  system 消息——裸 HTTP 复现：同一 system prompt 不带 tools 时模型严格照办，带上 tools 即恢复自由发挥。
+  表现为「Agent 人格不生效」，换官方或其它渠道即恢复；排查时先看 `RunExecutor` 的挂载日志（`run N 挂载 agentId=… -> Agent[名] vX`）。
 
 ## 启动
 

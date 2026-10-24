@@ -14,6 +14,9 @@ public class AgentRunEntity {
     /** 所属会话 */
     private Long sessionId;
 
+    /** 挂载的 Agent（跟随当前已启用版本） */
+    private Long agentId;
+
     /** 归属用户 */
     private Long userId;
 

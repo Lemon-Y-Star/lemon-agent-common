@@ -1,8 +1,10 @@
 package com.lemon.lemonagent.servicecore.runtime;
 
+import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.AgentMessageEntity;
 import com.lemon.lemonagent.dal.entity.AgentRunEntity;
 import com.lemon.lemonagent.dal.entity.ModelConnectionEntity;
+import com.lemon.lemonagent.dal.repository.AgentConfigRepository;
 import com.lemon.lemonagent.dal.repository.AgentMessageRepository;
 import com.lemon.lemonagent.dal.repository.AgentRunRepository;
 import com.lemon.lemonagent.dal.repository.ModelConnectionRepository;
@@ -70,9 +72,13 @@ public class RunExecutor {
     /** runId → 取消标志（取消接口置位，onChunk 回调检查后中断模型流）。 */
     private final Map<Long, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
 
+    /** Agent 配置仓储：每轮循环按 run.agent_id 回查，挂起恢复后语义不变（无内存态依赖）。 */
+    private final AgentConfigRepository agentConfigRepository;
+
     public RunExecutor(AgentRunRepository runRepository,
                        AgentMessageRepository messageRepository,
                        ModelConnectionRepository modelConnectionRepository,
+                       AgentConfigRepository agentConfigRepository,
                        ModelPort modelPort,
                        EventPublisher eventPublisher,
                        ToolRegistry toolRegistry,
@@ -81,6 +87,7 @@ public class RunExecutor {
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
         this.modelConnectionRepository = modelConnectionRepository;
+        this.agentConfigRepository = agentConfigRepository;
         this.modelPort = modelPort;
         this.eventPublisher = eventPublisher;
         this.toolRegistry = toolRegistry;
@@ -156,11 +163,11 @@ public class RunExecutor {
     private void runLoop(AgentRunEntity run, List<String> continuationNotes, int depth) {
         Long runId = run.getId();
 
-        // ① 模型连接：用户最新启用的 BYOK 连接；没有则运行失败并指引配置
-        ModelConnectionEntity conn = modelConnectionRepository.findByUser(run.getUserId()).stream()
-                .filter(c -> c.getStatus() != null && c.getStatus() == 1)
-                .reduce((first, second) -> second)
-                .orElse(null);
+        // ① 模型连接：优先 Agent 绑定的连接；未绑定则用用户最新启用的 BYOK 连接
+        AgentConfigEntity agent = run.getAgentId() == null ? null : agentConfigRepository.findById(run.getAgentId());
+        log.info("run {} 挂载 agentId={} -> {}", runId, run.getAgentId(),
+                agent == null ? "平台默认提示词" : "Agent[" + agent.getName() + "] v" + agent.getVersion());
+        ModelConnectionEntity conn = resolveConnection(run, agent);
         if (conn == null || conn.getApiKeyCipher() == null) {
             failIfStillRunning(runId, "MODEL_ERROR", "尚未配置启用的模型连接，请先在「模型连接」页添加并启用。");
             return;
@@ -183,9 +190,11 @@ public class RunExecutor {
 
         String apiKey = CryptoUtil.decrypt(conn.getApiKeyCipher());
         List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS ? toolRegistry.specs() : List.of();
+        String prompt = agent != null && agent.getInstruction() != null && !agent.getInstruction().isBlank()
+                ? agent.getInstruction() : systemPrompt;
         ModelPort.ModelRequest request = new ModelPort.ModelRequest(
                 conn.getBaseUrl(), apiKey, resolveModel(conn),
-                systemPrompt, context, userInput, tools);
+                prompt, context, userInput, tools);
 
         // ③ 流式执行 + token 攒批 + 工具调用拦截
         StringBuilder fullOutput = new StringBuilder();
@@ -388,6 +397,21 @@ public class RunExecutor {
                     "errorMsg", errorMsg,
                     "ts", System.currentTimeMillis())));
         }
+    }
+
+    /** 连接解析：Agent 绑定连接优先（须启用），否则用户最新启用连接。 */
+    private ModelConnectionEntity resolveConnection(AgentRunEntity run, AgentConfigEntity agent) {
+        if (agent != null && agent.getModelConnectionId() != null) {
+            return modelConnectionRepository.findByUser(run.getUserId()).stream()
+                    .filter(c -> c.getId().equals(agent.getModelConnectionId())
+                            && c.getStatus() != null && c.getStatus() == 1)
+                    .findFirst()
+                    .orElse(null);
+        }
+        return modelConnectionRepository.findByUser(run.getUserId()).stream()
+                .filter(c -> c.getStatus() != null && c.getStatus() == 1)
+                .reduce((first, second) -> second)
+                .orElse(null);
     }
 
     private boolean isTerminal(AgentRunEntity run) {

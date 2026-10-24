@@ -50,6 +50,15 @@ public final class Operations {
     /** 提交审批决定 */
     public static final String APPROVAL_SUBMIT = "APPROVAL_SUBMIT";
 
+    /** 创建个人 Agent */
+    public static final String AGENT_CREATE = "AGENT_CREATE";
+
+    /** 更新个人 Agent */
+    public static final String AGENT_UPDATE = "AGENT_UPDATE";
+
+    /** 删除个人 Agent */
+    public static final String AGENT_DELETE = "AGENT_DELETE";
+
     private Operations() {
     }
 

@@ -1,5 +1,6 @@
 package com.lemon.lemonagent.servicecore.runtime;
 
+import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.AgentMessageEntity;
 import com.lemon.lemonagent.dal.entity.AgentRunEntity;
 import com.lemon.lemonagent.dal.entity.AgentSessionEntity;
@@ -33,6 +34,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -68,6 +70,8 @@ public class AgentRuntimeService {
 
     private final RunExecutor runExecutor;
 
+    private final AgentConfigService agentConfigService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final SecureRandom random = new SecureRandom();
@@ -77,13 +81,15 @@ public class AgentRuntimeService {
                                AgentMessageRepository messageRepository,
                                AgentRunEventRepository eventRepository,
                                EventPublisher eventPublisher,
-                               RunExecutor runExecutor) {
+                               RunExecutor runExecutor,
+                               AgentConfigService agentConfigService) {
         this.sessionRepository = sessionRepository;
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
         this.eventRepository = eventRepository;
         this.eventPublisher = eventPublisher;
         this.runExecutor = runExecutor;
+        this.agentConfigService = agentConfigService;
     }
 
     // ---------- 会话 ----------
@@ -193,7 +199,7 @@ public class AgentRuntimeService {
      *
      * @return 出参：运行数据（duplicated=true 时为原 run）
      */
-    public RunData createRun(Long userId, Long sessionId, String input, String strategyRaw, String clientRequestId) {
+    public RunData createRun(Long userId, Long sessionId, Long agentId, String input, String strategyRaw, String clientRequestId) {
         if (input == null || input.isBlank() || input.length() > MAX_INPUT_LENGTH) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "输入不能为空且不超过 4000 字符");
         }
@@ -227,9 +233,13 @@ public class AgentRuntimeService {
         }
 
         // ④ 建 run：创建即 RUNNING；run_started 占 seq=1
+        // Agent 挂载：跟随当前已启用版本（PRD S2 工具语义）；未指定时取平台默认
+        AgentConfigEntity agent = resolveAgent(userId, agentId);
+
         AgentRunEntity run = new AgentRunEntity();
         run.setSessionId(session.getId());
         run.setUserId(userId);
+        run.setAgentId(agent.getId());
         run.setClientRequestId(clientRequestId);
         run.setStatus(RunStatus.RUNNING.name());
         run.setStrategy(strategy.wireName());
@@ -385,6 +395,58 @@ public class AgentRuntimeService {
     }
 
     /**
+     * 收件箱（PRD FR-21 简化版）：通知由现有数据派生——待审批（BLOCKED）+ 近 7 天失败运行。
+     * 不新增通知表；已读语义由前端 localStorage 的最后查看时间承载。
+     */
+    public com.lemon.lemonagent.model.runtime.InboxData inbox(Long userId) {
+        com.lemon.lemonagent.model.runtime.InboxData data = new com.lemon.lemonagent.model.runtime.InboxData();
+        List<com.lemon.lemonagent.model.runtime.InboxData.Item> items = new ArrayList<>();
+        for (AgentRunEntity run : runRepository.findByStatus(RunStatus.BLOCKED.name(), 50)) {
+            if (run.getUserId().equals(userId)) {
+                Map<String, Object> pending = parsePending(run.getPendingApprovalJson());
+                com.lemon.lemonagent.model.runtime.InboxData.Item item = new com.lemon.lemonagent.model.runtime.InboxData.Item();
+                item.setKind("APPROVAL");
+                item.setRunId(run.getId());
+                item.setSessionId(run.getSessionId());
+                item.setText("运行 #" + run.getId() + " 待审批：工具 " + pending.getOrDefault("toolName", "?")
+                        + "（" + pending.getOrDefault("riskLevel", "HIGH") + "）");
+                item.setCreatedAt(format(run.getUpdatedAt()));
+                items.add(item);
+            }
+        }
+        // 近 7 天失败
+        runRepository.findByUser(userId, RunStatus.FAILED.name(), null, 0, 50).forEach(run -> {
+            if (run.getStartedAt() != null && run.getStartedAt().isAfter(Instant.now().minusSeconds(7 * 86400L))) {
+                com.lemon.lemonagent.model.runtime.InboxData.Item item = new com.lemon.lemonagent.model.runtime.InboxData.Item();
+                item.setKind("RUN_FAILED");
+                item.setRunId(run.getId());
+                item.setSessionId(run.getSessionId());
+                item.setText("运行 #" + run.getId() + " 失败：" + (run.getErrorMsg() != null ? run.getErrorMsg() : run.getErrorCode()));
+                item.setCreatedAt(format(run.getUpdatedAt()));
+                items.add(item);
+            }
+        });
+        // createdAt 为 ISO-8601 字符串（字典序 == 时间序），倒序把最新的一条放最前；null 沉底
+        items.sort((a, b) -> {
+            String left = a.getCreatedAt();
+            String right = b.getCreatedAt();
+            if (left == null && right == null) {
+                return 0;
+            }
+            if (left == null) {
+                return 1;
+            }
+            if (right == null) {
+                return -1;
+            }
+            return right.compareTo(left);
+        });
+        data.setItems(items);
+        data.setUnreadHint(items.size());
+        return data;
+    }
+
+    /**
      * 审批超时扫描（BUILD-SPEC §1.3：approval-timeout-seconds）：BLOCKED 超时 →
      * FAILED(APPROVAL_TIMEOUT)，审批自动拒绝（approval_resolved TIMEOUT + run_failed）。
      * 由组合根的 @EnableScheduling 驱动，30 秒一轮。
@@ -489,6 +551,16 @@ public class AgentRuntimeService {
             throw new BusinessException(ResultCodes.NOT_FOUND, "会话不存在或已被删除");
         }
         return session;
+    }
+
+    private AgentConfigEntity resolveAgent(Long userId, Long agentId) {
+        AgentConfigEntity agent = agentId == null
+                ? agentConfigService.firstEnabledForUser(userId)
+                : agentConfigService.requireUsableForRun(userId, agentId);
+        if (agent == null) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "没有可用的 Agent，请先在「我的 Agent」页创建");
+        }
+        return agent;
     }
 
     private AgentRunEntity requireRun(Long userId, Long runId) {

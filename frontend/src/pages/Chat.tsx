@@ -15,6 +15,7 @@ import {
   type SessionItem,
   type RuntimeEvent,
 } from '../api/runtime'
+import { fetchAgents, type AgentConfig } from '../api/agents'
 import { ApiError } from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
@@ -67,6 +68,8 @@ export default function Chat() {
   const [streaming, setStreaming] = useState(false)
   const [connected, setConnected] = useState(true)
   const [activeRunId, setActiveRunId] = useState<number | null>(null)
+  const [agents, setAgents] = useState<AgentConfig[]>([])
+  const [agentId, setAgentId] = useState<number | null>(null)
   const [renaming, setRenaming] = useState<{ sessionId: number; title: string } | null>(null)
   const [deleting, setDeleting] = useState<SessionItem | null>(null)
 
@@ -86,12 +89,25 @@ export default function Chat() {
     }
   }, [])
 
+  // Agent 列表（对话页顶部可切换；默认选平台第一个启用的）
+  const reloadAgents = useCallback(async () => {
+    try {
+      const page = await fetchAgents()
+      const all = [...page.platform, ...page.mine].filter((a) => a.usable)
+      setAgents(all)
+      setAgentId((prev) => prev ?? (all[0]?.id ?? null))
+    } catch {
+      // Agent 列表失败不阻塞对话
+    }
+  }, [])
+
   useEffect(() => {
     void reloadSessions()
+    void reloadAgents()
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [reloadSessions])
+  }, [reloadSessions, reloadAgents])
 
 
   useEffect(() => {
@@ -396,6 +412,7 @@ export default function Chat() {
     try {
       const run = await createRun({
         sessionId: activeSession ?? undefined,
+        agentId: agentId ?? undefined,
         input: text,
         strategy,
         clientRequestId: crypto.randomUUID(),
@@ -493,6 +510,17 @@ export default function Chat() {
             <select className="btn sm" style={{ width: 'auto' }} value={strategy} onChange={(e) => setStrategy(e.target.value)}>
               {STRATEGIES.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+            <select
+              className="btn sm"
+              style={{ width: 'auto' }}
+              value={agentId ?? ''}
+              onChange={(e) => setAgentId(Number(e.target.value))}
+              title="当前 Agent"
+            >
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}{a.platformPublic ? '（平台）' : ''}</option>
               ))}
             </select>
             <span className={`tag ${streaming ? 'ok' : 'gray'}`}>{streaming ? '已连接 · SSE' : '空闲'}</span>

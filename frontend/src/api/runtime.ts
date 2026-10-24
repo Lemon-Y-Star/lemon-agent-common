@@ -78,6 +78,7 @@ export async function deleteSession(sessionId: number): Promise<null> {
 
 export async function createRun(params: {
   sessionId?: number
+  agentId?: number
   input: string
   strategy: string
   clientRequestId: string
