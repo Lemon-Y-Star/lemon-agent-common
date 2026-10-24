@@ -99,6 +99,27 @@ public class AgentSessionJdbcRepository implements AgentSessionRepository {
         return n == null ? 0 : n;
     }
 
+    @Override
+    public int rename(Long id, String title) {
+        return jdbcTemplate.update(
+                "UPDATE agent_session SET title = ? WHERE id = ?", title, id);
+    }
+
+    /** 级联删除：按 run → event → message → session 依赖顺序清理（先删会话行做归属闸与占位）。 */
+    @Override
+    public int deleteCascade(Long id, Long userId) {
+        int deleted = jdbcTemplate.update(
+                "DELETE FROM agent_session WHERE id = ? AND user_id = ?", id, userId);
+        if (deleted == 0) {
+            return 0;
+        }
+        jdbcTemplate.update(
+                "DELETE FROM agent_run_event WHERE run_id IN (SELECT id FROM agent_run WHERE session_id = ?)", id);
+        jdbcTemplate.update("DELETE FROM agent_run WHERE session_id = ?", id);
+        jdbcTemplate.update("DELETE FROM agent_message WHERE session_id = ?", id);
+        return deleted;
+    }
+
     private static Instant toInstant(Timestamp ts) {
         return ts == null ? null : ts.toInstant();
     }

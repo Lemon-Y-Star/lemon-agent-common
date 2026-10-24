@@ -154,6 +154,38 @@ public class AgentRuntimeService {
         return data;
     }
 
+    /**
+     * 重命名会话。
+     *
+     * @param userId  入参：归属用户
+     * @param sessionId 入参：会话 ID
+     * @param title   入参：新标题（1..100 字符）
+     * @return 出参：会话数据
+     */
+    public SessionData rename(Long userId, Long sessionId, String title) {
+        if (title == null || title.isBlank() || title.length() > 100) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "标题不能为空且不超过 100 字符");
+        }
+        AgentSessionEntity session = requireSession(userId, sessionId);
+        sessionRepository.rename(session.getId(), title.trim());
+        return new SessionData(session.getId(), format(session.getCreatedAt()));
+    }
+
+    /**
+     * 删除会话：级联删除消息、事件与运行（运行删除前要求非活跃，避免删掉一个正在执行的 run）。
+     *
+     * @param userId  入参：归属用户
+     * @param sessionId 入参：会话 ID
+     */
+    public void delete(Long userId, Long sessionId) {
+        AgentSessionEntity session = requireSession(userId, sessionId);
+        AgentRunEntity active = runRepository.findActiveBySession(session.getId());
+        if (active != null) {
+            throw new BusinessException("SESSION_BUSY", "会话有正在执行的运行，先取消再删除");
+        }
+        sessionRepository.deleteCascade(session.getId(), userId);
+    }
+
     // ---------- 运行 ----------
 
     /**

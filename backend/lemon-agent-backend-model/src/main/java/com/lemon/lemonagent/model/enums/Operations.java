@@ -35,6 +35,12 @@ public final class Operations {
     /** 创建对话会话 */
     public static final String SESSION_CREATE = "SESSION_CREATE";
 
+    /** 重命名会话 */
+    public static final String SESSION_RENAME = "SESSION_RENAME";
+
+    /** 删除会话 */
+    public static final String SESSION_DELETE = "SESSION_DELETE";
+
     /** 发起运行 */
     public static final String RUN_CREATE = "RUN_CREATE";
 

@@ -2,11 +2,16 @@ package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.CreateSessionReq;
 import com.lemon.lemonagent.model.runtime.CreateSessionResp;
+import com.lemon.lemonagent.model.runtime.DeleteSessionReq;
+import com.lemon.lemonagent.model.runtime.DeleteSessionResp;
+import com.lemon.lemonagent.model.runtime.RenameSessionReq;
+import com.lemon.lemonagent.model.runtime.RenameSessionResp;
 import com.lemon.lemonagent.model.runtime.SessionDetailData;
 import com.lemon.lemonagent.model.runtime.SessionListData;
 import com.lemon.lemonagent.servicecore.runtime.AgentRuntimeService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
+import com.lemon.architecture.util.validation.AssertUtils;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -66,6 +71,49 @@ public class AgentSessionController {
                                             @RequestParam(defaultValue = "1") int page,
                                             @RequestParam(defaultValue = "20") int size) {
         return BaseResult.success(agentRuntimeService.listSessions(userId, page, Math.min(size, 100)));
+    }
+
+    /**
+     * 重命名会话。
+     *
+     * @param sessionId 会话 ID
+     * @param request   新标题
+     * @param userId    归属用户
+     * @param source    调用来源
+     * @return 会话数据
+     */
+    @PostMapping("/{sessionId}/rename")
+    public RenameSessionResp rename(@PathVariable Long sessionId,
+                                    @RequestBody RenameSessionReq request,
+                                    @RequestAttribute("lemon.userId") Long userId,
+                                    @RequestHeader(value = "X-Source", defaultValue = "web") String source) {
+        request.setSessionId(sessionId);
+        request.setUserId(userId);
+        request.fillRoute(source);
+        return optUtil.exec(request, new RenameSessionResp(), req -> {
+            AssertUtils.notBlank(req.getTitle(), "标题不能为空");
+            AssertUtils.isTrue(req.getTitle().length() <= 100, "标题不能超过 100 字符");
+        });
+    }
+
+    /**
+     * 删除会话（级联删除消息/事件/运行；有活跃运行时 409）。
+     *
+     * @param sessionId 会话 ID
+     * @param userId    归属用户
+     * @param source    调用来源
+     * @return 空数据成功响应
+     */
+    @PostMapping("/{sessionId}/delete")
+    public DeleteSessionResp delete(@PathVariable Long sessionId,
+                                    @RequestAttribute("lemon.userId") Long userId,
+                                    @RequestHeader(value = "X-Source", defaultValue = "web") String source) {
+        DeleteSessionReq request = new DeleteSessionReq();
+        request.setSessionId(sessionId);
+        request.setUserId(userId);
+        request.fillRoute(source);
+        return optUtil.exec(request, new DeleteSessionResp(), req ->
+                AssertUtils.notNull(req.getSessionId(), "会话 ID 不能为空"));
     }
 
     /**

@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   cancelRun,
   createRun,
   createSession,
+  deleteSession,
   fetchRunSnapshot,
   fetchSessionDetail,
   fetchSessions,
+  renameSession,
   streamRunEvents,
   submitApproval,
   type MessageItem,
@@ -14,6 +16,8 @@ import {
   type RuntimeEvent,
 } from '../api/runtime'
 import { ApiError } from '../api/client'
+import ConfirmDialog from '../components/ConfirmDialog'
+import Modal from '../components/Modal'
 import { ToastHost, toast } from '../components/Toast'
 
 /**
@@ -63,6 +67,8 @@ export default function Chat() {
   const [streaming, setStreaming] = useState(false)
   const [connected, setConnected] = useState(true)
   const [activeRunId, setActiveRunId] = useState<number | null>(null)
+  const [renaming, setRenaming] = useState<{ sessionId: number; title: string } | null>(null)
+  const [deleting, setDeleting] = useState<SessionItem | null>(null)
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
@@ -347,6 +353,40 @@ export default function Chat() {
     }
   }, [activeRunId, subscribe, reloadSessions])
 
+  const onRename = useCallback(async (e: FormEvent) => {
+    e.preventDefault()
+    if (!renaming) return
+    const title = renaming.title.trim()
+    if (!title) return
+    try {
+      await renameSession(renaming.sessionId, title)
+      toast('已重命名')
+      setRenaming(null)
+      await reloadSessions()
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '重命名失败')
+    }
+  }, [renaming, reloadSessions])
+
+  const onDelete = useCallback(async () => {
+    if (!deleting) return
+    try {
+      await deleteSession(deleting.sessionId)
+      toast('会话已删除')
+      const wasActive = activeSession === deleting.sessionId
+      setDeleting(null)
+      await reloadSessions()
+      if (wasActive) {
+        setActiveSession(null)
+        setBubbles([])
+        navigate('/chat', { replace: true })
+      }
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '删除失败')
+      setDeleting(null)
+    }
+  }, [deleting, activeSession, reloadSessions, navigate])
+
   const onSend = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
@@ -506,11 +546,53 @@ export default function Chat() {
             >
               {s.title}
               <span className="st">{s.messageCount} 条消息 · {s.lastActiveAt?.slice(0, 16).replace('T', ' ')}</span>
+              <span className="sess-actions" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="btn sm"
+                  title="重命名"
+                  onClick={() => setRenaming({ sessionId: s.sessionId, title: s.title })}
+                >
+                  ✏️
+                </button>
+                <button className="btn sm danger" title="删除" onClick={() => setDeleting(s)}>
+                  🗑
+                </button>
+              </span>
             </div>
           ))}
           {sessions.length === 0 && <div className="note gray">暂无会话</div>}
         </div>
       </div>
+      {renaming && (
+        <Modal title="重命名会话" onClose={() => setRenaming(null)}>
+          <form onSubmit={onRename}>
+            <div className="field">
+              <label>新标题</label>
+              <input
+                autoFocus
+                value={renaming.title}
+                onChange={(e) => setRenaming({ ...renaming, title: e.target.value })}
+                required
+                maxLength={100}
+              />
+            </div>
+            <div className="modal-btns">
+              <button type="button" className="btn" onClick={() => setRenaming(null)}>取消</button>
+              <button type="submit" className="btn primary">保存</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title="删除会话"
+          message={`确认删除会话「${deleting.title}」？其下全部消息、运行记录与事件将一并删除，不可恢复。`}
+          confirmText="删除"
+          onConfirm={onDelete}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
       <ToastHost />
     </>
   )

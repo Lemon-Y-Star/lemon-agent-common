@@ -152,3 +152,10 @@ tr:hover td{background:#fafbfe}
 .tool-call-card .tcc-res{font-size:11.5px;color:#475569;border-top:1px dashed #a7e6d2;padding-top:5px;line-height:1.7}
 .tool-call-card.approval .tcc-res{border-top-color:#c7d2fe}
 .tool-call-card .btns{margin-top:9px;display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---------- v2.4 会话管理（重命名/删除） ---------- */
+.sess-item{position:relative}
+.sess-item .sess-actions{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:none;gap:4px}
+.sess-item:hover .sess-actions{display:inline-flex}
+.sess-item .sess-actions .btn{padding:1px 6px;font-size:11px;border:none;background:transparent}
+.sess-item .sess-actions .btn:hover{background:#f3f4f6}

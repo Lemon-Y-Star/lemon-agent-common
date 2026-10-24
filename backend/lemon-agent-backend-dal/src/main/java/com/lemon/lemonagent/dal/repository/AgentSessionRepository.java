@@ -58,4 +58,22 @@ public interface AgentSessionRepository {
      */
     long messageCount(Long id);
 
+    /**
+     * 重命名会话。
+     *
+     * @param id    入参：会话 ID
+     * @param title 入参：新标题
+     * @return 出参：影响行数
+     */
+    int rename(Long id, String title);
+
+    /**
+     * 级联删除会话：消息 → 事件 → 运行 → 会话（同一数据源内按依赖顺序删除）。
+     *
+     * @param id     入参：会话 ID
+     * @param userId 入参：归属用户
+     * @return 出参：删除的会话行数（0 = 会话不存在或不属于该用户）
+     */
+    int deleteCascade(Long id, Long userId);
+
 }

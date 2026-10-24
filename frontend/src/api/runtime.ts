@@ -66,6 +66,16 @@ export async function fetchSessionDetail(sessionId: number): Promise<SessionDeta
   return get<SessionDetail>(`/agent/sessions/${sessionId}/messages`)
 }
 
+export async function renameSession(sessionId: number, title: string): Promise<{ sessionId: number }> {
+  const { post } = await import('./client')
+  return post<{ sessionId: number }>(`/agent/sessions/${sessionId}/rename`, { title })
+}
+
+export async function deleteSession(sessionId: number): Promise<null> {
+  const { post } = await import('./client')
+  return post<null>(`/agent/sessions/${sessionId}/delete`)
+}
+
 export async function createRun(params: {
   sessionId?: number
   input: string
