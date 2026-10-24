@@ -8,6 +8,9 @@ import {
   McpConnection,
   McpConnectionPayload,
 } from '../api/mcps'
+import ConfirmDialog from '../components/ConfirmDialog'
+import Switch from '../components/Switch'
+import { ToastHost, toast } from '../components/Toast'
 
 /**
  * MCP 连接管理（PRD FR-12）：平台公共连接（editable=false）只读展示，
@@ -34,16 +37,17 @@ const EMPTY_FORM: FormState = {
   enabled: true,
 }
 
-function transportBadge(type: string): string {
-  if (type === 'STDIO') return '本地进程'
-  if (type === 'STREAMABLE') return 'Streamable HTTP'
-  return 'SSE'
+function transportTag(type: string): { text: string; cls: string } {
+  if (type === 'STDIO') return { text: 'STDIO · 本地进程', cls: 'gray' }
+  if (type === 'STREAMABLE') return { text: 'STREAMABLE', cls: 'info' }
+  return { text: 'SSE', cls: 'info' }
 }
 
 export default function Mcps() {
   const [items, setItems] = useState<McpConnection[]>([])
   const [error, setError] = useState('')
   const [form, setForm] = useState<FormState | null>(null)
+  const [deleting, setDeleting] = useState<McpConnection | null>(null)
   const [busy, setBusy] = useState(false)
 
   const reload = useCallback(async () => {
@@ -80,15 +84,16 @@ export default function Mcps() {
     setError('')
   }
 
-  async function onDelete(conn: McpConnection) {
-    if (!window.confirm(`确认删除 MCP 连接「${conn.name}」？删除后不可恢复。`)) {
-      return
-    }
+  async function onDelete() {
+    if (!deleting) return
     try {
-      await deleteMcp(conn.id)
+      await deleteMcp(deleting.id)
+      toast('连接已删除')
+      setDeleting(null)
       await reload()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '删除失败，请稍后重试')
+      setDeleting(null)
     }
   }
 
@@ -111,6 +116,7 @@ export default function Mcps() {
       } else {
         await updateMcp(form.id, payload)
       }
+      toast(form.id === null ? '连接已创建' : '连接已更新')
       setForm(null)
       await reload()
     } catch (err) {
@@ -122,7 +128,7 @@ export default function Mcps() {
 
   function renderTable(list: McpConnection[], readonly: boolean) {
     return (
-      <table className="grid">
+      <table>
         <thead>
           <tr>
             <th>名称</th>
@@ -130,49 +136,50 @@ export default function Mcps() {
             <th>端点 / 命令</th>
             <th>密钥</th>
             <th>状态</th>
+            <th>版本</th>
             {readonly || <th>操作</th>}
           </tr>
         </thead>
         <tbody>
-          {list.map((conn) => (
-            <tr key={conn.id}>
-              <td>
-                {conn.name}
-                {conn.platformPublic && (
-                  <>
-                    {' '}
-                    <span className="badge plain">平台公共</span>
-                  </>
-                )}
-              </td>
-              <td>{transportBadge(conn.transportType)}</td>
-              <td className="muted">{conn.command ?? conn.url ?? '—'}</td>
-              <td>
-                {conn.hasSecret ? <span className="badge info">已配置</span> : <span className="badge plain">无</span>}
-              </td>
-              <td>
-                {conn.usable ? (
-                  <span className="badge ok">可用</span>
-                ) : (
-                  <span className="badge off">{conn.unavailableReason ?? '已停用'}</span>
-                )}
-              </td>
-              {readonly || (
-                <td style={{ whiteSpace: 'nowrap' }}>
-                  <button className="btn" onClick={() => openEdit(conn)}>
-                    编辑
-                  </button>{' '}
-                  <button className="btn danger" onClick={() => onDelete(conn)}>
-                    删除
-                  </button>
+          {list.map((conn) => {
+            const t = transportTag(conn.transportType)
+            return (
+              <tr key={conn.id}>
+                <td>{conn.name}</td>
+                <td>
+                  <span className={`tag ${t.cls}`}>{t.text}</span>
                 </td>
-              )}
-            </tr>
-          ))}
+                <td style={{ color: 'var(--muted)', wordBreak: 'break-all' }}>
+                  {conn.command ?? conn.url ?? '—'}
+                </td>
+                <td>
+                  {conn.hasSecret ? <span className="tag info">已配置</span> : <span className="tag gray">无</span>}
+                </td>
+                <td>
+                  {conn.usable ? (
+                    <span className="tag ok">可用</span>
+                  ) : (
+                    <span className="tag err">{conn.unavailableReason ?? '已停用'}</span>
+                  )}
+                </td>
+                <td style={{ color: 'var(--muted)' }}>v{conn.version}</td>
+                {readonly || (
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn sm" onClick={() => openEdit(conn)}>
+                      编辑
+                    </button>{' '}
+                    <button className="btn sm danger" onClick={() => setDeleting(conn)}>
+                      删除
+                    </button>
+                  </td>
+                )}
+              </tr>
+            )
+          })}
           {list.length === 0 && (
             <tr>
-              <td colSpan={6} className="muted">
-                暂无连接
+              <td colSpan={7}>
+                <div className="note gray">暂无连接</div>
               </td>
             </tr>
           )}
@@ -183,23 +190,32 @@ export default function Mcps() {
 
   return (
     <>
-      <h1 className="page-title">MCP 连接</h1>
-      <p className="page-desc muted">
-        平台公共连接由管理员预置、所有用户可用但不可修改；个人任务所需的自建连接在下方「我的 MCP 连接」维护。
-      </p>
+      <div className="page-head">
+        <div>
+          <h2>MCP 连接与工具</h2>
+          <div className="desc">
+            平台公共连接由管理员预置、所有用户可用但不可修改（unavailableReason 展示不可用原因）；
+            个人任务所需的自建连接在「我的 MCP 连接」维护，配置变更版本 +1。
+          </div>
+        </div>
+      </div>
 
       <div className="card">
-        <h2>平台公共 MCP（{platform.length} 个，不可编辑）</h2>
+        <h3>
+          平台公共 MCP <span className="sub">{platform.length} 个 · 不可编辑</span>
+        </h3>
         {renderTable(platform, true)}
       </div>
 
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-          <h2>我的 MCP 连接（{mine.length}）</h2>
-          <button className="btn primary" onClick={openCreate}>
-            ＋ 新建连接
-          </button>
-        </div>
+        <h3>
+          我的 MCP 连接 <span className="sub">{mine.length} 条</span>
+          <span style={{ marginLeft: 'auto' }}>
+            <button className="btn sm primary" onClick={openCreate}>
+              ＋ 添加连接
+            </button>
+          </span>
+        </h3>
         <p className="status-line" role="status">
           {error}
         </p>
@@ -207,11 +223,16 @@ export default function Mcps() {
       </div>
 
       {form && (
-        <div className="modal-mask" onClick={() => setForm(null)}>
+        <div className="mask" onClick={() => setForm(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{form.id === null ? '新建 MCP 连接' : `编辑连接：${form.name}`}</h3>
+            <h3>
+              {form.id === null ? '添加 MCP 连接' : `编辑连接：${form.name}`}
+              <span className="x" onClick={() => setForm(null)}>
+                ✕
+              </span>
+            </h3>
             <form onSubmit={onSubmit}>
-              <div className="field-row">
+              <div className="row">
                 <div className="field">
                   <label>连接名称 *</label>
                   <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
@@ -254,30 +275,37 @@ export default function Mcps() {
                 <input type="password" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} />
               </div>
               {form.id !== null && (
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={form.enabled}
-                    onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-                  />
+                <div className="switch-row">
+                  <Switch on={form.enabled} onChange={(on) => setForm({ ...form, enabled: on })} />
                   启用该连接
-                </label>
+                </div>
               )}
               <p className="status-line" role="status">
                 {error}
               </p>
-              <div className="modal-actions">
+              <div className="modal-btns">
                 <button type="button" className="btn" onClick={() => setForm(null)}>
                   取消
                 </button>
                 <button type="submit" className="btn primary" disabled={busy}>
-                  {busy ? '保存中…' : '保存'}
+                  {busy ? '保存中…' : '保存连接'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {deleting && (
+        <ConfirmDialog
+          title="删除 MCP 连接"
+          message={`确认删除 MCP 连接「${deleting.name}」？删除后不可恢复，绑定它的节点将无法再调用该服务。`}
+          confirmText="删除"
+          onConfirm={onDelete}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
+      <ToastHost />
     </>
   )
 }

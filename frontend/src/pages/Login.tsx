@@ -32,8 +32,12 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <div className="login-card">
-        <h1>🤖 LemonAgent 工作台</h1>
-        <p className="muted">登录后管理模型与 MCP 连接（对话与 Agent 搭建将于后续版本开放）</p>
+        <div className="logo-line">
+          <span className="dot">L</span>LemonAgent
+        </div>
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 24, lineHeight: 1.7 }}>
+          登录后管理模型与 MCP 连接（对话与 Agent 搭建将于后续版本开放）
+        </p>
         <form onSubmit={onSubmit}>
           <div className="field">
             <label>用户名</label>
@@ -54,12 +58,17 @@ export default function Login() {
               required
             />
           </div>
-          <button className="btn primary" type="submit" disabled={busy} style={{ width: '100%', justifyContent: 'center' }}>
+          <button
+            className="btn primary"
+            type="submit"
+            disabled={busy}
+            style={{ width: '100%', justifyContent: 'center', marginTop: 6 }}
+          >
             {busy ? '登录中…' : '登录'}
           </button>
-          <p className="status-line" role="status">
+          <div className="pwd-status err" role="status">
             {error}
-          </p>
+          </div>
         </form>
       </div>
     </div>
