@@ -31,7 +31,8 @@ export default function Layout() {
   const user = getStoredUser()
 
   const crumb =
-    location.pathname.startsWith('/models')
+    location.pathname.startsWith('/chat') ? '对话'
+      : location.pathname.startsWith('/models')
       ? '模型连接'
       : location.pathname.startsWith('/mcps')
         ? 'MCP 连接与工具'
@@ -55,7 +56,9 @@ export default function Layout() {
         </div>
         <div className="nav-group">
           <div className="gt">工作台</div>
-          <NavPending>💬 对话</NavPending>
+          <NavLink className="nav-item" to="/chat">
+            💬 对话
+          </NavLink>
           <NavPending>🤖 我的 Agent</NavPending>
           <NavLink className="nav-item" to="/models">
             🔌 模型连接

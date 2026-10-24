@@ -8,19 +8,21 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 | 版本 | 范围 | 状态 |
 |---|---|---|
 | v1（本版） | 平台基座：账号认证（登录 / 登出 / 身份 / 改密）+ 模型连接管理 + MCP 连接管理（平台公共 11 个预置 + 用户自建），React + TS 前端 | ✅ |
-| v2+ | 对话运行时（会话 / 运行 / SSE 事件流 / 审批 / 断线重连） | 规划中 |
+| v2.0（本版） | 对话运行时·纯对话：会话 / 运行 / SSE 事件流（seq 连续 + 断线重连）/ 取消 / 运行历史；Spring AI 2.0 流式（BYOK 防腐层） | ✅ |
+| v2.1 | 工具调用 + 审批挂起（demo_ticket 可见效果，BLOCKED 态 + approval 端点） | 规划中 |
 | v3+ | Agent 搭建（策略模板 / 节点编辑器 / 执行图） | 规划中 |
 
 ## 结构
 
 ```
 lemon-agent-common/
-├── backend/     # Java 21 + Spring Boot 4.1 + MySQL 8 + Flyway + Sa-Token，architecture 六模块 + dal
+├── backend/     # Java 21 + Spring Boot 4.1 + MySQL 8 + Flyway + Sa-Token，architecture 七模块（含 integration 模型防腐层）
 │   ├── model/         # 请求/响应/枚举，继承框架 BaseReq / BaseResult
 │   ├── util/          # AES-GCM 密钥加密、PBKDF2 口令哈希、密码策略（纯工具，带单测）
 │   ├── dal/           # 实体 + 仓储接口 + JDBC 实现（JdbcTemplate）
 │   ├── service-core/  # 领域服务：TokenStore、认证、模型连接、MCP 连接
 │   ├── service/       # @HandlerRoute 业务处理器（命令走框架路由链）
+│   ├── integration/   # Spring AI 2.0 流式模型适配（org.springframework.ai 只允许出现在此）
 │   ├── web/           # Controller + 框架全局异常装配
 │   └── bootstrap/     # 启动 + 认证拦截器 + Flyway 迁移 + 组合根配置
 └── frontend/    # React 18 + TypeScript + Vite（登录 / 账户 / 模型连接 / MCP 连接）
@@ -29,6 +31,19 @@ lemon-agent-common/
 命令型请求走框架标准链路：`req.fillRoute(source)` → `OptUtil.exec` → `RequestDispatcher` → `@HandlerRoute`
 处理器（幂等、校验、api 日志、异常收口由框架统一完成）；查询类直调领域服务；
 未认证请求由拦截器直接 HTTP 401。
+
+## v2.0 对话运行时实现要点（契约 API契约_Agent运行时 §4/§5）
+
+- **事件流三条铁律**：seq 在 run 内从 1 连续递增；先落库（UNIQUE(run_id,seq) 兜底）再推送；
+  终态事件必是最后一个 seq。`EventPublisher` 持 per-run 锁分配 seq，订阅按契约 §4.7 的
+  8 步处理（重放 → 注册 → ★补一轮消除空档），15s 心跳注释帧不占 seq。
+- **token 攒批**：40 字符 / 200ms 双阈值合并（BUILD-SPEC §5.5），写入从 300+ 次小事务降到 ~8 次；
+  重放粒度变粗但 `run_completed.outputText` 是权威正文、气泡以它覆盖。
+- **幂等与会话互斥**：`UNIQUE(user_id, client_request_id)` 命中返回原 run（duplicated=true）；
+  同会话并发 run → 409 SESSION_BUSY（data.activeRunId 带出）。
+- **模型防腐**：`ModelPort` 纯接口在 model，Spring AI 2.0 流式实现在 integration
+  （`org.springframework.ai.*` 与 Reactor 不出该模块）；模型按用户的 BYOK 连接构造。
+- **进程重启收口**：启动期把遗留 RUNNING/BLOCKED run 标 FAILED(INTERRUPTED)（契约 §6.2）。
 
 ## 启动
 
