@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   cancelRun,
   createRun,
@@ -50,8 +51,12 @@ const STRATEGIES = [
 ]
 
 export default function Chat() {
+  const params = useParams()
+  const navigate = useNavigate()
   const [sessions, setSessions] = useState<SessionItem[]>([])
-  const [activeSession, setActiveSession] = useState<number | null>(null)
+  const [activeSession, setActiveSession] = useState<number | null>(
+    params.sessionId ? Number(params.sessionId) : null)
+
   const [bubbles, setBubbles] = useState<Bubble[]>([])
   const [input, setInput] = useState('')
   const [strategy, setStrategy] = useState('auto')
@@ -82,6 +87,7 @@ export default function Chat() {
     }
   }, [reloadSessions])
 
+
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight })
   }, [bubbles])
@@ -94,6 +100,9 @@ export default function Chat() {
     try {
       const detail = await fetchSessionDetail(sessionId)
       setActiveSession(sessionId)
+      if (String(sessionId) !== params.sessionId) {
+        navigate(`/chat/${sessionId}`, { replace: true })
+      }
       setBubbles(detail.messages.map((m: MessageItem) => ({
         kind: 'msg' as const,
         role: m.role,
@@ -113,7 +122,7 @@ export default function Chat() {
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '会话加载失败')
     }
-  }, [streaming])
+  }, [streaming, params.sessionId, navigate])
 
 
   /** 失败/取消提示气泡：push 前查重（SSE 事件与快照兜底可能双路到达同一条消息）。 */
@@ -280,6 +289,16 @@ export default function Chat() {
     abortRef.current = handle
   }, [streaming, activeRunId, reloadSessions, startBlockedPolling])
 
+  // 路由带 sessionId 时（刷新/深链），自动定位回原会话并恢复消息与运行
+  const initialSessionRef = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (initialSessionRef.current !== undefined) return
+    initialSessionRef.current = params.sessionId ?? null
+    if (params.sessionId) {
+      void openSession(Number(params.sessionId))
+    }
+  }, [params.sessionId, openSession, reloadSessions])
+
   const onCancel = useCallback(async () => {
     if (!activeRunId) return
     // 契约 4.9 前端顺序：先通知后端，收到响应后再 abort 本地 SSE
@@ -343,6 +362,7 @@ export default function Chat() {
       })
       if (!activeSession) {
         setActiveSession(run.sessionId)
+        navigate(`/chat/${run.sessionId}`, { replace: true })
       }
       setActiveRunId(run.runId)
       lastSeqRef.current = run.lastSeq

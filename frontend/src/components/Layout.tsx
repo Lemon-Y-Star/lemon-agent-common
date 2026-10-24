@@ -35,8 +35,10 @@ export default function Layout() {
       : location.pathname.startsWith('/models')
       ? '模型连接'
       : location.pathname.startsWith('/mcps')
-        ? 'MCP 连接与工具'
-        : '开始使用与账户'
+      ? 'MCP 连接与工具'
+      : location.pathname.startsWith('/runs')
+      ? '运行历史'
+      : '开始使用与账户'
 
   async function onLogout() {
     try {
@@ -69,7 +71,9 @@ export default function Layout() {
         </div>
         <div className="nav-group">
           <div className="gt">运行与产物</div>
-          <NavPending>🕘 运行历史</NavPending>
+          <NavLink className="nav-item" to="/runs">
+            🕘 运行历史
+          </NavLink>
           <NavPending>📦 产物与反馈</NavPending>
           <NavPending>🧪 我的评测</NavPending>
         </div>

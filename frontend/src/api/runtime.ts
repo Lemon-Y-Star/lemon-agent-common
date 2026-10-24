@@ -99,6 +99,8 @@ export interface RunSnapshot {
     expiresAt?: string
   } | null
   usage?: { inputTokens: number; outputTokens: number } | null
+  startedAt?: string | null
+  endedAt?: string | null
 }
 
 export async function fetchRunSnapshot(runId: number): Promise<RunSnapshot> {

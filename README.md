@@ -9,7 +9,8 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 |---|---|---|
 | v1（本版） | 平台基座：账号认证（登录 / 登出 / 身份 / 改密）+ 模型连接管理 + MCP 连接管理（平台公共 11 个预置 + 用户自建），React + TS 前端 | ✅ |
 | v2.0（本版） | 对话运行时·纯对话：会话 / 运行 / SSE 事件流（seq 连续 + 断线重连）/ 取消 / 运行历史；Spring AI 2.0 流式（BYOK 防腐层） | ✅ |
-| v2.1 | 工具调用 + 审批挂起（demo_ticket 可见效果，BLOCKED 态 + approval 端点） | 规划中 |
+| v2.1 | 工具调用 + 审批挂起（demo_ticket 可见效果，BLOCKED 态 + approval 端点） | ✅ |
+| v2.2（本版） | 会话深链路由（/chat/:sessionId 刷新定位）+ 运行历史页（FR-18.5 左列表右详情） | ✅ |
 | v3+ | Agent 搭建（策略模板 / 节点编辑器 / 执行图） | 规划中 |
 
 ## 结构
