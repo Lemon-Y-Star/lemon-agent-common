@@ -16,12 +16,24 @@ lemon:
   # 连接密钥的 AES-256 加密密钥（Base64 32 字节）；生产从环境变量/密管系统注入，禁止提交真实值
   crypto:
     secret: ${LEMON_CRYPTO_SECRET:Y9tV2wK7qFzP3mXaR8uE5sB1nC6dH0jL4gT2yVoQxZk=}
-  auth:
-    token-ttl-hours: 8
   model-conn:
     # baseUrl 主机白名单（PRD FR-13 allowedHosts）；逗号分隔
     allowed-hosts: api.siliconflow.cn,api.deepseek.com,api.openai.com,dashscope.aliyuncs.com,apis.itedus.cn,api.shuaiapi.com,localhost,127.0.0.1
     auxiliary-purposes: 路由、规划及摘要等辅助对话,知识索引与检索向量,重排
+
+# 登录会话：Sa-Token
+# token-name=Authorization + token-prefix=Bearer：与前端「Authorization: Bearer <token>」约定对齐，
+# 前端与拦截器代码不感知 Sa-Token 的默认 satoken 头
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 28800          # 8 小时有效
+  active-timeout: -1      # 不做"无操作过期"（v1 语义：固定时长）
+  is-concurrent: true     # 允许同一账号多端同时在线
+  is-share: false         # 每次登录签发新令牌（不共享旧令牌）
+  is-read-cookie: false   # v1 纯 Header 传输，不写 Cookie
+  token-style: uuid
+  is-log: true
 
 logging:
   level:

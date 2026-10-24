@@ -17,6 +17,7 @@
     <description>AI Agent 应用脚手架：多模块分层结构（bootstrap / model / util / service-core / service / web）</description>
 
     <properties>
+        <sa-token.version>1.46.0</sa-token.version>
         <java.version>21</java.version>
         <maven.compiler.release>21</maven.compiler.release>
         <mapstruct.version>1.6.3</mapstruct.version>
@@ -112,6 +113,14 @@
             <!-- https://github.com/spring-ai-community/spring-ai-agent-utils
                  SkillsTool 技能包装配；选 0.13.0：其依赖 spring-ai-client-chat 2.0.1，与本项目 Spring AI 对齐
                  （0.4.2 及更早版本面向 Spring AI 1.x，不可用） -->
+            <!-- 登录会话：Sa-Token（Boot 4 官方适配线）；token-name=Authorization + prefix=Bearer，
+                 与前端 Authorization: Bearer 约定对齐 -->
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-spring-boot4-starter</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+
             <dependency>
                 <groupId>org.springaicommunity</groupId>
                 <artifactId>spring-ai-agent-utils</artifactId>

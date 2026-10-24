@@ -15,7 +15,7 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 
 ```
 lemon-agent-common/
-├── backend/     # Java 21 + Spring Boot 4.1 + MySQL 8 + Flyway，architecture 六模块 + dal
+├── backend/     # Java 21 + Spring Boot 4.1 + MySQL 8 + Flyway + Sa-Token，architecture 六模块 + dal
 │   ├── model/         # 请求/响应/枚举，继承框架 BaseReq / BaseResult
 │   ├── util/          # AES-GCM 密钥加密、PBKDF2 口令哈希、密码策略（纯工具，带单测）
 │   ├── dal/           # 实体 + 仓储接口 + JDBC 实现（JdbcTemplate）
@@ -45,6 +45,9 @@ cd frontend && npm install && npm run dev
 
 ## 第一版实现要点
 
+- **会话**：登录会话由 **Sa-Token**（Boot 4 适配线 1.46.0）管理——`token-name=Authorization` +
+  `token-prefix=Bearer` 与前端约定对齐，`TokenStore` 端口的 Sa-Token 实现收口在组合根，
+  多实例部署时换 Redis 存储源即可，认证链路其余代码不动。
 - **口令**：PBKDF2WithHmacSHA256（21 万轮、随机盐）；新密码策略与 PRD FR-2.4 校验链同口径
   （≥10 位、UTF-8 ≤72 字节——汉字按字节计），前后端双重校验，策略单测覆盖边界。
 - **连接密钥**：AES-256-GCM 加密落库，启动期注入密钥（`lemon.crypto.secret`，缺失即启动失败）；

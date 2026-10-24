@@ -35,6 +35,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!-- 登录会话：Sa-Token（版本由根 pom dependencyManagement 管理 1.46.0） -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-spring-boot4-starter</artifactId>
+        </dependency>
         <!-- 持久化：MySQL 8 + Flyway（v1 仅三张管理表，运行时表后续切片再加） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
