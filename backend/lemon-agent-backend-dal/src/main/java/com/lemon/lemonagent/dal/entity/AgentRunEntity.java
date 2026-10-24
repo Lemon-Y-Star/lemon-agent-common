@@ -47,6 +47,12 @@ public class AgentRunEntity {
     /** BLOCKED 态审批快照 JSON（kind/approvalId/toolName/args/riskLevel/expiresAt） */
     private String pendingApprovalJson;
 
+    /** 计划快照 JSON（plan 策略；步骤数组，含 title/detail/status/output） */
+    private String planJson;
+
+    /** 当前计划步骤下标（0 起；等于步骤数表示计划已跑完） */
+    private Integer planStep;
+
     /** 输入 tokens */
     private Integer inputTokens;
 

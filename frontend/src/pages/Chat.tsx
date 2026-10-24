@@ -31,7 +31,7 @@ import { ToastHost, toast } from '../components/Toast'
  */
 
 interface Bubble {
-  kind: 'msg' | 'tool' | 'approval'
+  kind: 'msg' | 'tool' | 'approval' | 'plan'
   role?: 'USER' | 'ASSISTANT'
   content?: string
   runId?: number
@@ -46,13 +46,13 @@ interface Bubble {
   // 审批卡
   approvalId?: string
   decided?: 'APPROVE' | 'REJECT'
+  // 计划卡（plan 策略）
+  planSteps?: { title: string; status: string }[]
 }
 
 const STRATEGIES = [
   { value: 'auto', label: 'auto（自主迭代）' },
-  { value: 'fixed', label: 'fixed（未开放）' },
-  { value: 'flow', label: 'flow（未开放）' },
-  { value: 'custom', label: 'custom（未开放）' },
+  { value: 'plan', label: 'plan（先规划再执行）' },
 ]
 
 export default function Chat() {
@@ -224,6 +224,33 @@ export default function Chat() {
             }
             return next
           })
+        } else if (ev.type === 'plan_created') {
+          const raw = (ev.payload.steps ?? []) as { index: number; title: string }[]
+          setBubbles((prev) => [...prev, {
+            kind: 'plan',
+            runId,
+            planSteps: raw.map((x) => ({ title: String(x.title ?? ''), status: 'PENDING' })),
+          }])
+        } else if (ev.type === 'step_started') {
+          const idx = Number(ev.payload.stepIndex ?? 0)
+          setBubbles((prev) => prev.map((b) => (
+            b.kind === 'plan' && b.runId === runId && b.planSteps
+              ? {
+                  ...b,
+                  planSteps: b.planSteps.map((st, i) => (
+                    i === idx ? { ...st, status: 'RUNNING' }
+                      : i < idx && st.status !== 'DONE' ? { ...st, status: 'DONE' } : st
+                  )),
+                }
+              : b
+          )))
+        } else if (ev.type === 'step_completed') {
+          const idx = Number(ev.payload.stepIndex ?? 0)
+          setBubbles((prev) => prev.map((b) => (
+            b.kind === 'plan' && b.runId === runId && b.planSteps
+              ? { ...b, planSteps: b.planSteps.map((st, i) => (i === idx ? { ...st, status: 'DONE' } : st)) }
+              : b
+          )))
         } else if (ev.type === 'tool_call') {
           setBubbles((prev) => [...prev, {
             kind: 'tool',
@@ -449,6 +476,25 @@ export default function Chat() {
   }, [streaming, reloadSessions])
 
   function renderBubble(b: Bubble, i: number) {
+    if (b.kind === 'plan') {
+      const done = (b.planSteps ?? []).filter((x) => x.status === 'DONE').length
+      return (
+        <div key={i} className="plan-card">
+          <div className="plan-head">
+            🗺️ 执行计划
+            <span className="tag info">{done}/{b.planSteps?.length ?? 0} 步完成</span>
+          </div>
+          <ol className="plan-steps">
+            {(b.planSteps ?? []).map((st, idx) => (
+              <li key={idx} className={`plan-step ${st.status === 'DONE' ? 'done' : st.status === 'RUNNING' ? 'run' : ''}`}>
+                <span className="plan-idx">{st.status === 'DONE' ? '✓' : st.status === 'RUNNING' ? '▶' : idx + 1}</span>
+                <span>{st.title}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )
+    }
     if (b.kind === 'tool') {
       return (
         <div key={i} className={`tool-call-card ${b.resultDone && !b.resultOk ? 'err' : ''}`}>

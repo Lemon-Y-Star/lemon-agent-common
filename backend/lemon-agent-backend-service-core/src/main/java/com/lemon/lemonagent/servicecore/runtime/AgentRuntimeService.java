@@ -330,6 +330,9 @@ public class AgentRuntimeService {
         Map<String, Object> pending = parsePending(run.getPendingApprovalJson());
         data.setPendingApproval(pending.isEmpty() ? null : pending);
         data.setGraph(null);
+        // plan 策略：刷新页面后仍能看到计划与进度（auto 策略为 null）
+        data.setPlan(PlanCodec.decode(run.getPlanJson()));
+        data.setPlanStep(run.getPlanStep());
         if (run.getInputTokens() != null || run.getOutputTokens() != null) {
             com.lemon.lemonagent.model.runtime.RunDetailData.Usage usage =
                     new com.lemon.lemonagent.model.runtime.RunDetailData.Usage();

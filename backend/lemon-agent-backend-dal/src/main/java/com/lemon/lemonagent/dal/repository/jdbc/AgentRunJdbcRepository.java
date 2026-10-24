@@ -24,7 +24,8 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
 
     private static final String COLUMNS =
             "id, session_id, agent_id, user_id, client_request_id, status, strategy, trace_id, last_seq, "
-                    + "output_text, error_code, error_msg, pending_approval_json, input_tokens, output_tokens, started_at, ended_at, created_at, updated_at";
+                    + "output_text, error_code, error_msg, pending_approval_json, plan_json, plan_step, "
+                    + "input_tokens, output_tokens, started_at, ended_at, created_at, updated_at";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -46,6 +47,8 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
             e.setErrorCode(rs.getString("error_code"));
             e.setErrorMsg(rs.getString("error_msg"));
             e.setPendingApprovalJson(rs.getString("pending_approval_json"));
+            e.setPlanJson(rs.getString("plan_json"));
+            e.setPlanStep(rs.getInt("plan_step"));
             e.setInputTokens((Integer) rs.getObject("input_tokens"));
             e.setOutputTokens((Integer) rs.getObject("output_tokens"));
             e.setStartedAt(toInstant(rs.getTimestamp("started_at")));
@@ -194,6 +197,12 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     public int clearPendingApproval(Long id) {
         return jdbcTemplate.update(
                 "UPDATE agent_run SET pending_approval_json = NULL WHERE id = ?", id);
+    }
+
+    @Override
+    public int savePlan(Long id, String planJson, int planStep) {
+        return jdbcTemplate.update(
+                "UPDATE agent_run SET plan_json = ?, plan_step = ? WHERE id = ?", planJson, planStep, id);
     }
 
     @Override

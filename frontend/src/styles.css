@@ -166,3 +166,15 @@ tr:hover td{background:#fafbfe}
 .list-item{display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid var(--border)}
 .list-item:hover{background:#f6f7fb}
 .list-item:last-child{border-bottom:none}
+
+/* ---------- v3.1 计划卡（plan 策略） ---------- */
+.plan-card{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#f7f8fd;margin:6px 0}
+.plan-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#3b3f52}
+.plan-steps{margin:8px 0 0;padding-left:0;list-style:none;display:grid;gap:6px}
+.plan-step{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--muted)}
+.plan-step .plan-idx{width:18px;height:18px;border-radius:50%;background:#e8eaf3;color:#6b7089;
+  display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-top:1px}
+.plan-step.run{color:#2b2f3f;font-weight:600}
+.plan-step.run .plan-idx{background:var(--primary);color:#fff}
+.plan-step.done{color:#4b5563}
+.plan-step.done .plan-idx{background:#dcfce7;color:#15803d}

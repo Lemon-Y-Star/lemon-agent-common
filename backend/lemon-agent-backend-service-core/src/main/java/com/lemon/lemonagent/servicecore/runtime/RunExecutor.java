@@ -9,6 +9,8 @@ import com.lemon.lemonagent.dal.repository.AgentMessageRepository;
 import com.lemon.lemonagent.dal.repository.AgentRunRepository;
 import com.lemon.lemonagent.dal.repository.ModelConnectionRepository;
 import com.lemon.lemonagent.model.runtime.ModelPort;
+import com.lemon.lemonagent.model.runtime.PlanStepData;
+import com.lemon.lemonagent.model.runtime.Strategy;
 import com.lemon.lemonagent.model.runtime.RunStatus;
 import com.lemon.lemonagent.model.runtime.RuntimeEventType;
 import com.lemon.lemonagent.util.crypto.CryptoUtil;
@@ -50,6 +52,21 @@ public class RunExecutor {
     private static final long FLUSH_EVERY_MILLIS = 200;
     private static final int HISTORY_WINDOW = 20;
     private static final int MAX_TOOL_ROUNDS = 5;
+
+    /** 计划步骤上限（plan 策略）：再多就不是「计划」而是流水账，且每次运行的成本线性增长。 */
+    private static final int MAX_PLAN_STEPS = 6;
+
+    /** 规划阶段追加到 Agent 人格之后的约束：只输出 JSON，便于解析。 */
+    /**
+     * 规划阶段专用 system prompt：<b>不掺 Agent 人格</b>——人格里常带"调用 xx 工具"的话术，
+     * 会诱导规划器写成散文或提前替用户干活。这里只要一件事：按 JSON 给步骤。
+     */
+    private static final String PLANNER_PROMPT = "你是任务规划器。把用户任务拆成 2..5 个可执行步骤，"
+            + "每步一句话、动词开头、彼此不重复、各自能独立完成。"
+            + "只输出一个 JSON 对象：第一个字符是 {，最后一个字符是 }；不要标题、不要编号列表、不要解释、"
+            + "不要 Markdown 代码块。格式："
+            + "{\"steps\":[{\"title\":\"查询服务器当前时间\",\"detail\":\"调用时间工具\"},"
+            + "{\"title\":\"判断上午还是下午\",\"detail\":\"根据小时数下结论\"}]}";
 
     private final AgentRunRepository runRepository;
 
@@ -161,46 +178,362 @@ public class RunExecutor {
      * @param depth             入参：工具轮次（防无限循环，上限 MAX_TOOL_ROUNDS）
      */
     private void runLoop(AgentRunEntity run, List<String> continuationNotes, int depth) {
+        // plan-execute：先规划再逐步执行；工具审批恢复后也回到这里，按库里的 plan_step 接着跑
+        if (Strategy.PLAN.wireName().equals(run.getStrategy())) {
+            planLoop(run, continuationNotes, depth);
+            return;
+        }
         Long runId = run.getId();
+        AgentConfigEntity agent = agentOf(run);
+        List<String> allowedTools = allowedToolsOf(agent);
 
-        // ① 模型连接：优先 Agent 绑定的连接；未绑定则用用户最新启用的 BYOK 连接
-        AgentConfigEntity agent = run.getAgentId() == null ? null : agentConfigRepository.findById(run.getAgentId());
-        // 工具白名单：null = 全部工具（v2.5 及更早数据、或显式全选）
-        List<String> allowedTools = agent == null ? null : AgentToolCodec.decode(agent.getToolsJson());
-        log.info("run {} 挂载 agentId={} -> {} · 工具白名单={}", runId, run.getAgentId(),
-                agent == null ? "平台默认提示词" : "Agent[" + agent.getName() + "] v" + agent.getVersion(),
-                allowedTools == null ? "全部" : allowedTools);
         ModelConnectionEntity conn = resolveConnection(run, agent);
         if (conn == null || conn.getApiKeyCipher() == null) {
             failIfStillRunning(runId, "MODEL_ERROR", "尚未配置启用的模型连接，请先在「模型连接」页添加并启用。");
             return;
         }
-
-        // ② 会话历史：末条是本轮 USER 输入；其余为上下文（最近 20 条窗口）
-        List<AgentMessageEntity> history = messageRepository.findBySession(run.getSessionId(), run.getUserId());
-        if (history.isEmpty()) {
+        List<ModelPort.Msg> context = historyContext(run);
+        String userInput = lastUserInput(run);
+        if (context == null || userInput == null) {
             failIfStillRunning(runId, "MODEL_ERROR", "会话内没有用户消息，无法发起运行。");
             return;
         }
-        String userInput = history.get(history.size() - 1).getContent();
-        List<ModelPort.Msg> context = new ArrayList<>();
-        history.stream()
-                .limit(Math.max(0, history.size() - 1))
-                .skip(Math.max(0, history.size() - 1 - HISTORY_WINDOW))
-                .forEach(m -> context.add(new ModelPort.Msg(m.getRole(), m.getContent())));
         // 工具结果作为合成上下文补充在历史之后（恢复路径的关键输入）
         continuationNotes.forEach(note -> context.add(new ModelPort.Msg("USER", "[系统] " + note)));
 
-        String apiKey = CryptoUtil.decrypt(conn.getApiKeyCipher());
         List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                 ? toolRegistry.specs(allowedTools) : List.of();
-        String prompt = agent != null && agent.getInstruction() != null && !agent.getInstruction().isBlank()
-                ? agent.getInstruction() : systemPrompt;
-        ModelPort.ModelRequest request = new ModelPort.ModelRequest(
-                conn.getBaseUrl(), apiKey, resolveModel(conn),
-                prompt, context, userInput, tools);
+        TurnResult turn = streamTurn(runId, conn, instructionOf(agent), context, userInput, tools, 0, true);
 
-        // ③ 流式执行 + token 攒批 + 工具调用拦截
+        // ④ 分支：工具调用（挂起或直执行） vs 文本完成
+        if (turn.toolCalls() != null) {
+            // 中场发言落库（模型调工具前输出的文本，恢复后仍在上下文里）
+            if (!turn.text().isEmpty()) {
+                insertAssistantMessage(run, turn.text(), runId);
+            }
+            handleToolCalls(run, turn.toolCalls(), continuationNotes, depth, allowedTools);
+            return;
+        }
+
+        // ⑤ 终态收口：finish 先行（只对 RUNNING 生效的幂等闸），成功才补终态事件与 ASSISTANT 消息
+        if (isTerminal(run)) {
+            return;
+        }
+        String outputText = turn.text();
+        if (turn.completed()) {
+            int rows = runRepository.finish(runId, RunStatus.COMPLETED.name(),
+                    outputText, null, null, (int) turn.inputTokens(), (int) turn.outputTokens());
+            if (rows > 0) {
+                appendEvent(runId, RuntimeEventType.RUN_COMPLETED, objectMapper.writeValueAsString(Map.of(
+                        "runId", runId,
+                        "outputText", outputText,
+                        "usage", Map.of("inputTokens", turn.inputTokens(), "outputTokens", turn.outputTokens()),
+                        "ts", System.currentTimeMillis())));
+                insertAssistantMessage(run, outputText, runId);
+            }
+        } else {
+            failIfStillRunning(runId, "MODEL_ERROR", "模型调用失败，请检查模型配置。");
+        }
+    }
+
+    /**
+     * plan-execute 主流程（v3.1）：没有计划就先规划（一次模型调用，不给工具），然后逐步执行。
+     *
+     * <p><b>无内存态</b>：计划与步骤游标都落在 {@code agent_run.plan_json / plan_step}，
+     * 工具审批挂起后 {@code resumeApproved} 重新进入本方法，从当前步骤继续；进程重启同理。</p>
+     *
+     * @param run   入参：运行实体（含 strategy=plan）
+     * @param notes 入参：工具结果等合成上下文（审批恢复时非空 = 当前步骤重跑）
+     * @param depth 入参：工具轮次
+     */
+    private void planLoop(AgentRunEntity run, List<String> notes, int depth) {
+        Long runId = run.getId();
+        AgentConfigEntity agent = agentOf(run);
+        List<String> allowedTools = allowedToolsOf(agent);
+        ModelConnectionEntity conn = resolveConnection(run, agent);
+        if (conn == null || conn.getApiKeyCipher() == null) {
+            failIfStillRunning(runId, "MODEL_ERROR", "尚未配置启用的模型连接，请先在「模型连接」页添加并启用。");
+            return;
+        }
+        String userInput = lastUserInput(run);
+        if (userInput == null) {
+            failIfStillRunning(runId, "MODEL_ERROR", "会话内没有用户消息，无法发起运行。");
+            return;
+        }
+
+        // ① 计划：库里没有就先规划（规划只读文本，不给工具——顺带绕开「带 tools 丢 system」的渠道差异）
+        List<PlanStepData> plan = PlanCodec.decode(run.getPlanJson());
+        if (plan == null) {
+            plan = createPlan(run, conn, agent, userInput);
+            if (plan == null) {
+                return;
+            }
+            run.setPlanJson(PlanCodec.encode(plan));
+            run.setPlanStep(0);
+            runRepository.savePlan(runId, run.getPlanJson(), 0);
+            List<Map<String, Object>> brief = new java.util.ArrayList<>();
+            for (PlanStepData step : plan) {
+                brief.add(Map.of("index", step.getIndex(), "title", step.getTitle()));
+            }
+            appendEvent(runId, RuntimeEventType.PLAN_CREATED, objectMapper.writeValueAsString(Map.of(
+                    "steps", brief,
+                    "total", plan.size(),
+                    "ts", System.currentTimeMillis())));
+            log.info("run {} 计划已生成，共 {} 步：{}", runId, plan.size(),
+                    plan.stream().map(PlanStepData::getTitle).toList());
+        }
+
+        int total = plan.size();
+        int stepIndex = run.getPlanStep() == null ? 0 : run.getPlanStep();
+
+        // ② 逐步执行：每步一次模型调用；工具调用走统一决策（可能挂起，恢复后回到本方法）
+        for (; stepIndex < total; stepIndex++) {
+            if (isTerminal(run)) {
+                return;
+            }
+            PlanStepData step = plan.get(stepIndex);
+            boolean resumedStep = !notes.isEmpty();
+            if (!resumedStep) {
+                appendEvent(runId, RuntimeEventType.STEP_STARTED, objectMapper.writeValueAsString(Map.of(
+                        "stepIndex", stepIndex,
+                        "title", step.getTitle(),
+                        "total", total,
+                        "ts", System.currentTimeMillis())));
+            }
+            step.setStatus("RUNNING");
+
+            List<ModelPort.Msg> context = historyContext(run);
+            if (context == null) {
+                failIfStillRunning(runId, "MODEL_ERROR", "会话内没有用户消息，无法发起运行。");
+                return;
+            }
+            // 已完成步骤的产出作为上下文（不落消息表，避免计划中间产物污染后续对话）
+            for (int i = 0; i < stepIndex; i++) {
+                PlanStepData done = plan.get(i);
+                context.add(new ModelPort.Msg("ASSISTANT",
+                        "[第" + (i + 1) + "步：" + done.getTitle() + "] " + (done.getOutput() == null ? "" : done.getOutput())));
+            }
+            notes.forEach(note -> context.add(new ModelPort.Msg("USER", "[系统] " + note)));
+
+            String prompt = stepPrompt(instructionOf(agent), step, stepIndex, total);
+            String stepInput = stepInput(step, stepIndex, userInput);
+            List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
+                    ? toolRegistry.specs(allowedTools) : List.of();
+            TurnResult turn = streamTurn(runId, conn, prompt, context, stepInput, tools, stepIndex, true);
+
+            if (turn.toolCalls() != null) {
+                // 工具调用：挂起（BLOCKED）或直接执行后重新进入（runLoop 会回到 planLoop 同一 step）
+                handleToolCalls(run, turn.toolCalls(), notes, depth, allowedTools);
+                return;
+            }
+            if (!turn.completed()) {
+                failIfStillRunning(runId, "MODEL_ERROR", "模型调用失败，请检查模型配置。");
+                return;
+            }
+
+            // ③ 步骤完成：计划快照（含产出与用量）+ 游标一起落库，再发事件
+            step.setStatus("DONE");
+            step.setOutput(turn.text());
+            step.setInputTokens(turn.inputTokens());
+            step.setOutputTokens(turn.outputTokens());
+            run.setPlanJson(PlanCodec.encode(plan));
+            run.setPlanStep(stepIndex + 1);
+            runRepository.savePlan(runId, run.getPlanJson(), stepIndex + 1);
+            appendEvent(runId, RuntimeEventType.STEP_COMPLETED, objectMapper.writeValueAsString(Map.of(
+                    "stepIndex", stepIndex,
+                    "title", step.getTitle(),
+                    "outputText", turn.text(),
+                    "usage", Map.of("inputTokens", turn.inputTokens(), "outputTokens", turn.outputTokens()),
+                    "ts", System.currentTimeMillis())));
+            notes.clear();
+            log.info("run {} 第 {}/{} 步完成：{}", runId, stepIndex + 1, total, step.getTitle());
+        }
+
+        // ④ 汇总收口：正文 = 各步骤产出拼装（run_completed.outputText 仍是权威正文）
+        long totalIn = 0;
+        long totalOut = 0;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < total; i++) {
+            PlanStepData step = plan.get(i);
+            totalIn += step.getInputTokens();
+            totalOut += step.getOutputTokens();
+            sb.append("### 第").append(i + 1).append("步：").append(step.getTitle()).append("\n")
+                    .append(step.getOutput() == null ? "" : step.getOutput()).append("\n\n");
+        }
+        String outputText = sb.toString().trim();
+        int rows = runRepository.finish(runId, RunStatus.COMPLETED.name(),
+                outputText, null, null, (int) totalIn, (int) totalOut);
+        if (rows > 0) {
+            appendEvent(runId, RuntimeEventType.RUN_COMPLETED, objectMapper.writeValueAsString(Map.of(
+                    "runId", runId,
+                    "outputText", outputText,
+                    "usage", Map.of("inputTokens", totalIn, "outputTokens", totalOut),
+                    "ts", System.currentTimeMillis())));
+            insertAssistantMessage(run, outputText, runId);
+        }
+    }
+
+    /**
+     * 规划：一次模型调用产出 2..5 步计划。
+     *
+     * @return 出参：步骤列表；解析失败退化成「单步完成用户请求」，模型调用失败返回 null（调用方已收口）
+     */
+    private List<PlanStepData> createPlan(AgentRunEntity run, ModelConnectionEntity conn,
+                                          AgentConfigEntity agent, String userInput) {
+        List<ModelPort.Msg> context = historyContext(run);
+        if (context == null) {
+            context = new ArrayList<>();
+        }
+        String toolsNote = allowedToolsOf(agent) == null ? "全部工具" : String.valueOf(allowedToolsOf(agent));
+        TurnResult turn = streamTurn(run.getId(), conn, PLANNER_PROMPT, context,
+                "用户任务：" + userInput + "\n可用工具：" + toolsNote + "\n请给出执行计划。",
+                List.of(), -1, false);
+        if (!turn.completed() || turn.toolCalls() != null) {
+            failIfStillRunning(run.getId(), "MODEL_ERROR", "规划阶段模型调用失败，请重试或改用 auto 策略。");
+            return null;
+        }
+        List<PlanStepData> plan = parsePlan(turn.text(), userInput);
+        if (plan == null) {
+            return null;
+        }
+        return plan;
+    }
+
+    /** 宽松解析计划 JSON：剥代码块 → 取首个 {..} → 读 steps；失败返回单步兜底（永不让运行失败）。 */
+    private List<PlanStepData> parsePlan(String raw, String userInput) {
+        List<PlanStepData> steps = new ArrayList<>();
+        try {
+            String json = raw == null ? "" : raw.trim();
+            int begin = json.indexOf('{');
+            int end = json.lastIndexOf('}');
+            if (begin >= 0 && end > begin) {
+                json = json.substring(begin, end + 1);
+            }
+            Map<String, Object> root = objectMapper.readValue(json, Map.class);
+            Object rawSteps = root.get("steps");
+            if (rawSteps instanceof List<?> list) {
+                for (Object item : list) {
+                    if (!(item instanceof Map<?, ?> map)) {
+                        continue;
+                    }
+                    Object title = map.get("title");
+                    if (title == null || String.valueOf(title).isBlank()) {
+                        continue;
+                    }
+                    PlanStepData step = new PlanStepData();
+                    step.setIndex(steps.size());
+                    step.setTitle(String.valueOf(title).trim());
+                    Object detail = map.get("detail");
+                    step.setDetail(detail == null ? "" : String.valueOf(detail).trim());
+                    step.setStatus("PENDING");
+                    step.setOutput("");
+                    steps.add(step);
+                    if (steps.size() >= MAX_PLAN_STEPS) {
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("计划 JSON 解析失败，尝试按行解析：{}", e.getMessage());
+        }
+        if (steps.isEmpty()) {
+            // 模型没按 JSON 输出时，退一步按「1. xxx / - xxx」的行结构解析（比直接单步兜底可用得多）
+            steps = parsePlanLines(raw);
+        }
+        if (steps.isEmpty()) {
+            // 兜底：模型没按格式给计划时，把整件事当一个步骤，保证运行不失败
+            PlanStepData fallback = new PlanStepData();
+            fallback.setIndex(0);
+            fallback.setTitle("完成用户请求");
+            fallback.setDetail(userInput == null ? "" : userInput);
+            fallback.setStatus("PENDING");
+            fallback.setOutput("");
+            steps.add(fallback);
+        }
+        return steps;
+    }
+
+    /**
+     * 按行解析计划（JSON 失败时的兜底）：识别「1. / 1) / 1、/ - / * / • / Step 1:」等前缀，
+     * 去 Markdown 强调符号；标题超长截断。返回空列表表示没解析出可用步骤。
+     */
+    private List<PlanStepData> parsePlanLines(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return new ArrayList<>();
+        }
+        List<String> numbered = new ArrayList<>();
+        List<String> bulleted = new ArrayList<>();
+        for (String line : raw.split("\\r?\\n")) {
+            String text = line.trim();
+            if (text.isEmpty() || text.startsWith("#") || text.startsWith("```")) {
+                continue;
+            }
+            if (text.matches("^\\d+[.、)]\\s*.*")) {
+                numbered.add(text.replaceFirst("^\\d+[.、)]\\s*", ""));
+            } else if (text.matches("^[-*•]\\s*.*")) {
+                bulleted.add(text.replaceFirst("^[-*•]\\s*", ""));
+            }
+        }
+        // 有编号就用编号（散文里的补充说明通常不带编号）；否则退到项目符号
+        List<String> picked = numbered.size() >= 2 ? numbered : (bulleted.size() >= 2 ? bulleted : List.of());
+        List<PlanStepData> steps = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (String rawItem : picked) {
+            String cleaned = rawItem.replace("**", "").replace("__", "").replace("`", "").trim();
+            // 过滤条件句、说明句、以冒号结尾的小标题——这些不是"可执行步骤"
+            if (cleaned.length() < 4 || cleaned.endsWith("：") || cleaned.endsWith(":")
+                    || cleaned.startsWith("若") || cleaned.startsWith("如果") || cleaned.startsWith("说明")
+                    || !seen.add(cleaned)) {
+                continue;
+            }
+            PlanStepData step = new PlanStepData();
+            step.setIndex(steps.size());
+            step.setTitle(cleaned.length() > 60 ? cleaned.substring(0, 60) : cleaned);
+            step.setDetail("");
+            step.setStatus("PENDING");
+            step.setOutput("");
+            steps.add(step);
+            if (steps.size() >= MAX_PLAN_STEPS) {
+                break;
+            }
+        }
+        // 少于 2 步说明没解析出真正的计划：宁可退化成单步，也不要拿一堆碎句当步骤
+        return steps.size() >= 2 ? steps : new ArrayList<>();
+    }
+
+    /** 步骤执行的 system prompt：Agent 人格 + 当前步骤边界。 */
+    private String stepPrompt(String base, PlanStepData step, int index, int total) {
+        return base + "\n\n【执行阶段】你正在执行计划的第 " + (index + 1) + "/" + total + " 步："
+                + step.getTitle() + "。只完成这一步，不要复述整个计划，不要提前做后面的步骤。";
+    }
+
+    /** 步骤执行的用户输入：步骤指令 + 用户原始请求（保留目标上下文）。 */
+    private String stepInput(PlanStepData step, int index, String userInput) {
+        String detail = step.getDetail() == null || step.getDetail().isBlank()
+                ? "" : "（要点：" + step.getDetail() + "）";
+        return "请执行第 " + (index + 1) + " 步：" + step.getTitle() + detail
+                + "\n用户原始请求：" + userInput;
+    }
+
+    /** 单轮模型输出结果（runLoop 与 planLoop 共用的流式单元）。 */
+    private record TurnResult(String text, List<ModelPort.ModelToolCall> toolCalls,
+                              long inputTokens, long outputTokens, boolean completed) {
+    }
+
+    /**
+     * 跑一轮模型流式调用：攒批 token、收集工具调用与用量。
+     *
+     * @param stepIndex  入参：计划步骤下标（auto 策略恒 0；规划阶段 -1 不推送 token）
+     * @param emitTokens 入参：是否推送 token 事件（规划阶段不推，避免把计划 JSON 直接喷进气泡）
+     * @return 出参：本轮结果
+     */
+    private TurnResult streamTurn(Long runId, ModelConnectionEntity conn, String systemPrompt,
+                                  List<ModelPort.Msg> context, String userInput,
+                                  List<ModelPort.ToolSpec> tools, int stepIndex, boolean emitTokens) {
+        String apiKey = CryptoUtil.decrypt(conn.getApiKeyCipher());
+        ModelPort.ModelRequest request = new ModelPort.ModelRequest(
+                conn.getBaseUrl(), apiKey, resolveModel(conn), systemPrompt, context, userInput, tools);
+
         StringBuilder fullOutput = new StringBuilder();
         StringBuilder tokenBuf = new StringBuilder();
         long[] lastFlushAt = {System.currentTimeMillis()};
@@ -216,11 +549,14 @@ public class RunExecutor {
                     throw new IllegalStateException("RUN_CANCELLED");
                 }
                 fullOutput.append(delta);
+                if (!emitTokens) {
+                    return;
+                }
                 tokenBuf.append(delta);
                 boolean byChars = tokenBuf.length() >= FLUSH_EVERY_CHARS;
                 boolean byTime = System.currentTimeMillis() - lastFlushAt[0] >= FLUSH_EVERY_MILLIS;
                 if (byChars || byTime) {
-                    flushToken(runId, tokenBuf);
+                    flushToken(runId, tokenBuf, stepIndex);
                     lastFlushAt[0] = System.currentTimeMillis();
                 }
             }
@@ -246,37 +582,50 @@ public class RunExecutor {
                 log.debug("模型流错误 runId={}: {}", runId, error.getMessage());
             }
         });
+        if (emitTokens) {
+            flushToken(runId, tokenBuf, stepIndex);
+        }
+        return new TurnResult(fullOutput.toString(), toolCallsHolder[0], usage[0], usage[1], completed[0]);
+    }
 
-        // ④ 分支：工具调用（挂起或直执行） vs 文本完成
-        if (toolCallsHolder[0] != null) {
-            flushToken(runId, tokenBuf);
-            // 中场发言落库（模型调工具前输出的文本，恢复后仍在上下文里）
-            if (!fullOutput.isEmpty()) {
-                insertAssistantMessage(run, fullOutput.toString(), runId);
-            }
-            handleToolCalls(run, toolCallsHolder[0], continuationNotes, depth, allowedTools);
-            return;
-        }
+    /** 挂载 Agent（按 run.agent_id 回查；日志留一条，排障入口）。 */
+    private AgentConfigEntity agentOf(AgentRunEntity run) {
+        AgentConfigEntity agent = run.getAgentId() == null
+                ? null : agentConfigRepository.findById(run.getAgentId());
+        List<String> allowed = allowedToolsOf(agent);
+        log.info("run {} 挂载 agentId={} -> {} · 工具白名单={}", run.getId(), run.getAgentId(),
+                agent == null ? "平台默认提示词" : "Agent[" + agent.getName() + "] v" + agent.getVersion(),
+                allowed == null ? "全部" : allowed);
+        return agent;
+    }
 
-        // ⑤ 终态收口：finish 先行（只对 RUNNING 生效的幂等闸），成功才补终态事件与 ASSISTANT 消息
-        if (isTerminal(run)) {
-            return;
+    private List<String> allowedToolsOf(AgentConfigEntity agent) {
+        return agent == null ? null : AgentToolCodec.decode(agent.getToolsJson());
+    }
+
+    private String instructionOf(AgentConfigEntity agent) {
+        return agent != null && agent.getInstruction() != null && !agent.getInstruction().isBlank()
+                ? agent.getInstruction() : systemPrompt;
+    }
+
+    /** 会话历史上下文（不含最后一条用户输入；最近 HISTORY_WINDOW 条）。会话为空返回 null。 */
+    private List<ModelPort.Msg> historyContext(AgentRunEntity run) {
+        List<AgentMessageEntity> history = messageRepository.findBySession(run.getSessionId(), run.getUserId());
+        if (history.isEmpty()) {
+            return null;
         }
-        String outputText = fullOutput.toString();
-        if (completed[0]) {
-            int rows = runRepository.finish(runId, RunStatus.COMPLETED.name(),
-                    outputText, null, null, (int) usage[0], (int) usage[1]);
-            if (rows > 0) {
-                appendEvent(runId, RuntimeEventType.RUN_COMPLETED, objectMapper.writeValueAsString(Map.of(
-                        "runId", runId,
-                        "outputText", outputText,
-                        "usage", Map.of("inputTokens", usage[0], "outputTokens", usage[1]),
-                        "ts", System.currentTimeMillis())));
-                insertAssistantMessage(run, outputText, runId);
-            }
-        } else {
-            failIfStillRunning(runId, "MODEL_ERROR", "模型调用失败，请检查模型配置。");
-        }
+        List<ModelPort.Msg> context = new ArrayList<>();
+        history.stream()
+                .limit(Math.max(0, history.size() - 1))
+                .skip(Math.max(0, history.size() - 1 - HISTORY_WINDOW))
+                .forEach(m -> context.add(new ModelPort.Msg(m.getRole(), m.getContent())));
+        return context;
+    }
+
+    /** 本轮最后一条用户输入。会话为空返回 null。 */
+    private String lastUserInput(AgentRunEntity run) {
+        List<AgentMessageEntity> history = messageRepository.findBySession(run.getSessionId(), run.getUserId());
+        return history.isEmpty() ? null : history.get(history.size() - 1).getContent();
     }
 
     /** 工具调用决策：名单内挂起等审批，名单外直接执行进下一轮；未授权工具在执行前兜底拦截。 */
@@ -388,14 +737,14 @@ public class RunExecutor {
         messageRepository.insert(assistant);
     }
 
-    private void flushToken(Long runId, StringBuilder buf) {
+    private void flushToken(Long runId, StringBuilder buf, int stepIndex) {
         if (buf.isEmpty()) {
             return;
         }
         appendEvent(runId, RuntimeEventType.TOKEN, objectMapper.writeValueAsString(Map.of(
                 "delta", buf.toString(),
                 "index", 0,
-                "stepIndex", 0)));
+                "stepIndex", Math.max(stepIndex, 0))));
         buf.setLength(0);
     }
 

@@ -38,6 +38,12 @@ public class RunDetailData {
     /** 执行图快照（custom 策略；本增量恒 null） */
     private Object graph;
 
+    /** 计划快照（plan 策略；auto 策略恒 null） */
+    private java.util.List<PlanStepData> plan;
+
+    /** 当前计划步骤下标（0 起；等于步骤数表示已完成） */
+    private Integer planStep;
+
     /** 用量（run_completed 后有值） */
     private Usage usage;
 

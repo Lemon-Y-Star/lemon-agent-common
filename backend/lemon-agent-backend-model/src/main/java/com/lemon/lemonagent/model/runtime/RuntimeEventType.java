@@ -14,6 +14,15 @@ public enum RuntimeEventType {
     /** 决定调用工具：{callId, toolName, args, riskLevel, stepIndex, ts} */
     TOOL_CALL("tool_call"),
 
+    /** 计划已生成（plan 策略）：{steps:[{index,title}], total, ts} */
+    PLAN_CREATED("plan_created"),
+
+    /** 计划步骤开始：{stepIndex, title, total, ts} */
+    STEP_STARTED("step_started"),
+
+    /** 计划步骤完成：{stepIndex, title, outputText, usage:{inputTokens,outputTokens}, ts} */
+    STEP_COMPLETED("step_completed"),
+
     /** 工具返回：{callId, ok, durationMs, resultBrief, resultChars, ts} */
     TOOL_RESULT("tool_result"),
 

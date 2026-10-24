@@ -127,6 +127,16 @@ public interface AgentRunRepository {
     int clearPendingApproval(Long id);
 
     /**
+     * 保存计划快照与步骤游标（plan 策略）：计划生成后写一次，每步完成后覆盖一次。
+     *
+     * @param id       入参：运行 ID
+     * @param planJson 入参：计划快照 JSON
+     * @param planStep 入参：当前步骤下标（0 起）
+     * @return 出参：影响行数
+     */
+    int savePlan(Long id, String planJson, int planStep);
+
+    /**
      * 按状态查运行（审批超时扫描用）。
      *
      * @param status 入参：状态
