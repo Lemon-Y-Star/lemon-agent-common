@@ -81,6 +81,39 @@ export async function cancelRun(runId: number): Promise<{ runId: number; status:
   return post<{ runId: number; status: string; lastSeq: number }>(`/agent/runs/${runId}/cancel`)
 }
 
+export interface RunSnapshot {
+  runId: number
+  sessionId: number
+  status: string
+  strategy: string
+  traceId: string
+  lastSeq: number
+  errorCode?: string | null
+  errorMsg?: string | null
+  pendingApproval?: {
+    kind: string
+    approvalId: string
+    toolName?: string
+    args?: Record<string, unknown>
+    riskLevel: string
+    expiresAt?: string
+  } | null
+  usage?: { inputTokens: number; outputTokens: number } | null
+}
+
+export async function fetchRunSnapshot(runId: number): Promise<RunSnapshot> {
+  const { get } = await import('./client')
+  return get<RunSnapshot>(`/agent/runs/${runId}`)
+}
+
+export async function submitApproval(
+  runId: number,
+  params: { approvalId: string; decision: 'APPROVE' | 'REJECT'; comment?: string },
+): Promise<{ runId: number; status: string; lastSeq: number }> {
+  const { post } = await import('./client')
+  return post<{ runId: number; status: string; lastSeq: number }>(`/agent/runs/${runId}/approval`, params)
+}
+
 /** SSE 事件（seq 去重后的载荷）。 */
 export interface RuntimeEvent {
   seq: number
@@ -98,6 +131,8 @@ export function streamRunEvents(params: {
   afterEventId: number
   onEvent: (ev: RuntimeEvent) => void
   onError: (err: Error) => void
+  /** 服务端把流读完了（正常结束/终态 complete/BLOCKED 挂起断流），连接已关闭 */
+  onDone?: () => void
 }): { abort: () => void } {
   const controller = new AbortController()
 
@@ -124,7 +159,10 @@ export function streamRunEvents(params: {
 
     for (;;) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done) {
+        params.onDone?.()
+        break
+      }
       buffer += decoder.decode(value, { stream: true })
       // SSE 帧以空行分隔；按行解析 id/event/data 三元组
       const blocks = buffer.split('\n\n')

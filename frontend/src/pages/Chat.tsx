@@ -3,26 +3,43 @@ import {
   cancelRun,
   createRun,
   createSession,
+  fetchRunSnapshot,
   fetchSessionDetail,
   fetchSessions,
   streamRunEvents,
+  submitApproval,
   type MessageItem,
   type SessionItem,
+  type RuntimeEvent,
 } from '../api/runtime'
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
 
 /**
- * 对话运行时（v2）：会话侧栏 + 消息区 + SSE 流式气泡。
+ * 对话运行时（v2）：会话侧栏 + 消息区 + SSE 流式气泡 + 工具调用与审批。
  *
  * 前端消费规则（契约 §5.3）：seq 去重、空洞立即以 lastSeq 重连补齐、
  * run_completed 的 outputText 覆盖气泡（§5.7 权威正文）；取消先调后端再 abort 本地流。
+ * 审批流（v2.1）：approval_required 事件弹出审批卡（服务端同时 complete SSE），
+ * BLOCKED 期间轮询运行快照（5s）感知超时；批准/拒绝提交后以 lastSeq 重连续流。
  */
 
 interface Bubble {
-  role: 'USER' | 'ASSISTANT'
-  content: string
+  kind: 'msg' | 'tool' | 'approval'
+  role?: 'USER' | 'ASSISTANT'
+  content?: string
   runId?: number
+  // 工具卡
+  callId?: string
+  toolName?: string
+  args?: Record<string, unknown>
+  riskLevel?: string
+  resultBrief?: string
+  resultOk?: boolean
+  resultDone?: boolean
+  // 审批卡
+  approvalId?: string
+  decided?: 'APPROVE' | 'REJECT'
 }
 
 const STRATEGIES = [
@@ -45,6 +62,7 @@ export default function Chat() {
   const bodyRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
   const lastSeqRef = useRef(0)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const reloadSessions = useCallback(async () => {
     try {
@@ -57,12 +75,13 @@ export default function Chat() {
     }
   }, [])
 
-  // 进入页面：拉会话列表；无会话不自动创建（首次发送时懒创建）
   useEffect(() => {
     void reloadSessions()
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
   }, [reloadSessions])
 
-  // 消息区自动滚底
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight })
   }, [bubbles])
@@ -76,6 +95,7 @@ export default function Chat() {
       const detail = await fetchSessionDetail(sessionId)
       setActiveSession(sessionId)
       setBubbles(detail.messages.map((m: MessageItem) => ({
+        kind: 'msg' as const,
         role: m.role,
         content: m.content,
         runId: m.runId ?? undefined,
@@ -85,7 +105,7 @@ export default function Chat() {
       if (running) {
         setActiveRunId(running.runId)
         lastSeqRef.current = running.lastSeq
-        setBubbles((prev) => [...prev, { role: 'ASSISTANT', content: '', runId: running.runId }])
+        setStreaming(true)
         subscribe(running.runId)
       } else {
         setActiveRunId(null)
@@ -95,13 +115,50 @@ export default function Chat() {
     }
   }, [streaming])
 
-  /** 订阅事件流：去重 → 空洞重连 → 终态收口。 */
+  function finishRun() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    setStreaming(false)
+    setActiveRunId(null)
+  }
+
+  /** BLOCKED 期间轮询运行快照：感知审批超时（→ FAILED）或审批完成（→ RUNNING 续流）。 */
+  const startBlockedPolling = useCallback((runId: number) => {
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(async () => {
+      try {
+        const snap = await fetchRunSnapshot(runId)
+        if (snap.status === 'RUNNING') {
+          if (pollRef.current) clearInterval(pollRef.current)
+          pollRef.current = null
+          // 审批已通过并续跑：以服务端 lastSeq 重连续流
+          lastSeqRef.current = snap.lastSeq
+          setConnected(true)
+          subscribe(runId)
+        } else if (snap.status === 'FAILED' || snap.status === 'CANCELLED' || snap.status === 'TIMEOUT') {
+          if (pollRef.current) clearInterval(pollRef.current)
+          pollRef.current = null
+          const msg = snap.errorMsg ?? snap.errorCode ?? '运行已结束'
+          setBubbles((prev) => [...prev,
+            { kind: 'msg', role: 'ASSISTANT', content: `⚠️ ${msg}`, runId }])
+          setStreaming(false)
+          setActiveRunId(null)
+        }
+      } catch {
+        // 轮询失败静默重试
+      }
+    }, 5000)
+  }, [])
+
+  /** 订阅事件流：去重 → 空洞重连 → 终态/挂起收口。 */
   const subscribe = useCallback((runId: number) => {
     setConnected(true)
     const handle = streamRunEvents({
       runId,
       afterEventId: lastSeqRef.current,
-      onEvent: (ev) => {
+      onEvent: (ev: RuntimeEvent) => {
         // 去重 + 空洞自检（契约 §5.3 的 acceptEvent）
         if (ev.seq <= lastSeqRef.current) return
         if (ev.seq !== lastSeqRef.current + 1) {
@@ -115,58 +172,87 @@ export default function Chat() {
           const delta = String(ev.payload.delta ?? '')
           setBubbles((prev) => {
             const next = [...prev]
-            const lastBubble = next[next.length - 1]
-            if (lastBubble && lastBubble.role === 'ASSISTANT' && lastBubble.runId === runId) {
-              next[next.length - 1] = { ...lastBubble, content: lastBubble.content + delta }
+            const last = next[next.length - 1]
+            if (last && last.kind === 'msg' && last.role === 'ASSISTANT' && last.runId === runId) {
+              next[next.length - 1] = { ...last, content: last.content + delta }
+            } else {
+              next.push({ kind: 'msg', role: 'ASSISTANT', content: delta, runId })
             }
             return next
           })
+        } else if (ev.type === 'tool_call') {
+          setBubbles((prev) => [...prev, {
+            kind: 'tool',
+            runId,
+            callId: String(ev.payload.callId ?? ''),
+            toolName: String(ev.payload.toolName ?? ''),
+            args: (ev.payload.args ?? {}) as Record<string, unknown>,
+            riskLevel: String(ev.payload.riskLevel ?? 'LOW'),
+          }])
+        } else if (ev.type === 'approval_required') {
+          setBubbles((prev) => [...prev, {
+            kind: 'approval',
+            runId,
+            approvalId: String(ev.payload.approvalId ?? ''),
+            toolName: String(ev.payload.toolName ?? ''),
+            args: (ev.payload.args ?? {}) as Record<string, unknown>,
+            riskLevel: String(ev.payload.riskLevel ?? 'HIGH'),
+          }])
+          // 服务端已 complete SSE（BLOCKED 挂起）→ 启动快照轮询感知超时
+          startBlockedPolling(runId)
+        } else if (ev.type === 'tool_result') {
+          const callId = String(ev.payload.callId ?? '')
+          setBubbles((prev) => prev.map((b) => (
+            b.kind === 'tool' && b.callId === callId
+              ? { ...b, resultBrief: String(ev.payload.resultBrief ?? ''), resultOk: !!ev.payload.ok, resultDone: true }
+              : b
+          )))
+        } else if (ev.type === 'approval_resolved') {
+          const approvalId = String(ev.payload.approvalId ?? '')
+          const decision = String(ev.payload.decision ?? '')
+          setBubbles((prev) => prev.map((b) => (
+            b.kind === 'approval' && b.approvalId === approvalId
+              ? { ...b, decided: decision === 'APPROVE' ? 'APPROVE' : 'REJECT' }
+              : b
+          )))
         } else if (ev.type === 'run_completed') {
-          // 权威正文覆盖（§5.7）
+          // 权威正文覆盖（§5.7）：只覆盖最后一条 ASSISTANT 文本气泡
           const outputText = String(ev.payload.outputText ?? '')
           setBubbles((prev) => {
             const next = [...prev]
-            const lastBubble = next[next.length - 1]
-            if (lastBubble && lastBubble.role === 'ASSISTANT' && lastBubble.runId === runId) {
-              next[next.length - 1] = { ...lastBubble, content: outputText }
+            for (let i = next.length - 1; i >= 0; i--) {
+              const b = next[i]
+              if (b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId) {
+                next[i] = { ...b, content: outputText }
+                break
+              }
             }
             return next
           })
-          setStreaming(false)
-          setActiveRunId(null)
+          finishRun()
           void reloadSessions()
         } else if (ev.type === 'run_failed') {
           const errorMsg = String(ev.payload.errorMsg ?? ev.payload.errorCode ?? '运行失败')
-          setBubbles((prev) => {
-            const next = [...prev]
-            const lastBubble = next[next.length - 1]
-            if (lastBubble && lastBubble.role === 'ASSISTANT' && lastBubble.runId === runId) {
-              next[next.length - 1] = { ...lastBubble, content: `⚠️ ${errorMsg}` }
-            }
-            return next
-          })
-          setStreaming(false)
-          setActiveRunId(null)
+          setBubbles((prev) => [...prev, { kind: 'msg', role: 'ASSISTANT', content: `⚠️ ${errorMsg}`, runId }])
+          finishRun()
           void reloadSessions()
         } else if (ev.type === 'run_cancelled') {
-          setStreaming(false)
-          setActiveRunId(null)
+          finishRun()
         }
       },
       onError: (err) => {
         // 连接中断：以 lastSeq 重连续流（断线重连是常态路径，不是异常路径）
         if (!streaming) return
         setConnected(false)
-        setTimeout(() => {
-          if (activeRunId === runId || lastSeqRef.current > 0) {
-            subscribe(runId)
-          }
-        }, 1200)
+        setTimeout(() => subscribe(runId), 1200)
         toast(err.message)
+      },
+      onDone: () => {
+        // 服务端 complete 了流：终态（正常收口）或 BLOCKED 挂起（approval_required 已启动轮询）
       },
     })
     abortRef.current = handle
-  }, [streaming, activeRunId, reloadSessions])
+  }, [streaming, activeRunId, reloadSessions, startBlockedPolling])
 
   const onCancel = useCallback(async () => {
     if (!activeRunId) return
@@ -178,17 +264,50 @@ export default function Chat() {
       toast(err instanceof ApiError ? err.message : '取消失败')
     } finally {
       abortRef.current?.abort()
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
       setStreaming(false)
       setActiveRunId(null)
     }
   }, [activeRunId])
+
+  const onApproval = useCallback(async (bubble: Bubble, decision: 'APPROVE' | 'REJECT') => {
+    if (!bubble.approvalId || !activeRunId) return
+    try {
+      const result = await submitApproval(activeRunId, {
+        approvalId: bubble.approvalId,
+        decision,
+      })
+      toast(decision === 'APPROVE' ? '已批准，任务继续执行' : '已拒绝')
+      // 停掉 BLOCKED 轮询；以响应里的 lastSeq 重连续流（REJECT → FAILED 走快照兜底）
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+      if (result.status === 'RUNNING') {
+        lastSeqRef.current = result.lastSeq
+        setConnected(true)
+        subscribe(activeRunId)
+      } else {
+        const snap = await fetchRunSnapshot(activeRunId)
+        setBubbles((prev) => [...prev,
+          { kind: 'msg', role: 'ASSISTANT', content: `⚠️ ${snap.errorMsg ?? '任务已终止'}`, runId: activeRunId }])
+        finishRun()
+        void reloadSessions()
+      }
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '审批提交失败')
+    }
+  }, [activeRunId, subscribe, reloadSessions])
 
   const onSend = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
     setStreaming(true)
     setInput('')
-    setBubbles((prev) => [...prev, { role: 'USER', content: text }, { role: 'ASSISTANT', content: '' }])
+    setBubbles((prev) => [...prev, { kind: 'msg', role: 'USER', content: text }])
     try {
       const run = await createRun({
         sessionId: activeSession ?? undefined,
@@ -201,15 +320,6 @@ export default function Chat() {
       }
       setActiveRunId(run.runId)
       lastSeqRef.current = run.lastSeq
-      // runId 挂到刚创建的 ASSISTANT 气泡上，随后订阅事件流
-      setBubbles((prev) => {
-        const next = [...prev]
-        const lastBubble = next[next.length - 1]
-        if (lastBubble && lastBubble.role === 'ASSISTANT') {
-          next[next.length - 1] = { ...lastBubble, runId: run.runId }
-        }
-        return next
-      })
       subscribe(run.runId)
       void reloadSessions()
     } catch (err) {
@@ -217,14 +327,7 @@ export default function Chat() {
       const message = err instanceof ApiError
         ? (err.code === 'SESSION_BUSY' ? '该会话已有正在执行的运行，请等待完成或取消' : err.message)
         : '发起运行失败'
-      setBubbles((prev) => {
-        const next = [...prev]
-        const lastBubble = next[next.length - 1]
-        if (lastBubble && lastBubble.role === 'ASSISTANT' && lastBubble.content === '') {
-          next[next.length - 1] = { ...lastBubble, content: `⚠️ ${message}` }
-        }
-        return next
-      })
+      setBubbles((prev) => [...prev, { kind: 'msg', role: 'ASSISTANT', content: `⚠️ ${message}` }])
     }
   }, [input, streaming, activeSession, strategy, subscribe, reloadSessions])
 
@@ -240,13 +343,52 @@ export default function Chat() {
     toast('新会话已创建')
   }, [streaming, reloadSessions])
 
+  function renderBubble(b: Bubble, i: number) {
+    if (b.kind === 'tool') {
+      return (
+        <div key={i} className={`tool-call-card ${b.resultDone && !b.resultOk ? 'err' : ''}`}>
+          <div className="tcc-head">
+            🔧 调用工具 {b.toolName}
+            <span className={`tag ${b.riskLevel === 'HIGH' ? 'err' : 'info'}`}>{b.riskLevel === 'HIGH' ? '高风险 · 需审批' : '只读'}</span>
+          </div>
+          <div className="tcc-args">{JSON.stringify(b.args)}</div>
+          {b.resultDone && <div className="tcc-res">{b.resultOk ? '✅ ' : '❌ '}{b.resultBrief}</div>}
+        </div>
+      )
+    }
+    if (b.kind === 'approval') {
+      return (
+        <div key={i} className="tool-call-card approval">
+          <div className="tcc-head">🛡️ 审批请求：{b.toolName} <span className="tag err">{b.riskLevel}</span></div>
+          <div className="tcc-args">{JSON.stringify(b.args)}</div>
+          <div className="tcc-res">该工具会改变外部状态（写入演示工单表），需要你确认后才会执行。</div>
+          {b.decided ? (
+            <div className="tcc-res">已处理：{b.decided === 'APPROVE' ? '✅ 已批准' : '❌ 已拒绝'}</div>
+          ) : (
+            <div className="btns">
+              <button className="btn sm primary" onClick={() => onApproval(b, 'APPROVE')}>批准执行</button>
+              <button className="btn sm danger" onClick={() => onApproval(b, 'REJECT')}>拒绝</button>
+            </div>
+          )}
+        </div>
+      )
+    }
+    return (
+      <div key={i} className={`msg ${b.role === 'USER' ? 'user' : 'ai'}`}>
+        <div className="mk">{b.role === 'USER' ? '🧑' : '🤖'}</div>
+        <div className="bubble">{b.content || (streaming ? '…' : '')}</div>
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="page-head">
         <div>
           <h2>对话运行时</h2>
           <div className="desc">
-            流式驱动执行。SSE 用 fetch + ReadableStream 手工解析（可带鉴权头），断线以 afterEventId 重连补齐。
+            流式驱动执行。SSE 用 fetch + ReadableStream 手工解析（可带鉴权头），断线以 afterEventId 重连补齐；
+            高风险工具（创建工单）会挂起等待审批。
           </div>
         </div>
       </div>
@@ -276,15 +418,11 @@ export default function Chat() {
           <div className="chat-body" ref={bodyRef}>
             {bubbles.length === 0 && (
               <div className="note gray">
-                选择左侧会话或直接在下方输入发起对话（首次发送会自动创建会话）。运行前请先在「模型连接」页配置并启用的个人连接。
+                选择左侧会话或直接在下方输入发起对话。试试说「帮我创建一个工单，标题是 xxx，优先级 P1」——
+                高风险写操作会弹出审批卡。
               </div>
             )}
-            {bubbles.map((b, i) => (
-              <div key={i} className={`msg ${b.role === 'USER' ? 'user' : 'ai'}`}>
-                <div className="mk">{b.role === 'USER' ? '🧑' : '🤖'}</div>
-                <div className="bubble">{b.content || (streaming ? '…' : '')}</div>
-              </div>
-            ))}
+            {bubbles.map((b, i) => renderBubble(b, i))}
           </div>
           <div className="chat-input">
             <div className="rowline">
