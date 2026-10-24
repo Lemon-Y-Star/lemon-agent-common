@@ -76,7 +76,7 @@ public class RunExecutor {
                        ModelPort modelPort,
                        EventPublisher eventPublisher,
                        ToolRegistry toolRegistry,
-                       @Value("${lemon.runtime.system-prompt:你是 LemonAgent 平台的智能助手，请用中文、简洁准确地回答用户的问题。你可以使用提供的工具完成任务；需要创建工单时调用 create_ticket 工具。}") String systemPrompt,
+                       @Value("${lemon.runtime.system-prompt:你是 LemonAgent 平台的智能助手，请用中文、简洁准确地回答用户的问题。你可以使用提供的工具完成任务；需要创建工单时调用 create_ticket 工具；涉及平台知识的问题先调用 search_docs 检索。当 search_docs 返回的 hits 为空时，必须直说文档中没有相关内容，不得基于自身知识编造。}") String systemPrompt,
                        @Value("${lemon.runtime.approval-timeout-seconds:300}") long approvalTimeoutSeconds) {
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;

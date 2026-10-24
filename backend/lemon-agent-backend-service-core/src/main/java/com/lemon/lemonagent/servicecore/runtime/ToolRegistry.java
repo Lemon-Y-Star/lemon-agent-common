@@ -1,6 +1,7 @@
 package com.lemon.lemonagent.servicecore.runtime;
 
 import com.lemon.lemonagent.model.runtime.ModelPort;
+import com.lemon.lemonagent.model.runtime.RetrievalPort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -56,16 +57,45 @@ public class ToolRegistry {
         }
     }
 
-    private final Map<String, ToolHandler> tools;
+    private final Map<String, ToolHandler> fixedTools;
+
+    /** 检索工具（可空：embedding 未配置时不注册，对话不受影响）。 */
+    private final ToolHandler searchDocsTool;
 
     private final JdbcTemplate jdbcTemplate;
 
     public ToolRegistry(JdbcTemplate jdbcTemplate,
+                        RetrievalPort retrievalPort,
                         @Value("${agent.tools.approval-required:create_ticket}") String approvalList) {
         this.jdbcTemplate = jdbcTemplate;
         List<String> needsApproval = List.of(approvalList.split(",")).stream()
                 .map(String::trim).toList();
-        this.tools = Map.of(
+        this.searchDocsTool = retrievalPort.available() ? new ToolHandler(new ModelPort.ToolSpec(
+                "search_docs",
+                "检索平台知识库文档（只读工具，不改变任何外部状态）。当用户的问题可能涉及平台文档、"
+                        + "架构设计、接口约定或操作流程时，先调用本工具检索再回答。",
+                "{\"type\":\"object\",\"properties\":{"
+                        + "\"query\":{\"type\":\"string\",\"description\":\"检索语句\"},"
+                        + "\"topK\":{\"type\":\"integer\",\"description\":\"召回条数，默认 5，最大 10\"}},"
+                        + "\"required\":[\"query\"]}"),
+                needsApproval.contains("search_docs"),
+                args -> {
+                    String query = String.valueOf(args.getOrDefault("query", ""));
+                    int topK = Integer.parseInt(String.valueOf(args.getOrDefault("topK", "5")));
+                    List<RetrievalPort.Hit> hits = retrievalPort.search(query, topK);
+                    // 空召回显式 {hits:[]}（AC-25 第一道闸）：不抛异常、不兜底
+                    List<Map<String, Object>> hitMaps = hits.stream()
+                            .map(h -> {
+                                Map<String, Object> m = new java.util.LinkedHashMap<>();
+                                m.put("title", h.title());
+                                m.put("snippet", h.snippet());
+                                m.put("score", Math.round(h.score() * 1000.0) / 1000.0);
+                                return m;
+                            })
+                            .collect(java.util.stream.Collectors.toList());
+                    return Map.of("hits", (Object) hitMaps);
+                }) : null;
+        this.fixedTools = Map.of(
                 "current_time", new ToolHandler(new ModelPort.ToolSpec(
                         "current_time",
                         "获取服务器当前时间（只读工具，不改变任何外部状态）。",
@@ -89,14 +119,23 @@ public class ToolRegistry {
      * @return 出参：工具清单
      */
     public List<ModelPort.ToolSpec> specs() {
-        return tools.values().stream().map(h -> h.spec).toList();
+        List<ModelPort.ToolSpec> result = new java.util.ArrayList<>();
+        result.add(fixedTools.get("current_time").spec);
+        if (searchDocsTool != null) {
+            result.add(searchDocsTool.spec);
+        }
+        result.add(fixedTools.get("create_ticket").spec);
+        return result;
     }
 
     /**
      * 按名取工具；未知工具返回 null（模型幻觉出的工具名在调用前被拦截）。
      */
     public ToolHandler find(String name) {
-        return tools.get(name);
+        if ("search_docs".equals(name) && searchDocsTool != null) {
+            return searchDocsTool;
+        }
+        return fixedTools.get(name);
     }
 
     /** create_ticket 执行体：真的写一行 demo_ticket，"批准之后数据库里真多了一行"。 */

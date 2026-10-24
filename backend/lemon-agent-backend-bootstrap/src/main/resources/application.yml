@@ -17,6 +17,16 @@ lemon:
   # 连接密钥的 AES-256 加密密钥（Base64 32 字节）；生产从环境变量/密管系统注入，禁止提交真实值
   crypto:
     secret: ${LEMON_CRYPTO_SECRET:Y9tV2wK7qFzP3mXaR8uE5sB1nC6dH0jL4gT2yVoQxZk=}
+  # 知识检索（v2.3）：embedding 平台级凭据（用户 BYOK 代理未必有 embeddings 渠道）
+  retrieval:
+    # OpenAI 兼容 embeddings 端点/凭据/模型；未配置时 search_docs 不注册
+    embedding-base-url: ${LEMON_EMBEDDING_BASE_URL:}
+    embedding-api-key: ${LEMON_EMBEDDING_API_KEY:}
+    embedding-model: ${LEMON_EMBEDDING_MODEL:}
+    # NAS PgVector（middleware-pgvector 容器，宿主 15432）
+    pgvector-url: ${LEMON_PGVECTOR_URL:jdbc:postgresql://192.168.5.250:15432/lemon_agent}
+    pgvector-username: ${LEMON_PGVECTOR_USER:postgres}
+    pgvector-password: ${LEMON_PGVECTOR_PASSWORD:LangchatPg2026}
   runtime:
     # 工具审批超时（秒）：BLOCKED 超过该时长未审批 → run_failed(APPROVAL_TIMEOUT)
     approval-timeout-seconds: 300
