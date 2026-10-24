@@ -32,6 +32,15 @@ public final class Operations {
     /** 删除 MCP 连接 */
     public static final String MCP_CONN_DELETE = "MCP_CONN_DELETE";
 
+    /** 创建对话会话 */
+    public static final String SESSION_CREATE = "SESSION_CREATE";
+
+    /** 发起运行 */
+    public static final String RUN_CREATE = "RUN_CREATE";
+
+    /** 取消运行 */
+    public static final String RUN_CANCEL = "RUN_CANCEL";
+
     private Operations() {
     }
 

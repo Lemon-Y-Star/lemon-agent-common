@@ -22,6 +22,12 @@
             <artifactId>lemon-agent-backend-web</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- 模型防腐实现（SpringAiModelPort）由组合根装配：integration 的框架类型不进其他业务模块 -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lemon-agent-backend-integration</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>lemon-agent-backend-service</artifactId>

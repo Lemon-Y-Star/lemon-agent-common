@@ -32,6 +32,7 @@
         <module>lemon-agent-backend-dal</module>
         <module>lemon-agent-backend-util</module>
         <module>lemon-agent-backend-service-core</module>
+        <module>lemon-agent-backend-integration</module>
         <module>lemon-agent-backend-service</module>
         <module>lemon-agent-backend-web</module>
         <module>lemon-agent-backend-bootstrap</module>

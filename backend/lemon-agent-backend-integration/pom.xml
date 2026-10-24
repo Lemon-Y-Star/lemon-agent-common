@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lemon</groupId>
+        <artifactId>lemon-agent-backend</artifactId>
+        <version>1.0.0</version>
+    </parent>
+    <artifactId>lemon-agent-backend-integration</artifactId>
+    <description>集成层：Spring AI 模型适配（防腐层，org.springframework.ai 只允许出现在本模块）</description>
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lemon-agent-backend-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- 模型调用：Spring AI 2.0（OpenAI 兼容流式），版本由根 pom spring-ai-bom 管理 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-openai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

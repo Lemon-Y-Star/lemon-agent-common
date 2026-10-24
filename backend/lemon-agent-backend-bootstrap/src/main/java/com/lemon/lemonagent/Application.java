@@ -1,7 +1,12 @@
 package com.lemon.lemonagent;
 
+import com.lemon.lemonagent.servicecore.runtime.AgentRuntimeService;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.annotation.Bean;
 
 /**
  * LemonAgent 平台后端启动入口。
@@ -15,6 +20,15 @@ public class Application {
 
     public static void main(String[] args) {
         SpringApplication.run(Application.class, args);
+    }
+
+    /**
+     * 进程重启的孤儿运行收口：上次进程遗留的 RUNNING/BLOCKED run 标为 FAILED(INTERRUPTED)，
+     * 否则前端会对着一个永远不会推进的运行无限续流（契约 §6.2 的 INTERRUPTED 归因）。
+     */
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> orphanRunCleaner(AgentRuntimeService agentRuntimeService) {
+        return event -> agentRuntimeService.failOrphanRunsOnStartup();
     }
 
 }

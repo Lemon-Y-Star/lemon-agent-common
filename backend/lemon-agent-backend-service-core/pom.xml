@@ -28,6 +28,16 @@
             <artifactId>lemon-agent-backend-dal</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- 事件 payload 序列化：Jackson 3（Spring Boot 4 默认，包名 tools.jackson） -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <!-- SSE 发布器持有 SseEmitter（web 专属类型，service-core 只作为发布句柄） -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
