@@ -3,9 +3,10 @@ server:
 
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/lemon_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    # NAS 上的 MySQL（Docker 容器 lemon-mysql，宿主端口 13306）；账号密码走环境变量，默认值仅本地开发用
+    url: jdbc:mysql://192.168.5.250:13306/lemon_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: ${LEMON_DB_USER:root}
-    password: ${LEMON_DB_PASSWORD:root}
+    password: ${LEMON_DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
   flyway:
     enabled: true
