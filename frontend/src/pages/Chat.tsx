@@ -115,6 +115,19 @@ export default function Chat() {
     }
   }, [streaming])
 
+
+  /** 失败/取消提示气泡：push 前查重（SSE 事件与快照兜底可能双路到达同一条消息）。 */
+  const pushNotice = useCallback((runId: number | undefined, text: string) => {
+    setBubbles((prev) => {
+      const last = prev[prev.length - 1]
+      if (last && last.kind === 'msg' && last.role === 'ASSISTANT'
+          && last.runId === runId && last.content === `⚠️ ${text}`) {
+        return prev
+      }
+      return [...prev, { kind: 'msg', role: 'ASSISTANT', content: `⚠️ ${text}`, runId }]
+    })
+  }, [])
+
   function finishRun() {
     if (pollRef.current) {
       clearInterval(pollRef.current)
@@ -233,10 +246,23 @@ export default function Chat() {
           void reloadSessions()
         } else if (ev.type === 'run_failed') {
           const errorMsg = String(ev.payload.errorMsg ?? ev.payload.errorCode ?? '运行失败')
-          setBubbles((prev) => [...prev, { kind: 'msg', role: 'ASSISTANT', content: `⚠️ ${errorMsg}`, runId }])
+          pushNotice(runId, errorMsg)
           finishRun()
           void reloadSessions()
         } else if (ev.type === 'run_cancelled') {
+          // 取消：气泡保留已流出的部分内容并标注，没有内容则显示取消提示
+          setBubbles((prev) => {
+            const next = [...prev]
+            for (let i = next.length - 1; i >= 0; i--) {
+              const b = next[i]
+              if (b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId) {
+                next[i] = { ...b, content: b.content ? `${b.content}
+（已取消）` : '⚠️ 已取消' }
+                break
+              }
+            }
+            return next
+          })
           finishRun()
         }
       },
@@ -291,9 +317,9 @@ export default function Chat() {
         setConnected(true)
         subscribe(activeRunId)
       } else {
+        // REJECT：run_failed 事件通常已在流上送达并由查重保护；快照兜底防事件丢失
         const snap = await fetchRunSnapshot(activeRunId)
-        setBubbles((prev) => [...prev,
-          { kind: 'msg', role: 'ASSISTANT', content: `⚠️ ${snap.errorMsg ?? '任务已终止'}`, runId: activeRunId }])
+        pushNotice(activeRunId, snap.errorMsg ?? '任务已终止')
         finishRun()
         void reloadSessions()
       }
@@ -320,6 +346,8 @@ export default function Chat() {
       }
       setActiveRunId(run.runId)
       lastSeqRef.current = run.lastSeq
+      // 占位气泡立即出现：取消/失败时用户能看到这条运行的痕迹
+      setBubbles((prev) => [...prev, { kind: 'msg', role: 'ASSISTANT', content: '', runId: run.runId }])
       subscribe(run.runId)
       void reloadSessions()
     } catch (err) {
@@ -327,7 +355,7 @@ export default function Chat() {
       const message = err instanceof ApiError
         ? (err.code === 'SESSION_BUSY' ? '该会话已有正在执行的运行，请等待完成或取消' : err.message)
         : '发起运行失败'
-      setBubbles((prev) => [...prev, { kind: 'msg', role: 'ASSISTANT', content: `⚠️ ${message}` }])
+      pushNotice(activeSession ?? undefined, message)
     }
   }, [input, streaming, activeSession, strategy, subscribe, reloadSessions])
 
