@@ -26,7 +26,8 @@ public class CreateAgentProcess extends Handler<CreateAgentReq, CreateAgentResp>
     @Override
     protected void doExecute(CreateAgentReq request, CreateAgentResp response) {
         response.setData(agentConfigService.create(request.getUserId(), request.getName(),
-                request.getDescription(), request.getInstruction(), request.getModelConnectionId()));
+                request.getDescription(), request.getInstruction(), request.getTools(),
+                request.getModelConnectionId()));
     }
 
 }

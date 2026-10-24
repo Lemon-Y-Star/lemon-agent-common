@@ -26,7 +26,10 @@ public class UpdateAgentReq extends BaseReq {
     /** 系统提示词 */
     private String instruction;
 
-    /** 绑定模型连接（可空 = 用户最新启用连接） */
+    /** 可用工具白名单（null = 全部工具；空数组 = 不装配工具） */
+    private java.util.List<String> tools;
+
+    /** 绑定模型连接（null = 保持不变；0 = 清除绑定，回落用户最新启用连接） */
     private Long modelConnectionId;
 
     /** 启用状态 */

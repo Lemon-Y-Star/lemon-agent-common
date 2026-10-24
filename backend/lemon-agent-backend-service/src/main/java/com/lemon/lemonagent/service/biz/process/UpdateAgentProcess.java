@@ -26,7 +26,7 @@ public class UpdateAgentProcess extends Handler<UpdateAgentReq, UpdateAgentResp>
     @Override
     protected void doExecute(UpdateAgentReq request, UpdateAgentResp response) {
         response.setData(agentConfigService.update(request.getUserId(), request.getAgentId(),
-                request.getName(), request.getDescription(), request.getInstruction(),
+                request.getName(), request.getDescription(), request.getInstruction(), request.getTools(),
                 request.getModelConnectionId(), request.getEnabled()));
     }
 

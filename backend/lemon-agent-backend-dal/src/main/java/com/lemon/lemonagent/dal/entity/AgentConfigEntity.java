@@ -28,6 +28,9 @@ public class AgentConfigEntity {
     /** 系统提示词 */
     private String instruction;
 
+    /** 可用工具白名单（JSON 数组字符串）；NULL = 全部已注册工具 */
+    private String toolsJson;
+
     /** 绑定模型连接；NULL = 用户最新启用连接 */
     private Long modelConnectionId;
 

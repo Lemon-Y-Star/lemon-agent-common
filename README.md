@@ -13,8 +13,9 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 | v2.2 | 会话深链路由（/chat/:sessionId 刷新定位）+ 运行历史页（FR-18.5 左列表右详情） | ✅ |
 | v2.3 | 知识检索切片：`search_docs` 接 PgVector 真检索（Agentic RAG；embedding 未配置时工具不注册） | ✅ |
 | v2.4 | 会话管理全闭环：重命名 / 删除（run → event → message → session 级联）/ 深链复用 | ✅ |
-| v2.5（本版） | Agent 管理（FR-6 最小充分版：平台公共只读 + 自建增删改 + 对话页挂载）+ 用量与额度（FR-16）+ 网站统计（FR-22.1，admin）+ 收件箱派生通知（FR-21） | ✅ |
-| v3+ | Agent 搭建（策略模板 / 节点编辑器 / 执行图） | 规划中 |
+| v2.5 | Agent 管理（FR-6 最小充分版：平台公共只读 + 自建增删改 + 对话页挂载）+ 用量与额度（FR-16）+ 网站统计（FR-22.1，admin）+ 收件箱派生通知（FR-21） | ✅ |
+| v3.0（本版） | Agent 三要素补齐：可用工具白名单（每 Agent 勾选，运行时只装配已授权工具）+ 模型来源绑定 + 启停开关；新增工具目录接口 | ✅ |
+| v3.1+ | 策略模板（plan-execute）/ 节点编辑器与执行图 | 规划中 |
 
 ## 结构
 
@@ -66,6 +67,22 @@ lemon-agent-common/
 - **已知环境限制（非代码问题）**：`api.shuaiapi.com` 中转的 `deepseek-v4.1-flash-0910` 在请求**带 `tools`** 时会忽略
   system 消息——裸 HTTP 复现：同一 system prompt 不带 tools 时模型严格照办，带上 tools 即恢复自由发挥。
   表现为「Agent 人格不生效」，换官方或其它渠道即恢复；排查时先看 `RunExecutor` 的挂载日志（`run N 挂载 agentId=… -> Agent[名] vX`）。
+
+## v3.0 Agent 三要素实现要点（FR-6 完整版）
+
+- **三要素落点**：`instruction`（人格）/ `tools_json`（可用工具）/ `model_connection_id`（模型来源），
+  运行期由 `run.agent_id` 回查后**一次装配**——人格决定 system prompt、白名单决定下发的 tools、绑定决定用哪个连接。
+- **白名单语义**：`NULL` = 跟随注册表（**将来新增的工具自动可用**，兼容 v2.5 及更早数据）；
+  `[]` = 不装配任何工具；显式列表 = **精确授权**（新增工具不自动放开）。
+  刻意**不**把「显式全选」归一成 NULL——两者将来语义不同，归一化等于偷偷扩大授权范围。
+- **双闸**：装配层按白名单过滤下发给模型的 `tools`；执行层再兜底一次——模型若报出未授权工具名，
+  不执行、回注「未授权，请改用已授权工具或直接回答」，让模型自行改写答复（防幻觉越权，比只靠过滤更稳）。
+- **模型绑定**：创建时校验连接属于本人且已启用（越权 → NOT_FOUND，停用 → VALIDATION_ERROR）；
+  更新时 `modelConnectionId` 传 `null` = 保持不变、传 `0` = 清除绑定（回落用户最新启用连接）。
+- **工具目录**：`GET /api/v1/workspace/tools` 返回 `name / description / needsApproval / available`，
+  前端据此渲染勾选框；`search_docs` 在未配置 embedding 时 `available=false` 并置灰（工具本身不注册进装配）。
+- **停用的语义**：停用只是让对话页选不到（`usable=false`），**不删数据、不影响历史运行**；
+  已在跑的运行按创建时的 `agent_id` 继续。
 
 ## 启动
 

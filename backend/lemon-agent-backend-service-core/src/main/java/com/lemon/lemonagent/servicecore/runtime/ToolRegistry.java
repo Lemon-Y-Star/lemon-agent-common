@@ -64,12 +64,16 @@ public class ToolRegistry {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /** 审批名单（yml `agent.tools.approval-required`）：目录接口要回传 needsApproval，故留字段。 */
+    private final List<String> approvalList;
+
     public ToolRegistry(JdbcTemplate jdbcTemplate,
                         RetrievalPort retrievalPort,
                         @Value("${agent.tools.approval-required:create_ticket}") String approvalList) {
         this.jdbcTemplate = jdbcTemplate;
         List<String> needsApproval = List.of(approvalList.split(",")).stream()
                 .map(String::trim).toList();
+        this.approvalList = needsApproval;
         this.searchDocsTool = retrievalPort.available() ? new ToolHandler(new ModelPort.ToolSpec(
                 "search_docs",
                 "检索平台知识库文档（只读工具，不改变任何外部状态）。当用户的问题可能涉及平台文档、"
@@ -126,6 +130,73 @@ public class ToolRegistry {
         }
         result.add(fixedTools.get("create_ticket").spec);
         return result;
+    }
+
+    /**
+     * 按 Agent 授权清单过滤后的工具定义（v3.0 工具授权）。
+     *
+     * @param allowed 入参：授权的工具名；null = 全部（旧数据与未配置的 Agent）
+     * @return 出参：下发给模型的工具清单
+     */
+    public List<ModelPort.ToolSpec> specs(java.util.Collection<String> allowed) {
+        List<ModelPort.ToolSpec> all = specs();
+        if (allowed == null) {
+            return all;
+        }
+        return all.stream().filter(spec -> allowed.contains(spec.name())).toList();
+    }
+
+    /**
+     * 全部已注册工具名（顺序：只读 → 检索 → 写操作）。
+     *
+     * @return 出参：工具名清单
+     */
+    public List<String> names() {
+        return specs().stream().map(ModelPort.ToolSpec::name).toList();
+    }
+
+    /**
+     * 可授权工具目录（前端勾选用）：含审批标记与可用性。
+     *
+     * @return 出参：工具目录
+     */
+    public List<com.lemon.lemonagent.model.runtime.ToolInfoData> catalog() {
+        List<com.lemon.lemonagent.model.runtime.ToolInfoData> list = new java.util.ArrayList<>();
+        list.add(toInfo(fixedTools.get("current_time"), true));
+        if (searchDocsTool != null) {
+            list.add(toInfo(searchDocsTool, true));
+        } else {
+            com.lemon.lemonagent.model.runtime.ToolInfoData unavailable =
+                    new com.lemon.lemonagent.model.runtime.ToolInfoData();
+            unavailable.setName("search_docs");
+            unavailable.setDescription("检索平台知识库文档（只读，不改变外部状态）。当前未配置 embedding，暂不可用。");
+            unavailable.setNeedsApproval(approvalList.contains("search_docs"));
+            unavailable.setAvailable(false);
+            list.add(unavailable);
+        }
+        list.add(toInfo(fixedTools.get("create_ticket"), true));
+        return list;
+    }
+
+    /**
+     * 工具是否在授权清单内（null 清单 = 全部允许）。模型幻觉出未授权工具时，执行前兜底拦截。
+     *
+     * @param name    入参：工具名
+     * @param allowed 入参：授权清单（可空）
+     * @return 出参：是否允许
+     */
+    public boolean authorized(String name, java.util.Collection<String> allowed) {
+        return allowed == null || allowed.contains(name);
+    }
+
+    private com.lemon.lemonagent.model.runtime.ToolInfoData toInfo(ToolHandler handler, boolean available) {
+        com.lemon.lemonagent.model.runtime.ToolInfoData info =
+                new com.lemon.lemonagent.model.runtime.ToolInfoData();
+        info.setName(handler.spec.name());
+        info.setDescription(handler.spec.description());
+        info.setNeedsApproval(handler.needsApproval);
+        info.setAvailable(available);
+        return info;
     }
 
     /**

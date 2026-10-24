@@ -52,7 +52,12 @@ public class SpringAiModelPort implements ModelPort {
                     .build();
 
             List<Message> messages = new ArrayList<>();
-            log.debug("模型请求 model={} systemPrompt={}", request.model(), request.systemPrompt());
+            if (log.isDebugEnabled()) {
+                log.debug("模型请求 model={} tools={} systemPrompt={}", request.model(),
+                        request.tools() == null ? "[]" : request.tools().stream()
+                                .map(ModelPort.ToolSpec::name).toList(),
+                        request.systemPrompt());
+            }
             if (request.systemPrompt() != null && !request.systemPrompt().isBlank()) {
                 messages.add(new org.springframework.ai.chat.messages.SystemMessage(request.systemPrompt()));
             }

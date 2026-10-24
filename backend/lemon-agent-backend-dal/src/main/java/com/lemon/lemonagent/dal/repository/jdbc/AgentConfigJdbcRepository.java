@@ -22,7 +22,8 @@ import java.util.List;
 public class AgentConfigJdbcRepository implements AgentConfigRepository {
 
     private static final String COLUMNS =
-            "id, user_id, name, description, instruction, model_connection_id, status, version, created_at, updated_at";
+            "id, user_id, name, description, instruction, tools_json, model_connection_id, status, version, "
+                    + "created_at, updated_at";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -36,6 +37,7 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
             e.setName(rs.getString("name"));
             e.setDescription(rs.getString("description"));
             e.setInstruction(rs.getString("instruction"));
+            e.setToolsJson(rs.getString("tools_json"));
             long connId = rs.getLong("model_connection_id");
             e.setModelConnectionId(rs.wasNull() ? null : connId);
             e.setStatus(rs.getInt("status"));
@@ -84,8 +86,9 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO agent_config (user_id, name, description, instruction, model_connection_id, "
-                            + "status, version, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO agent_config (user_id, name, description, instruction, tools_json, "
+                            + "model_connection_id, status, version, created_at, updated_at) "
+                            + "VALUES (?,?,?,?,?,?,?,?,?,?)",
                     Statement.RETURN_GENERATED_KEYS);
             if (e.getUserId() == null) {
                 ps.setNull(1, Types.BIGINT);
@@ -95,15 +98,16 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
             ps.setString(2, e.getName());
             ps.setString(3, e.getDescription());
             ps.setString(4, e.getInstruction());
+            ps.setString(5, e.getToolsJson());
             if (e.getModelConnectionId() == null) {
-                ps.setNull(5, Types.BIGINT);
+                ps.setNull(6, Types.BIGINT);
             } else {
-                ps.setLong(5, e.getModelConnectionId());
+                ps.setLong(6, e.getModelConnectionId());
             }
-            ps.setInt(6, e.getStatus());
-            ps.setInt(7, e.getVersion());
-            ps.setTimestamp(8, Timestamp.from(now));
+            ps.setInt(7, e.getStatus());
+            ps.setInt(8, e.getVersion());
             ps.setTimestamp(9, Timestamp.from(now));
+            ps.setTimestamp(10, Timestamp.from(now));
             return ps;
         }, keys);
         e.setId(keys.getKey().longValue());
@@ -115,10 +119,10 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
     @Override
     public int update(AgentConfigEntity e) {
         return jdbcTemplate.update(
-                "UPDATE agent_config SET name = ?, description = ?, instruction = ?, model_connection_id = ?, "
-                        + "status = ?, version = version + 1 WHERE id = ? AND user_id = ?",
-                e.getName(), e.getDescription(), e.getInstruction(), e.getModelConnectionId(),
-                e.getStatus(), e.getId(), e.getUserId());
+                "UPDATE agent_config SET name = ?, description = ?, instruction = ?, tools_json = ?, "
+                        + "model_connection_id = ?, status = ?, version = version + 1 WHERE id = ? AND user_id = ?",
+                e.getName(), e.getDescription(), e.getInstruction(), e.getToolsJson(),
+                e.getModelConnectionId(), e.getStatus(), e.getId(), e.getUserId());
     }
 
     @Override

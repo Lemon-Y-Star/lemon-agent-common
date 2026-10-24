@@ -21,6 +21,9 @@ public class AgentConfigData {
     /** 系统提示词（个人 Agent 可见；平台公共不下发明文） */
     private String instruction;
 
+    /** 可用工具白名单；null = 全部已注册工具 */
+    private java.util.List<String> tools;
+
     /** 绑定模型连接；null = 运行时取用户最新启用连接 */
     private Long modelConnectionId;
 

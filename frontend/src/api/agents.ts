@@ -7,6 +7,8 @@ export interface AgentConfig {
   name: string
   description: string
   instruction: string | null
+  /** 可用工具白名单；null = 全部已注册工具 */
+  tools: string[] | null
   modelConnectionId: number | null
   enabled: boolean
   platformPublic: boolean
@@ -14,6 +16,14 @@ export interface AgentConfig {
   version: number
   createdAt: string | null
   updatedAt: string | null
+}
+
+/** 可授权工具项（工具注册表的对外投影）。 */
+export interface ToolInfo {
+  name: string
+  description: string
+  needsApproval: boolean
+  available: boolean
 }
 
 export interface AgentPage {
@@ -25,17 +35,33 @@ export function fetchAgents(): Promise<AgentPage> {
   return get<AgentPage>('/workspace/agents')
 }
 
+/** 工具目录（Agent 表单勾选用）。 */
+export async function fetchTools(): Promise<ToolInfo[]> {
+  const data = await get<{ tools: ToolInfo[] }>('/workspace/tools')
+  return data.tools
+}
+
 export function createAgent(payload: {
   name: string
   description: string
   instruction: string
+  tools: string[] | null
+  modelConnectionId: number | null
 }): Promise<AgentConfig> {
   return post<AgentConfig>('/workspace/agents', payload)
 }
 
 export function updateAgent(
   id: number,
-  payload: { name: string; description: string; instruction: string; enabled?: boolean },
+  payload: {
+    name: string
+    description: string
+    instruction: string
+    tools: string[] | null
+    /** null = 保持不变；0 = 清除绑定 */
+    modelConnectionId?: number | null
+    enabled?: boolean
+  },
 ): Promise<AgentConfig> {
   return put<AgentConfig>(`/workspace/agents/${id}`, payload)
 }

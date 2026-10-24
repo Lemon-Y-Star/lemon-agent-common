@@ -23,6 +23,9 @@ public class CreateAgentReq extends BaseReq {
     /** 系统提示词 */
     private String instruction;
 
+    /** 可用工具白名单（null = 全部工具；空数组 = 不装配工具） */
+    private java.util.List<String> tools;
+
     /** 绑定模型连接（可空） */
     private Long modelConnectionId;
 

@@ -165,8 +165,11 @@ public class RunExecutor {
 
         // ① 模型连接：优先 Agent 绑定的连接；未绑定则用用户最新启用的 BYOK 连接
         AgentConfigEntity agent = run.getAgentId() == null ? null : agentConfigRepository.findById(run.getAgentId());
-        log.info("run {} 挂载 agentId={} -> {}", runId, run.getAgentId(),
-                agent == null ? "平台默认提示词" : "Agent[" + agent.getName() + "] v" + agent.getVersion());
+        // 工具白名单：null = 全部工具（v2.5 及更早数据、或显式全选）
+        List<String> allowedTools = agent == null ? null : AgentToolCodec.decode(agent.getToolsJson());
+        log.info("run {} 挂载 agentId={} -> {} · 工具白名单={}", runId, run.getAgentId(),
+                agent == null ? "平台默认提示词" : "Agent[" + agent.getName() + "] v" + agent.getVersion(),
+                allowedTools == null ? "全部" : allowedTools);
         ModelConnectionEntity conn = resolveConnection(run, agent);
         if (conn == null || conn.getApiKeyCipher() == null) {
             failIfStillRunning(runId, "MODEL_ERROR", "尚未配置启用的模型连接，请先在「模型连接」页添加并启用。");
@@ -189,7 +192,8 @@ public class RunExecutor {
         continuationNotes.forEach(note -> context.add(new ModelPort.Msg("USER", "[系统] " + note)));
 
         String apiKey = CryptoUtil.decrypt(conn.getApiKeyCipher());
-        List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS ? toolRegistry.specs() : List.of();
+        List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
+                ? toolRegistry.specs(allowedTools) : List.of();
         String prompt = agent != null && agent.getInstruction() != null && !agent.getInstruction().isBlank()
                 ? agent.getInstruction() : systemPrompt;
         ModelPort.ModelRequest request = new ModelPort.ModelRequest(
@@ -250,7 +254,7 @@ public class RunExecutor {
             if (!fullOutput.isEmpty()) {
                 insertAssistantMessage(run, fullOutput.toString(), runId);
             }
-            handleToolCalls(run, toolCallsHolder[0], continuationNotes, depth);
+            handleToolCalls(run, toolCallsHolder[0], continuationNotes, depth, allowedTools);
             return;
         }
 
@@ -275,15 +279,22 @@ public class RunExecutor {
         }
     }
 
-    /** 工具调用决策：名单内挂起等审批，名单外直接执行进下一轮。 */
+    /** 工具调用决策：名单内挂起等审批，名单外直接执行进下一轮；未授权工具在执行前兜底拦截。 */
     private void handleToolCalls(AgentRunEntity run, List<ModelPort.ModelToolCall> calls,
-                                 List<String> continuationNotes, int depth) {
+                                 List<String> continuationNotes, int depth, List<String> allowedTools) {
         Long runId = run.getId();
         for (ModelPort.ModelToolCall call : calls) {
             ToolRegistry.ToolHandler handler = toolRegistry.find(call.name());
             if (handler == null) {
                 // 模型幻觉出的工具名：以失败结果回注，让模型自行纠正
                 continuationNotes.add("工具 " + call.name() + " 不存在，请改用其他方式或直接回答用户。");
+                continue;
+            }
+            if (!toolRegistry.authorized(call.name(), allowedTools)) {
+                // 未授权（模型越权调用或用户收窄了白名单）：不执行，回注结果让模型改写答复
+                log.info("run {} 拦截未授权工具 {}", runId, call.name());
+                continuationNotes.add("工具 " + call.name() + " 未授权给当前 Agent，"
+                        + "请改用已授权工具，或直接回答用户。");
                 continue;
             }
             appendEvent(runId, RuntimeEventType.TOOL_CALL, objectMapper.writeValueAsString(Map.of(
