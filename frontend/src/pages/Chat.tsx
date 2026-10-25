@@ -20,6 +20,7 @@ import { ApiError } from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 import { ToastHost, toast } from '../components/Toast'
+import Markdown from '../components/Markdown'
 
 /**
  * 对话运行时（v2）：会话侧栏 + 消息区 + SSE 流式气泡 + 工具调用与审批。
@@ -569,9 +570,13 @@ export default function Chat() {
     return (
       <div key={i} className={`msg ${b.role === 'USER' ? 'user' : 'ai'}`}>
         <div className="mk">{b.role === 'USER' ? '🧑' : '🤖'}</div>
-        <div>
+        <div className="msg-body">
           {b.stepTitle && <div className="msg-step">{b.stepTitle}</div>}
-          <div className="bubble">{b.content || (streaming ? '…' : '')}</div>
+          <div className={`bubble ${b.role === 'ASSISTANT' ? 'md-bubble' : ''}`}>
+            {b.role === 'ASSISTANT' && b.content
+              ? <Markdown text={b.content} />
+              : (b.content || (streaming ? '…' : ''))}
+          </div>
         </div>
       </div>
     )

@@ -265,3 +265,34 @@ tr:hover td{background:#fafbfe}
 .ge-node-head{font-size:10px}
 .ge-node-title{font-size:13px;line-height:1.5}
 .ge-node-actions{margin-top:6px}
+
+/* ---------- 气泡宽度 + Markdown 排版 ---------- */
+.msg-body{flex:1;min-width:0}
+.msg .bubble{display:inline-block;max-width:100%;box-sizing:border-box}
+.msg.user .bubble{max-width:min(680px,86%)}
+.msg.ai .bubble{max-width:min(820px,94%)}
+.msg.ai .bubble.md-bubble{white-space:normal;color:#1f2430}
+
+.md{font-size:13.5px;line-height:1.78}
+.md>*:first-child{margin-top:0}
+.md>*:last-child{margin-bottom:0}
+.md h1,.md h2,.md h3,.md h4{margin:14px 0 6px;line-height:1.45;font-weight:650}
+.md h1{font-size:17px}
+.md h2{font-size:15.5px}
+.md h3{font-size:14px}
+.md p{margin:6px 0}
+.md ul,.md ol{margin:6px 0;padding-left:22px}
+.md li{margin:2px 0}
+.md li>p{margin:2px 0}
+.md blockquote{margin:8px 0;padding:6px 10px;border-left:3px solid #dfe3ff;background:#f7f8fd;color:#4b5563;border-radius:0 6px 6px 0}
+.md code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#f1f3f9;padding:1px 5px;border-radius:4px}
+.md pre{margin:8px 0;padding:10px 12px;background:#0f172a;color:#e5e9f5;border-radius:8px;overflow:auto}
+.md pre code{background:transparent;color:inherit;padding:0;font-size:12.5px;line-height:1.7}
+.md table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12.8px}
+.md th,.md td{border:1px solid #e3e6ef;padding:6px 9px;text-align:left;vertical-align:top}
+.md th{background:#f6f7fb;font-weight:600}
+.md tr:nth-child(even) td{background:#fafbfe}
+.md a{color:var(--primary);text-decoration:none}
+.md a:hover{text-decoration:underline}
+.md hr{border:none;border-top:1px solid #e3e6ef;margin:12px 0}
+.md img{max-width:100%;border-radius:6px}
