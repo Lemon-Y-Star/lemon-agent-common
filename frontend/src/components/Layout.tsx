@@ -48,7 +48,7 @@ export default function Layout() {
       : location.pathname.startsWith('/runs')
       ? '运行历史'
       : location.pathname.startsWith('/usage')
-      ? '用量与额度'
+      ? '用量与观测'
       : location.pathname.startsWith('/admin')
       ? '网站统计'
       : '开始使用与账户'
@@ -95,7 +95,7 @@ export default function Layout() {
         <div className="nav-group">
           <div className="gt">观测</div>
           <NavLink className="nav-item" to="/usage">
-            📈 用量与额度
+            📈 用量与观测
           </NavLink>
           <NavPending>🔭 LLM 观测</NavPending>
           <NavLink className="nav-item" to="/mcps">
