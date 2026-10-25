@@ -3,11 +3,13 @@ import { fetchRunSnapshot, fetchSessions, retryRun, type RunSnapshot, type Sessi
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
 import RunGraphView from '../components/RunGraphView'
+import Markdown from '../components/Markdown'
+import ThinkingPanel, { splitThink } from '../components/ThinkingPanel'
 
 /**
  * 运行历史（PRD FR-18.5）：左列表（状态 / 会话 / traceId 过滤）+ 右详情（快照接口）。
  * 数据源：GET /agent/runs（服务端强制 user_id 过滤，traceId 精确匹配）+ GET /agent/runs/{id}。
- * custom 运行的详情带执行图图例：节点状态着色，点节点看该节点的输入 / 输出。
+ * 详情完整链路：输入 / 输出（含思考过程折叠）→ plan 步骤 → custom 执行图图例（点节点看节点输入输出）。
  */
 
 const STATUS_TAGS: Record<string, { cls: string; text: string }> = {
@@ -44,6 +46,7 @@ export default function Runs() {
   const [selected, setSelected] = useState<RunSnapshot | null>(null)
   const [error, setError] = useState('')
   const [traceId, setTraceId] = useState('')
+  const [thinkOpen, setThinkOpen] = useState(false)
 
   const reload = useCallback(async (filterStatus: string, filterSession: string, filterTrace: string) => {
     try {
@@ -71,6 +74,7 @@ export default function Runs() {
   async function openDetail(runId: number) {
     try {
       setSelected(await fetchRunSnapshot(runId))
+      setThinkOpen(false)
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '快照加载失败')
     }
@@ -231,6 +235,78 @@ export default function Runs() {
               {selected.errorMsg && (
                 <div className="note">{selected.errorMsg}</div>
               )}
+
+              {(selected.input || selected.outputText) && (
+                <div className="run-node-inspect" style={{ marginTop: 12, border: '1px solid #eef0f6', borderRadius: 10 }}>
+                  <h4 style={{ marginBottom: 8 }}>输入 / 输出</h4>
+                  <div className="run-io">
+                    <div className="run-io-col">
+                      <label>输入（用户原始请求）</label>
+                      <pre>{selected.input || '—（旧数据未记录输入）'}</pre>
+                    </div>
+                    <div className="run-io-col">
+                      <label>输出（最终产出）</label>
+                      {(() => {
+                        if (!selected.outputText) {
+                          const hint = selected.status === 'RUNNING' ? '运行中…'
+                            : selected.status === 'FAILED' ? '运行失败'
+                              : selected.status === 'BLOCKED' ? '等待审批'
+                                : '（无产出）'
+                          return <div className="note gray">{hint}</div>
+                        }
+                        const parts = splitThink(selected.outputText)
+                        return parts.answer
+                          ? <Markdown text={parts.answer} />
+                          : <div className="note gray">（无正文）</div>
+                      })()}
+                    </div>
+                  </div>
+                  {(() => {
+                    if (!selected.outputText) return null
+                    const parts = splitThink(selected.outputText)
+                    return parts.think ? (
+                      <div style={{ marginTop: 8 }}>
+                        <ThinkingPanel
+                          think={parts.think}
+                          done={parts.done}
+                          open={thinkOpen}
+                          onToggle={() => setThinkOpen(!thinkOpen)}
+                        />
+                      </div>
+                    ) : null
+                  })()}
+                </div>
+              )}
+
+              {(selected.plan?.length ?? 0) > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <h3 style={{ marginTop: 0 }}>计划步骤 <span className="sub">plan 策略</span></h3>
+                  <table>
+                    <thead><tr><th style={{ width: 36 }}>#</th><th>步骤</th><th style={{ width: 80 }}>状态</th></tr></thead>
+                    <tbody>
+                      {selected.plan!.map((st) => (
+                        <tr key={st.index}>
+                          <td>{st.index + 1}</td>
+                          <td>
+                            {st.title}
+                            {st.output && (
+                              <div className="note gray" style={{ marginTop: 4 }}>
+                                {st.output.length > 120 ? `${st.output.slice(0, 120)}…` : st.output}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            {st.status === 'DONE' ? <span className="tag ok">完成</span>
+                              : st.status === 'RUNNING' ? <span className="tag ok">执行中</span>
+                                : <span className="tag gray">待执行</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
               {selected.strategy === 'custom' && selected.graph && (
                 <div style={{ marginTop: 12 }}>
                   <h3 style={{ marginTop: 0 }}>节点输入 / 输出</h3>

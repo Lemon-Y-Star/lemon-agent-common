@@ -23,6 +23,12 @@ public class RunDetailData {
     /** 全链路 ID */
     private String traceId;
 
+    /** 原始输入（v3.9.1 起落库；旧运行为 null） */
+    private String input;
+
+    /** 最终产出（run_completed 权威正文，含 <think> 原文；未完成为 null） */
+    private String outputText;
+
     /** 事件序号游标（前端轮询比较用） */
     private long lastSeq;
 

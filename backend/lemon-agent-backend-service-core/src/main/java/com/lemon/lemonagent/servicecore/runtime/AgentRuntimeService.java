@@ -408,6 +408,8 @@ public class AgentRuntimeService {
         data.setStatus(run.getStatus());
         data.setStrategy(run.getStrategy());
         data.setTraceId(run.getTraceId());
+        data.setInput(run.getInput());
+        data.setOutputText(run.getOutputText());
         data.setLastSeq(run.getLastSeq());
         data.setErrorCode(run.getErrorCode());
         data.setErrorMsg(run.getErrorMsg());

@@ -134,6 +134,12 @@ export interface RunSnapshot {
     expiresAt?: string
   } | null
   usage?: { inputTokens: number; outputTokens: number } | null
+  /** 原始输入（v3.9.1 起落库；旧运行为 null） */
+  input?: string | null
+  /** 最终产出（含 <think> 原文；未完成为 null） */
+  outputText?: string | null
+  /** 计划快照（plan 策略） */
+  plan?: { index: number; title: string; detail?: string | null; status: string; output?: string | null }[] | null
   graph?: RunGraphView | null
   startedAt?: string | null
   endedAt?: string | null
