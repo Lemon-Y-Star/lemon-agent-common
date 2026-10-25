@@ -100,6 +100,8 @@ export default function Chat() {
   const selectedAgent = agents.find((a) => a.id === agentId) ?? null
   const customNotReady = strategy === 'custom' && selectedAgent !== null
     && (selectedAgent.graphVersion ?? 0) === 0 && !selectedAgent.workflowId
+  // 反向提示：挂载了工作流但策略不是 custom——工作流不会被执行（auto / plan 不走图路由）
+  const workflowHint = strategy !== 'custom' && selectedAgent !== null && !!selectedAgent.workflowId
 
   const reloadSessions = useCallback(async () => {
     try {
@@ -724,6 +726,12 @@ export default function Chat() {
               当前 Agent 还没有执行图、也没挂载工作流，custom 模式跑不了——先到
               <a href={`/agents/${agentId}/graph`} style={{ margin: '0 4px' }}>执行图</a>
               画一张，或在「我的 Agent → 编辑」里挂载工作流。
+            </div>
+          )}
+          {workflowHint && (
+            <div style={{ margin: '6px 12px 0', padding: '6px 10px', borderRadius: 8, background: '#eef2ff', border: '1px solid #c7d2fe', color: '#3730a3', fontSize: 12.5 }}>
+              当前 Agent 挂载了工作流「{selectedAgent!.workflowName}」——只有
+              <b style={{ margin: '0 3px' }}>custom（按执行图调度）</b>策略会执行它，auto / plan 不会走图路由。
             </div>
           )}
           <div className="chat-body" ref={bodyRef}>

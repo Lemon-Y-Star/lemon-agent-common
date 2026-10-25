@@ -1104,6 +1104,10 @@ public class RunExecutor {
 
     /** 节点完成：写 done/outputs + 覆盖进度（一次 UPDATE，进度与产出同源）。 */
     private void markNodeDone(AgentRunEntity run, GraphStateData state, GraphNode node, String output, int stepIndex) {
+        // 节点产出打点：路由类工作流（意图分类等）在后端日志里可直接看到判定结果
+        String brief = output == null ? "" : output.replaceAll("\\s+", " ").trim();
+        log.info("run {} 节点 {}[{}] 完成: {}", run.getId(), node.getId(), nodeLabel(node),
+                brief.length() > 160 ? brief.substring(0, 160) + "…" : brief);
         if (!state.getDone().contains(node.getId())) {
             state.getDone().add(node.getId());
         }
