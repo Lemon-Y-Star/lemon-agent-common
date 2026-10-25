@@ -148,7 +148,7 @@ export default function Agents() {
             <th>模型来源</th>
             <th>状态</th>
             <th>版本</th>
-            {readonly || <th>操作</th>}
+            {!readonly && <th>操作</th>}
           </tr>
         </thead>
         <tbody>
@@ -187,7 +187,7 @@ export default function Agents() {
                   )}
                 </td>
                 <td style={{ color: 'var(--muted)' }}>v{a.version}</td>
-                {owned || (
+                {!readonly && (
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button
                       className="btn sm"
@@ -212,7 +212,7 @@ export default function Agents() {
             )
           })}
           {list.length === 0 && (
-            <tr><td colSpan={7}><div className="note gray">暂无</div></td></tr>
+            <tr><td colSpan={readonly ? 6 : 7}><div className="note gray">暂无</div></td></tr>
           )}
         </tbody>
       </table>
@@ -317,32 +317,26 @@ export default function Agents() {
               <div className="field">
                 <label>
                   可用工具
-                  <span style={{ color: 'var(--muted)', fontWeight: 400, marginLeft: 6 }}>
-                    未勾选的工具不会下发给模型；写操作工具运行时会挂起等审批
-                  </span>
+                  <span className="hint">未勾选的工具不会下发给模型；写操作工具运行时会挂起等审批</span>
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 6 }}>
+                <label className="tools-all">
                   <input type="checkbox" checked={allToolsChecked} onChange={(e) => toggleAllTools(e.target.checked)} />
-                  全部工具（默认，后续新增工具自动可用）
+                  <span>全部工具（默认，后续新增工具自动可用）</span>
                 </label>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', display: 'grid', gap: 6 }}>
+                <div className="tools-box">
                   {tools.map((t) => (
-                    <label
-                      key={t.name}
-                      style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, opacity: t.available ? 1 : 0.55 }}
-                    >
+                    <label key={t.name} className={`tool-row ${t.available ? '' : 'off'}`}>
                       <input
                         type="checkbox"
-                        style={{ marginTop: 2 }}
                         checked={allToolsChecked || selectedTools.includes(t.name)}
                         disabled={!t.available || allToolsChecked}
                         onChange={(e) => toggleOneTool(t.name, e.target.checked)}
                       />
-                      <span>
-                        <b style={{ fontFamily: 'monospace' }}>{t.name}</b>
-                        {t.needsApproval && <span className="tag warn" style={{ marginLeft: 6 }}>需审批</span>}
-                        {!t.available && <span className="tag gray" style={{ marginLeft: 6 }}>不可用</span>}
-                        <div style={{ color: 'var(--muted)', marginTop: 2 }}>{t.description}</div>
+                      <span className="tool-info">
+                        <span className="tool-name">{t.name}</span>
+                        {t.needsApproval && <span className="tag warn">需审批</span>}
+                        {!t.available && <span className="tag gray">不可用</span>}
+                        <span className="tool-desc">{t.description}</span>
                       </span>
                     </label>
                   ))}

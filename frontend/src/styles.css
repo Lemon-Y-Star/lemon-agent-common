@@ -230,3 +230,23 @@ tr:hover td{background:#fafbfe}
 .eval-pick{display:flex;gap:4px}
 .eval-main table{font-size:12.5px}
 .eval-changed{background:#fff7ed}
+
+/* ---------- 修复：.field input{width:100%} 把复选框撑变形 ---------- */
+.field .tools-all input[type="checkbox"],
+.field .tool-row input[type="checkbox"],
+.field .ge-toolchecks input[type="checkbox"]{width:14px;height:14px;flex:0 0 14px;padding:0;margin:2px 0 0;
+  border-radius:4px;accent-color:var(--primary)}
+.tools-all{display:flex!important;align-items:center;gap:8px;margin:0 0 8px!important;
+  font-size:13px;font-weight:400!important;color:#374151;cursor:pointer}
+.tools-box{border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:grid;gap:10px;background:#fcfcfe}
+.tool-row{display:flex!important;gap:10px;align-items:flex-start;margin:0!important;
+  font-weight:400!important;color:inherit;cursor:pointer}
+.tool-row.off{opacity:.55;cursor:not-allowed}
+.tool-info{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px;line-height:1.6;min-width:0}
+.tool-name{font-family:ui-monospace,Consolas,monospace;font-weight:600;color:#111827}
+.tool-desc{flex:1 0 100%;color:var(--muted);word-break:break-word}
+.hint{font-weight:400;color:var(--muted);margin-left:6px}
+.ge-toolchecks label{display:inline-flex!important;align-items:center;gap:4px;margin:0!important;font-weight:400!important}
+
+/* 行高修正：中文在 flex 行里默认行距偏紧，最后统一覆盖一次 */
+.tools-all,.tool-row,.tool-info{line-height:1.75}
