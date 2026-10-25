@@ -205,6 +205,8 @@ public class RunExecutor {
         Long runId = run.getId();
         AgentConfigEntity agent = agentOf(run);
         List<String> allowedTools = allowedToolsOf(agent);
+        // fixed（直接问答）：不装配任何工具、单轮生成；人格与长期记忆注入保持一致——限的是能力，不是人格
+        boolean fixed = Strategy.FIXED.wireName().equals(run.getStrategy());
 
         ModelConnectionEntity conn = resolveConnection(run, agent);
         if (conn == null || conn.getApiKeyCipher() == null) {
@@ -220,12 +222,12 @@ public class RunExecutor {
         // 工具结果作为合成上下文补充在历史之后（恢复路径的关键输入）
         continuationNotes.forEach(note -> context.add(new ModelPort.Msg("USER", "[系统] " + note)));
 
-        List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
+        List<ModelPort.ToolSpec> tools = !fixed && depth < MAX_TOOL_ROUNDS
                 ? toolRegistry.specs(allowedTools) : List.of();
         TurnResult turn = streamTurn(runId, conn, instructionOf(agent, run.getUserId()), context, userInput, tools, 0, true);
 
-        // ④ 分支：工具调用（挂起或直执行） vs 文本完成
-        if (turn.toolCalls() != null) {
+        // ④ 分支：工具调用（挂起或直执行） vs 文本完成；fixed 模式没有装配工具，模型报 tool_calls 属异常，按文本收口
+        if (turn.toolCalls() != null && !fixed) {
             // 中场发言落库（模型调工具前输出的文本，恢复后仍在上下文里）
             if (!turn.text().isEmpty()) {
                 insertAssistantMessage(run, turn.text(), runId);
@@ -239,6 +241,9 @@ public class RunExecutor {
             return;
         }
         String outputText = turn.text();
+        if (fixed && outputText.isEmpty() && turn.toolCalls() != null) {
+            outputText = "（fixed 模式不装配工具，模型请求的工具调用已被忽略）";
+        }
         if (turn.completed()) {
             int rows = runRepository.finish(runId, RunStatus.COMPLETED.name(),
                     outputText, null, null, (int) turn.inputTokens(), (int) turn.outputTokens());

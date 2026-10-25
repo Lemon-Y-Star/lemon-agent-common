@@ -59,6 +59,7 @@ const STRATEGIES = [
   { value: 'auto', label: 'auto（自主迭代）' },
   { value: 'plan', label: 'plan（先规划再执行）' },
   { value: 'custom', label: 'custom（按执行图调度）' },
+  { value: 'fixed', label: 'fixed（直接问答）' },
 ]
 
 export default function Chat() {
@@ -83,6 +84,11 @@ export default function Chat() {
   const abortRef = useRef<{ abort: () => void } | null>(null)
   const lastSeqRef = useRef(0)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // custom 策略的前置校验：选中的 Agent 既没有执行图也没挂工作流时，直接提示而不是发一个必败的请求
+  const selectedAgent = agents.find((a) => a.id === agentId) ?? null
+  const customNotReady = strategy === 'custom' && selectedAgent !== null
+    && (selectedAgent.graphVersion ?? 0) === 0 && !selectedAgent.workflowId
 
   const reloadSessions = useCallback(async () => {
     try {
@@ -468,6 +474,10 @@ export default function Chat() {
   const onSend = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
+    if (customNotReady) {
+      pushNotice(activeSession ?? undefined, '该 Agent 还没有执行图、也没挂载工作流，custom 模式跑不了——先画一张执行图或挂载工作流')
+      return
+    }
     setStreaming(true)
     setInput('')
     setBubbles((prev) => [...prev, { kind: 'msg', role: 'USER', content: text }])
@@ -496,7 +506,7 @@ export default function Chat() {
         : '发起运行失败'
       pushNotice(activeSession ?? undefined, message)
     }
-  }, [input, streaming, activeSession, strategy, subscribe, reloadSessions])
+  }, [input, streaming, activeSession, strategy, customNotReady, agents, agentId, subscribe, reloadSessions])
 
   const onNewSession = useCallback(async () => {
     if (streaming) {
@@ -627,6 +637,13 @@ export default function Chat() {
               </button>
             )}
           </div>
+          {customNotReady && (
+            <div style={{ margin: '6px 12px 0', padding: '6px 10px', borderRadius: 8, background: '#fdf3e3', border: '1px solid #f3d9a4', color: '#92400e', fontSize: 12.5 }}>
+              当前 Agent 还没有执行图、也没挂载工作流，custom 模式跑不了——先到
+              <a href={`/agents/${agentId}/graph`} style={{ margin: '0 4px' }}>执行图</a>
+              画一张，或在「我的 Agent → 编辑」里挂载工作流。
+            </div>
+          )}
           <div className="chat-body" ref={bodyRef}>
             {bubbles.length === 0 && (
               <div className="note gray">
