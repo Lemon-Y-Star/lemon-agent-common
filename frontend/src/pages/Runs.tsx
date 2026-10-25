@@ -35,6 +35,8 @@ export default function Runs() {
     runId: number
     status: string
     strategy: string
+    agentId?: number | null
+    agentName?: string | null
     errorCode?: string | null
     traceId: string
     lastSeq: number
@@ -153,6 +155,7 @@ export default function Runs() {
                 <th>运行 ID</th>
                 <th>状态</th>
                 <th>策略</th>
+                <th>Agent</th>
                 <th>开始时间</th>
                 <th>traceId</th>
               </tr>
@@ -169,6 +172,7 @@ export default function Runs() {
                     <td>#{r.runId}</td>
                     <td><span className={`tag ${tag.cls}`}>{tag.text}</span></td>
                     <td>{r.strategy}</td>
+                    <td>{r.agentName ?? '平台默认'}{r.agentId ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> #{r.agentId}</span> : null}</td>
                     <td style={{ color: 'var(--muted)' }}>{fmt(r.startedAt)}</td>
                     <td
                       style={{ fontFamily: 'monospace', fontSize: 11.5 }}
@@ -184,7 +188,7 @@ export default function Runs() {
                 )
               })}
               {items.length === 0 && (
-                <tr><td colSpan={5}><div className="note gray">暂无运行记录</div></td></tr>
+                <tr><td colSpan={6}><div className="note gray">暂无运行记录</div></td></tr>
               )}
             </tbody>
           </table>
@@ -202,6 +206,10 @@ export default function Runs() {
                     <span className={`tag ${statusTag(selected.status).cls}`}>{statusTag(selected.status).text}</span>
                   </td></tr>
                   <tr><th>策略</th><td>{selected.strategy}</td></tr>
+                  <tr><th>Agent</th><td>
+                    {selected.agentName ?? '平台默认（未选择 Agent，运行时取用户默认）'}
+                    {selected.agentId ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> · #{selected.agentId}</span> : null}
+                  </td></tr>
                   <tr><th>traceId</th><td style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{selected.traceId}</td></tr>
                   <tr><th>事件游标</th><td>lastSeq = {selected.lastSeq}</td></tr>
                   {selected.errorCode && (

@@ -14,6 +14,12 @@ public class RunDetailData {
     /** 会话 ID */
     private Long sessionId;
 
+    /** 挂载的 Agent ID（null = 未选择，运行时取用户默认） */
+    private Long agentId;
+
+    /** Agent 名称（null = 平台默认） */
+    private String agentName;
+
     /** 六态之一 */
     private String status;
 

@@ -9,6 +9,12 @@ public class RunListItem {
     /** 运行 ID */
     private Long runId;
 
+    /** 挂载的 Agent ID（null = 未选择，运行时取用户默认） */
+    private Long agentId;
+
+    /** Agent 名称（列表标注用；null = 平台默认） */
+    private String agentName;
+
     /** 状态 */
     private String status;
 

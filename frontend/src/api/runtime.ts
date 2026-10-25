@@ -121,6 +121,10 @@ export interface RunSnapshot {
   sessionId: number
   status: string
   strategy: string
+  /** 挂载的 Agent ID（null = 未选择，运行时取用户默认） */
+  agentId?: number | null
+  /** Agent 名称（null = 平台默认） */
+  agentName?: string | null
   traceId: string
   lastSeq: number
   errorCode?: string | null

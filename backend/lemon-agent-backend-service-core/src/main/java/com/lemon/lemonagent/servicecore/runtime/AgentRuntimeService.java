@@ -80,6 +80,8 @@ public class AgentRuntimeService {
 
     private final ToolRegistry toolRegistry;
 
+    private final com.lemon.lemonagent.dal.repository.AgentConfigRepository agentConfigRepository;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final SecureRandom random = new SecureRandom();
@@ -94,7 +96,8 @@ public class AgentRuntimeService {
                                com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository,
                                WorkflowService workflowService,
                                com.lemon.lemonagent.servicecore.safety.SensitiveWordService sensitiveWords,
-                               ToolRegistry toolRegistry) {
+                               ToolRegistry toolRegistry,
+                               com.lemon.lemonagent.dal.repository.AgentConfigRepository agentConfigRepository) {
         this.sessionRepository = sessionRepository;
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
@@ -106,6 +109,7 @@ public class AgentRuntimeService {
         this.workflowService = workflowService;
         this.sensitiveWords = sensitiveWords;
         this.toolRegistry = toolRegistry;
+        this.agentConfigRepository = agentConfigRepository;
     }
 
     // ---------- 会话 ----------
@@ -415,6 +419,9 @@ public class AgentRuntimeService {
         com.lemon.lemonagent.model.runtime.RunDetailData data = new com.lemon.lemonagent.model.runtime.RunDetailData();
         data.setRunId(run.getId());
         data.setSessionId(run.getSessionId());
+        data.setAgentId(run.getAgentId());
+        data.setAgentName(run.getAgentId() == null ? null
+                : agentNamesFor(userId).get(run.getAgentId()));
         data.setStatus(run.getStatus());
         data.setStrategy(run.getStrategy());
         data.setTraceId(run.getTraceId());
@@ -654,6 +661,7 @@ public class AgentRuntimeService {
      * 运行列表（契约 4.10，必须 user_id 过滤；traceId 精确匹配用于链路反查）。
      */
     public RunListData listRuns(Long userId, Long sessionId, String status, String traceId, int page, int size) {
+        Map<Long, String> agentNames = agentNamesFor(userId);
         RunListData data = new RunListData();
         data.setTotal(runRepository.countByUser(userId, blankToNull(status), sessionId, blankToNull(traceId)));
         data.setItems(runRepository.findByUser(userId, blankToNull(status), sessionId, blankToNull(traceId),
@@ -661,6 +669,8 @@ public class AgentRuntimeService {
                 .map(r -> {
                     RunListItem item = new RunListItem();
                     item.setRunId(r.getId());
+                    item.setAgentId(r.getAgentId());
+                    item.setAgentName(r.getAgentId() == null ? null : agentNames.get(r.getAgentId()));
                     item.setStatus(r.getStatus());
                     item.setStrategy(r.getStrategy());
                     item.setErrorCode(r.getErrorCode());
@@ -678,6 +688,17 @@ public class AgentRuntimeService {
                 })
                 .toList());
         return data;
+    }
+
+    /**
+     * Agent 名称映射（含平台公共），供运行列表 / 详情标注「用了哪个 Agent」。
+     * agentId 为 null 表示发起时未选择（运行时取用户默认 = 第一个启用的 Agent）。
+     */
+    private Map<Long, String> agentNamesFor(Long userId) {
+        Map<Long, String> names = new java.util.HashMap<>();
+        agentConfigRepository.findPlatform().forEach(a -> names.put(a.getId(), a.getName()));
+        agentConfigRepository.findByUser(userId).forEach(a -> names.put(a.getId(), a.getName()));
+        return names;
     }
 
     /**
