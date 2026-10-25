@@ -89,6 +89,12 @@ export async function createRun(params: {
   return post<RunData>('/agent/runs', params)
 }
 
+/** 重试失败运行（v3.9.1）：按原输入 / 策略 / 深度思考重放，返回新运行。 */
+export async function retryRun(runId: number): Promise<RunData> {
+  const { post } = await import('./client')
+  return post<RunData>(`/agent/runs/${runId}/retry`)
+}
+
 export async function cancelRun(runId: number): Promise<{ runId: number; status: string; lastSeq: number }> {
   const { post } = await import('./client')
   return post<{ runId: number; status: string; lastSeq: number }>(`/agent/runs/${runId}/cancel`)

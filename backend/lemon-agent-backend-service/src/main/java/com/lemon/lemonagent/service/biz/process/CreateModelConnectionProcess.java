@@ -35,7 +35,8 @@ public class CreateModelConnectionProcess extends Handler<CreateModelConnectionR
         List<String> models = request.getModels();
         ModelConnectionData data = modelConnectionService.create(request.getUserId(),
                 request.getName(), request.getProvider(), request.getBaseUrl(),
-                request.getApiKey(), models, Boolean.TRUE.equals(request.getAllowAuxiliary()));
+                request.getApiKey(), models, Boolean.TRUE.equals(request.getAllowAuxiliary()),
+                !Boolean.FALSE.equals(request.getEnabled()));
         response.setData(data);
         log.info("模型连接已创建 userId:{} name:{}", request.getUserId(), request.getName());
     }

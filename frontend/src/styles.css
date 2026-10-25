@@ -492,3 +492,6 @@ tr:hover td{background:#fafbfe}
 .think-head.open .chev{transform:rotate(90deg)}
 .think-body{max-height:260px;overflow:auto;padding:2px 12px 9px;font-size:12px;line-height:1.75;
   color:#64748b;white-space:pre-wrap;word-break:break-word;border-top:1px dashed #e3e6ef}
+
+/* ---------- v3.9.1 失败重试 ---------- */
+.retry-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}

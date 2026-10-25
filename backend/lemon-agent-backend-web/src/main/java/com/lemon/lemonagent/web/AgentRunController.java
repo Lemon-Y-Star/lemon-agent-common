@@ -3,6 +3,8 @@ package com.lemon.lemonagent.web;
 import com.lemon.lemonagent.model.runtime.ApprovalReq;
 import com.lemon.lemonagent.model.runtime.ApprovalResp;
 import com.lemon.lemonagent.model.runtime.CancelRunReq;
+import com.lemon.lemonagent.model.runtime.RetryRunReq;
+import com.lemon.lemonagent.model.runtime.RetryRunResp;
 import com.lemon.lemonagent.model.runtime.CancelRunResp;
 import com.lemon.lemonagent.model.runtime.CreateRunReq;
 import com.lemon.lemonagent.model.runtime.CreateRunResp;
@@ -122,6 +124,26 @@ public class AgentRunController {
         request.setUserId(userId);
         request.fillRoute(source);
         return optUtil.exec(request, new CancelRunResp(), req ->
+                AssertUtils.notNull(req.getRunId(), "运行 ID 不能为空"));
+    }
+
+    /**
+     * 重试失败运行（v3.9.1）：按原运行记录的输入 / 策略 / 深度思考重放，仅 FAILED / TIMEOUT 可重试。
+     *
+     * @param runId  路径参数：运行 ID
+     * @param userId 当前用户
+     * @param source 调用来源
+     * @return 新运行数据
+     */
+    @PostMapping("/{runId}/retry")
+    public RetryRunResp retry(@PathVariable Long runId,
+                              @RequestAttribute("lemon.userId") Long userId,
+                              @RequestHeader(value = "X-Source", defaultValue = "web") String source) {
+        RetryRunReq request = new RetryRunReq();
+        request.setRunId(runId);
+        request.setUserId(userId);
+        request.fillRoute(source);
+        return optUtil.exec(request, new RetryRunResp(), req ->
                 AssertUtils.notNull(req.getRunId(), "运行 ID 不能为空"));
     }
 

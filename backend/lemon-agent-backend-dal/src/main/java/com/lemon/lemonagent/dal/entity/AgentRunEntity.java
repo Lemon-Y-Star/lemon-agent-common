@@ -32,6 +32,9 @@ public class AgentRunEntity {
     /** 深度思考开关：1=开启（执行器追加 CoT 指令，正文含 <think> 标签） */
     private Integer thinking;
 
+    /** 原始输入（重试 / 溯源用） */
+    private String input;
+
     /** 32 位 hex 全链路 ID */
     private String traceId;
 

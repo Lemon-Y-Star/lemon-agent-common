@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchRunSnapshot, fetchSessions, type RunSnapshot, type SessionItem } from '../api/runtime'
+import { fetchRunSnapshot, fetchSessions, retryRun, type RunSnapshot, type SessionItem } from '../api/runtime'
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
 import RunGraphView from '../components/RunGraphView'
@@ -77,6 +77,18 @@ export default function Runs() {
   }
 
   const fmt = (s: string | null | undefined) => (s ? s.slice(0, 19).replace('T', ' ') : '—')
+
+  /** 重试失败 / 超时运行：按原输入 / 策略重放，完成后打开新运行详情。 */
+  async function onRetry(rid: number) {
+    try {
+      const nr = await retryRun(rid)
+      toast(`已发起重试 #${nr.runId}`)
+      await reload(status, sessionId, traceId)
+      void openDetail(nr.runId)
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '重试失败')
+    }
+  }
 
   return (
     <>
@@ -201,6 +213,19 @@ export default function Runs() {
                   )}
                   <tr><th>开始时间</th><td>{fmt(selected.startedAt)}</td></tr>
                   <tr><th>结束时间</th><td>{fmt(selected.endedAt)}</td></tr>
+                  {(selected.status === 'FAILED' || selected.status === 'TIMEOUT') && (
+                    <tr>
+                      <th>重试</th>
+                      <td>
+                        <button className="btn sm primary" onClick={() => void onRetry(selected.runId)}>
+                          🔁 重试
+                        </button>
+                        <span style={{ marginLeft: 8, color: 'var(--muted)', fontSize: 12 }}>
+                          按原始输入 / 策略在原会话重放
+                        </span>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
               {selected.errorMsg && (

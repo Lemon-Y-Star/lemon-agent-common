@@ -59,7 +59,7 @@ public class ModelConnectionServiceImpl implements ModelConnectionService {
 
     @Override
     public ModelConnectionData create(Long userId, String name, String provider, String baseUrl,
-                                      String apiKey, List<String> models, boolean allowAuxiliary) {
+                                      String apiKey, List<String> models, boolean allowAuxiliary, boolean enabled) {
         validate(name, provider, baseUrl, apiKey);
         ModelConnectionEntity entity = new ModelConnectionEntity();
         entity.setUserId(userId);
@@ -69,7 +69,7 @@ public class ModelConnectionServiceImpl implements ModelConnectionService {
         entity.setApiKeyCipher(CryptoUtil.encrypt(apiKey));
         entity.setModelsJson(toJson(models));
         entity.setAllowAuxiliary(allowAuxiliary ? 1 : 0);
-        entity.setStatus(ConnectionStatus.ENABLED.getCode());
+        entity.setStatus(enabled ? ConnectionStatus.ENABLED.getCode() : ConnectionStatus.DISABLED.getCode());
         repository.insert(entity);
         return toData(entity);
     }

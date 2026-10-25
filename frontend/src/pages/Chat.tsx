@@ -57,6 +57,10 @@ interface Bubble {
   // 深度思考（v3.9）：thinkOpen = 面板展开；thinkTouched = 用户手动开合过（自动行为让位）
   thinkOpen?: boolean
   thinkTouched?: boolean
+  // 失败重试（v3.9.1）
+  retryable?: boolean
+  failedInput?: string
+  failedThinking?: boolean
 }
 
 const STRATEGIES = [
@@ -89,6 +93,8 @@ export default function Chat() {
   const abortRef = useRef<{ abort: () => void } | null>(null)
   const lastSeqRef = useRef(0)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /** 最近一次发送的元信息（失败重试时重放输入 / 思考开关）。 */
+  const lastMetaRef = useRef<{ input: string; thinking: boolean }>({ input: '', thinking: false })
 
   // custom 策略的前置校验：选中的 Agent 既没有执行图也没挂工作流时，直接提示而不是发一个必败的请求
   const selectedAgent = agents.find((a) => a.id === agentId) ?? null
@@ -363,7 +369,13 @@ export default function Chat() {
           void reloadSessions()
         } else if (ev.type === 'run_failed') {
           const errorMsg = String(ev.payload.errorMsg ?? ev.payload.errorCode ?? '运行失败')
-          pushNotice(runId, errorMsg)
+          // 失败气泡带「重试」：按原始输入 / 策略 / 深度思考重放（v3.9.1）
+          setBubbles((prev) => [...prev, {
+            kind: 'msg', role: 'ASSISTANT', content: `⚠️ ${errorMsg}`, runId,
+            retryable: true,
+            failedInput: lastMetaRef.current.input,
+            failedThinking: lastMetaRef.current.thinking,
+          }])
           finishRun()
           void reloadSessions()
         } else if (ev.type === 'run_cancelled') {
@@ -489,15 +501,15 @@ export default function Chat() {
     }
   }, [deleting, activeSession, reloadSessions, navigate])
 
-  const onSend = useCallback(async () => {
-    const text = input.trim()
+  /** 发送本体：输入文本 + 是否深度思考。普通发送与失败重试共用（v3.9.1）。 */
+  const doSend = useCallback(async (text: string, thinking: boolean) => {
     if (!text || streaming) return
     if (customNotReady) {
       pushNotice(activeSession ?? undefined, '该 Agent 还没有执行图、也没挂载工作流，custom 模式跑不了——先画一张执行图或挂载工作流')
       return
     }
+    lastMetaRef.current = { input: text, thinking }
     setStreaming(true)
-    setInput('')
     setBubbles((prev) => [...prev, { kind: 'msg', role: 'USER', content: text }])
     try {
       const run = await createRun({
@@ -505,7 +517,7 @@ export default function Chat() {
         agentId: agentId ?? undefined,
         input: text,
         strategy,
-        thinking: thinkingOn || undefined,
+        thinking: thinking || undefined,
         clientRequestId: crypto.randomUUID(),
       })
       if (!activeSession) {
@@ -525,7 +537,14 @@ export default function Chat() {
         : '发起运行失败'
       pushNotice(activeSession ?? undefined, message)
     }
-  }, [input, streaming, activeSession, strategy, thinkingOn, customNotReady, agents, agentId, subscribe, reloadSessions])
+  }, [streaming, customNotReady, activeSession, strategy, agentId, subscribe, reloadSessions, navigate])
+
+  const onSend = useCallback(async () => {
+    const text = input.trim()
+    if (!text || streaming) return
+    setInput('')
+    await doSend(text, thinkingOn)
+  }, [input, streaming, thinkingOn, doSend])
 
   const onNewSession = useCallback(async () => {
     if (streaming) {
@@ -602,6 +621,18 @@ export default function Chat() {
         <div className="msg-body">
           {b.stepTitle && <div className="msg-step">{b.stepTitle}</div>}
           <div className={`bubble ${b.role === 'ASSISTANT' ? 'md-bubble' : ''}`}>
+            {b.retryable && (
+              <div className="retry-row">
+                <button
+                  className="btn sm"
+                  disabled={streaming}
+                  onClick={() => b.failedInput && void doSend(b.failedInput, b.failedThinking ?? false)}
+                >
+                  🔁 重试
+                </button>
+                <span className="note gray">按原输入 / 策略重新发起一次运行</span>
+              </div>
+            )}
             {b.role === 'ASSISTANT' && b.content && (() => {
               const parts = splitThink(b.content)
               if (!parts.think) {

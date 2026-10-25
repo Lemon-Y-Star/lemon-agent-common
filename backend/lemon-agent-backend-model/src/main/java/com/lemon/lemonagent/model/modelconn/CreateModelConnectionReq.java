@@ -36,6 +36,9 @@ public class CreateModelConnectionReq extends BaseReq {
     /** 是否允许辅助功能使用 */
     private Boolean allowAuxiliary;
 
+    /** 启用状态（缺省 = 启用；false 可创建暂不启用的连接） */
+    private Boolean enabled;
+
     /**
      * 填充路由三元组。
      *

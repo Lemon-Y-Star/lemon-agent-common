@@ -291,6 +291,7 @@ public class AgentRuntimeService {
         run.setClientRequestId(clientRequestId);
         run.setStatus(RunStatus.RUNNING.name());
         run.setStrategy(strategy.wireName());
+        run.setInput(input);
         run.setTraceId(newTraceId());
         run.setLastSeq(0);
         runRepository.insert(run);
@@ -325,6 +326,32 @@ public class AgentRuntimeService {
         run.setLastSeq(startedSeq);
         runExecutor.submit(run);
         return toRunData(run, false);
+    }
+
+    /**
+     * 重试失败运行（v3.9.1）：复用原始输入 / 策略 / 深度思考 / Agent，在**原会话**里发起新运行——
+     * 会话上下文不丢，多轮对话可以接着聊。仅 FAILED / TIMEOUT 可重试（幂等键独立生成，与原 run 无关）。
+     *
+     * @param userId 入参：当前用户
+     * @param runId  入参：要重试的运行 ID
+     * @return 出参：新运行数据
+     */
+    public RunData retryRun(Long userId, Long runId) {
+        AgentRunEntity origin = runRepository.findByIdAndUser(runId, userId);
+        if (origin == null) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "运行不存在");
+        }
+        boolean failed = RunStatus.FAILED.name().equals(origin.getStatus())
+                || RunStatus.TIMEOUT.name().equals(origin.getStatus());
+        if (!failed) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "只有失败 / 超时的运行可以重试");
+        }
+        if (origin.getInput() == null || origin.getInput().isBlank()) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "该运行没有记录原始输入（旧数据），无法重试");
+        }
+        return createRun(userId, origin.getSessionId(), origin.getAgentId(), origin.getInput(),
+                origin.getStrategy(), "retry_" + runId + "_" + UUID.randomUUID().toString().substring(0, 8),
+                origin.getThinking() != null && origin.getThinking() == 1);
     }
 
     /**

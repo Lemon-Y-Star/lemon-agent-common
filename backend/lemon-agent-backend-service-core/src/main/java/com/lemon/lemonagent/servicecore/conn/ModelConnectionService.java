@@ -28,10 +28,11 @@ public interface ModelConnectionService {
      * @param apiKey   入参：API 密钥（明文，加密落库）
      * @param models   入参：可用模型名列表
      * @param allowAuxiliary 入参：是否允许辅助功能使用
+     * @param enabled        入参：是否启用（缺省启用；false 可创建暂不启用的连接）
      * @return 出参：创建后的连接数据
      */
     ModelConnectionData create(Long userId, String name, String provider, String baseUrl,
-                               String apiKey, List<String> models, boolean allowAuxiliary);
+                               String apiKey, List<String> models, boolean allowAuxiliary, boolean enabled);
 
     /**
      * 更新连接；apiKey 为空表示保留原密钥。
