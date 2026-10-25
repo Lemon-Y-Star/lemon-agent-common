@@ -222,14 +222,34 @@ tr:hover td{background:#fafbfe}
 /* ---------- v3.4 并行节点气泡 ---------- */
 .msg-step{font-size:11px;color:#6b7280;margin:2px 0 2px 2px}
 
-/* ---------- v3.5 评测回归 ---------- */
+/* ---------- v3.5 评测回归（v3.7 重排：固定列宽 + Markdown 输出 + 限高滚动） ---------- */
 .eval-wrap{display:grid;grid-template-columns:300px 1fr;gap:12px;align-items:start}
 .eval-batches{display:grid;gap:6px;margin-top:6px}
 .eval-batch-row{display:flex;justify-content:space-between;gap:8px;align-items:center;
   border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:12.5px}
 .eval-pick{display:flex;gap:4px}
-.eval-main table{font-size:12.5px}
-.eval-changed{background:#fff7ed}
+.eval-pick .btn{min-width:30px;justify-content:center;padding:3px 0;font-weight:700}
+.eval-pick .btn.pick-a.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.eval-pick .btn.pick-b.on{background:#334155;border-color:#334155;color:#fff}
+.eval-main table{font-size:12.5px;table-layout:fixed}
+.eval-main tr:hover td{background:transparent}
+.eval-table-wrap{overflow-x:auto;border:1px solid #eef0f6;border-radius:10px}
+.eval-table-wrap table{border-collapse:separate;border-spacing:0}
+.eval-table-wrap thead th{position:sticky;top:0;z-index:1;white-space:normal}
+.eval-table-wrap th .th-sub{margin-left:6px;color:#94a3b8;font-weight:500;font-size:11px}
+.ab-chip{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;
+  border-radius:5px;color:#fff;font-size:11px;font-weight:700;margin-right:5px;vertical-align:-3px}
+.ab-chip.a{background:var(--primary)}
+.ab-chip.b{background:#334155}
+.eval-case{white-space:pre-wrap;font-size:12.3px;color:#374151;word-break:break-word}
+.eval-out{max-height:340px;overflow:auto;background:#fcfcfe;border:1px solid #eef0f6;border-radius:8px;padding:8px 12px}
+.eval-out .md{font-size:12.3px;line-height:1.7}
+.eval-out .md h1,.eval-out .md h2,.eval-out .md h3,.eval-out .md h4{font-size:12.8px;margin:10px 0 4px}
+.eval-out .md p{margin:4px 0}
+.eval-out .md table{font-size:11.8px}
+.eval-changed td{background:#fffaf1}
+.eval-changed td:first-child{box-shadow:inset 3px 0 0 #f59e0b}
+.eval-changed:hover td{background:#fffaf1}
 
 /* ---------- 修复：.field input{width:100%} 把复选框撑变形 ---------- */
 .field .tools-all input[type="checkbox"],

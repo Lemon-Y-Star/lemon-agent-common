@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { createEvalBatch, fetchEvalBatches, type EvalBatch } from '../api/eval'
+import { createEvalBatch, fetchEvalBatches, type EvalBatch, type EvalItem } from '../api/eval'
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
+import Markdown from '../components/Markdown'
 
 /**
  * 图评测回归（v3.5）：一批用例按当前图版本跑一遍，改完再跑一批，两批并排看差异。
@@ -13,9 +14,21 @@ import { ToastHost, toast } from '../components/Toast'
 const SAMPLE = `紧急！生产库连接数打满，业务报错
 想咨询一下发票怎么开`
 
-function short(text: string | null | undefined, n = 160) {
-  if (!text) return ''
-  return text.length > n ? `${text.slice(0, n)}…` : text
+/** 输出单元格：Markdown 渲染 + 限高滚动；运行中 / 失败给明确占位。 */
+function OutputCell({ item }: { item: EvalItem | null | undefined }) {
+  if (!item) return <div className="note gray">—</div>
+  if (!item.output) {
+    const hint = item.status === 'RUNNING' ? '运行中…'
+      : item.status === 'FAILED' ? '运行失败'
+        : item.status === 'BLOCKED' ? '等待审批'
+          : '（无输出）'
+    return <div className="note gray">{hint}</div>
+  }
+  return (
+    <div className="eval-out">
+      <Markdown text={item.output} />
+    </div>
+  )
 }
 
 export default function Eval() {
@@ -142,8 +155,16 @@ export default function Eval() {
                   {b.note && <div className="note gray" style={{ marginTop: 2 }}>{b.note}</div>}
                 </div>
                 <div className="eval-pick">
-                  <button className={`btn sm ${left === b.id ? 'primary' : ''}`} onClick={() => setLeft(b.id)}>A</button>
-                  <button className={`btn sm ${right === b.id ? 'primary' : ''}`} onClick={() => setRight(b.id)}>B</button>
+                  <button
+                    className={`btn sm pick-a ${left === b.id ? 'on' : ''}`}
+                    title="设为对比列 A"
+                    onClick={() => setLeft(b.id)}
+                  >A</button>
+                  <button
+                    className={`btn sm pick-b ${right === b.id ? 'on' : ''}`}
+                    title="设为对比列 B"
+                    onClick={() => setRight(b.id)}
+                  >B</button>
                 </div>
               </div>
             ))}
@@ -160,47 +181,64 @@ export default function Eval() {
           </h3>
           {!leftBatch && !rightBatch && <div className="note gray">先跑一批，或在左侧选择两个批次做对比</div>}
           {leftBatch && !rightBatch && (
-            <table>
-              <thead><tr><th>#</th><th>用例</th><th>输出</th><th>跳过节点</th></tr></thead>
-              <tbody>
-                {leftBatch.items.map((it) => (
-                  <tr key={it.seq}>
-                    <td>{it.seq + 1}</td>
-                    <td style={{ fontSize: 12 }}>{it.input}</td>
-                    <td style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{short(it.output)}</td>
-                    <td style={{ fontSize: 12 }}>{(it.skippedNodes ?? []).join(', ') || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="eval-table-wrap">
+              <table>
+                <colgroup>
+                  <col style={{ width: 40 }} />
+                  <col style={{ width: 180 }} />
+                  <col />
+                  <col style={{ width: 140 }} />
+                </colgroup>
+                <thead><tr><th>#</th><th>用例</th><th>输出</th><th>跳过节点</th></tr></thead>
+                <tbody>
+                  {leftBatch.items.map((it) => (
+                    <tr key={it.seq}>
+                      <td>{it.seq + 1}</td>
+                      <td className="eval-case">{it.input}</td>
+                      <td><OutputCell item={it} /></td>
+                      <td style={{ fontSize: 12 }}>{(it.skippedNodes ?? []).join(', ') || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           {leftBatch && rightBatch && (
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>用例</th>
-                  <th>A 输出（#{leftBatch.id}）</th>
-                  <th>B 输出（#{rightBatch.id}）</th>
-                  <th>差异</th>
-                </tr>
-              </thead>
-              <tbody>
-                {diffRows().map((row) => (
-                  <tr key={row.i} className={row.changed ? 'eval-changed' : ''}>
-                    <td>{row.i + 1}</td>
-                    <td style={{ fontSize: 12 }}>{row.ai?.input ?? row.bi?.input}</td>
-                    <td style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{short(row.ai?.output)}</td>
-                    <td style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{short(row.bi?.output)}</td>
-                    <td style={{ fontSize: 12 }}>
-                      {!row.sameInput && <div className="tag warn">用例不同</div>}
-                      {row.sameInput && row.changed && <div className="tag err">输出/分支有变化</div>}
-                      {row.sameInput && !row.changed && <div className="tag ok">一致</div>}
-                    </td>
+            <div className="eval-table-wrap">
+              <table>
+                <colgroup>
+                  <col style={{ width: 40 }} />
+                  <col style={{ width: 180 }} />
+                  <col />
+                  <col />
+                  <col style={{ width: 118 }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>用例</th>
+                    <th><span className="ab-chip a">A</span>输出 #{leftBatch.id}<span className="th-sub">v{leftBatch.graphVersion ?? '?'}</span></th>
+                    <th><span className="ab-chip b">B</span>输出 #{rightBatch.id}<span className="th-sub">v{rightBatch.graphVersion ?? '?'}</span></th>
+                    <th>差异</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {diffRows().map((row) => (
+                    <tr key={row.i} className={row.changed ? 'eval-changed' : ''}>
+                      <td>{row.i + 1}</td>
+                      <td className="eval-case">{row.ai?.input ?? row.bi?.input}</td>
+                      <td><OutputCell item={row.ai} /></td>
+                      <td><OutputCell item={row.bi} /></td>
+                      <td>
+                        {!row.sameInput && <div className="tag warn">用例不同</div>}
+                        {row.sameInput && row.changed && <div className="tag err">输出/分支<br />有变化</div>}
+                        {row.sameInput && !row.changed && <div className="tag ok">一致</div>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
