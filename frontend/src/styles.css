@@ -336,3 +336,85 @@ tr:hover td{background:#fafbfe}
 .status-fill{height:100%;border-radius:6px;transition:width .25s}
 .status-count{width:74px;text-align:right;color:#374151;font-variant-numeric:tabular-nums}
 .status-count em{margin-left:6px;color:#9ca3af;font-style:normal;font-size:11.5px}
+
+/* ---------- v3.7 登录页：品牌区 + 表单卡 ---------- */
+.auth-wrap{min-height:100vh;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(420px,.95fr);background:#f6f7fb}
+@media(max-width:900px){.auth-wrap{grid-template-columns:1fr}}
+
+.auth-brand{position:relative;overflow:hidden;color:#eef0ff;padding:56px 56px 40px;
+  background:
+    radial-gradient(900px 500px at 12% 8%, rgba(129,140,248,.35), transparent 60%),
+    radial-gradient(700px 420px at 88% 92%, rgba(56,189,248,.22), transparent 62%),
+    linear-gradient(150deg,#1e1b4b 0%,#312e81 48%,#1e293b 100%)}
+.auth-brand::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;
+  background-image:linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+  background-size:38px 38px;mask-image:radial-gradient(70% 60% at 30% 30%, #000 30%, transparent 100%)}
+.auth-brand-glow{position:absolute;width:420px;height:420px;right:-120px;top:-120px;border-radius:50%;
+  background:radial-gradient(circle, rgba(167,139,250,.55), transparent 65%);filter:blur(10px)}
+.auth-brand-inner{position:relative;z-index:1;display:flex;flex-direction:column;height:100%;max-width:520px}
+.auth-logo{display:flex;align-items:center;gap:12px}
+.auth-logo-mark{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:20px;color:#fff;background:linear-gradient(135deg,#818cf8,#a78bfa 55%,#38bdf8);
+  box-shadow:0 10px 24px rgba(99,102,241,.45)}
+.auth-logo-text{font-size:19px;font-weight:700;letter-spacing:.2px;display:flex;flex-direction:column;line-height:1.2}
+.auth-logo-text em{font-style:normal;font-size:11px;font-weight:500;color:rgba(226,232,255,.62);letter-spacing:1.4px;text-transform:uppercase}
+
+.auth-headline{margin:64px 0 14px;font-size:34px;line-height:1.35;font-weight:750;letter-spacing:-.4px}
+.auth-headline span{background:linear-gradient(90deg,#c7d2fe,#a5f3fc);-webkit-background-clip:text;background-clip:text;color:transparent}
+.auth-sub{max-width:460px;font-size:13.5px;line-height:1.9;color:rgba(226,232,255,.72)}
+
+.auth-points{list-style:none;margin:34px 0 0;padding:0;display:grid;gap:14px}
+.auth-points li{display:grid;grid-template-columns:28px 96px 1fr;align-items:center;gap:10px;
+  font-size:13px;color:rgba(226,232,255,.78)}
+.auth-points li i{font-style:normal;font-size:16px;opacity:.95}
+.auth-points li b{font-weight:600;color:#e8ecff}
+.auth-brand-foot{margin-top:auto;padding-top:40px;font-size:11.5px;letter-spacing:.4px;color:rgba(226,232,255,.45)}
+
+.auth-main{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:40px 24px}
+.auth-card{width:100%;max-width:392px;background:#fff;border:1px solid var(--border);border-radius:16px;
+  padding:34px 32px 26px;box-shadow:0 24px 60px rgba(30,27,75,.10),0 2px 6px rgba(30,27,75,.04)}
+.auth-card h2{margin:0 0 6px;font-size:22px;font-weight:700;color:#111827}
+.auth-hint{margin:0 0 22px;font-size:12.5px;color:#6b7280}
+
+.auth-field{display:block;margin-bottom:14px}
+.auth-field>span{display:block;font-size:12.5px;color:#374151;margin-bottom:6px;font-weight:500}
+.auth-field input{width:100%;height:42px;padding:0 12px;border:1px solid #d5d9e2;border-radius:9px;
+  font-size:13.5px;font-family:inherit;background:#fbfcff;transition:border-color .15s,box-shadow .15s,background .15s}
+.auth-field input:focus{outline:none;background:#fff;border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.14)}
+.auth-input-wrap{position:relative}
+.auth-input-wrap input{padding-right:56px}
+.auth-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);height:30px;padding:0 8px;
+  border:none;background:transparent;color:#6b7280;font-size:12px;cursor:pointer;border-radius:6px}
+.auth-eye:hover{background:#f1f2f6;color:#374151}
+
+.auth-error{min-height:18px;font-size:12px;color:#dc2626;line-height:18px;margin:2px 0 8px}
+.auth-submit{width:100%;height:44px;border:none;border-radius:10px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  font-size:14px;font-weight:600;color:#fff;letter-spacing:.3px;
+  background:linear-gradient(135deg,#6366f1,#7c3aed);box-shadow:0 10px 22px rgba(99,102,241,.32);
+  transition:transform .12s,box-shadow .15s,opacity .15s}
+.auth-submit:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 14px 26px rgba(99,102,241,.38)}
+.auth-submit:disabled{opacity:.72;cursor:not-allowed;box-shadow:none}
+.auth-spinner{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.45);
+  border-top-color:#fff;animation:auth-spin .7s linear infinite}
+@keyframes auth-spin{to{transform:rotate(360deg)}}
+
+.auth-demo{margin-top:18px;padding-top:14px;border-top:1px dashed #e5e7ef;display:flex;align-items:center;
+  justify-content:space-between;gap:10px;font-size:11.5px;color:#9ca3af}
+.auth-demo code{background:#f1f2f6;border-radius:4px;padding:1px 5px;font-size:11px;color:#4b5563}
+.auth-demo button{border:none;background:transparent;color:#6366f1;font-size:11.5px;cursor:pointer;padding:2px 4px}
+.auth-demo button:hover{text-decoration:underline}
+.auth-copyright{font-size:11px;color:#a3a8b8}
+
+/* 窄屏：品牌区只留 logo + 标题，表单进首屏 */
+@media(max-width:900px){
+  .auth-brand{padding:26px 22px 22px}
+  .auth-brand-inner{max-width:none;height:auto}
+  .auth-headline{margin:22px 0 10px;font-size:23px;line-height:1.4}
+  .auth-sub{font-size:12.5px;line-height:1.8}
+  .auth-points,.auth-brand-foot{display:none}
+  .auth-main{padding:22px 18px 32px;justify-content:flex-start}
+  .auth-card{padding:26px 20px 20px;border-radius:14px}
+  .auth-card h2{font-size:20px}
+}

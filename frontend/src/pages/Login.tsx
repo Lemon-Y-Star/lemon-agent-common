@@ -2,10 +2,16 @@ import { FormEvent, useState } from 'react'
 import { apiLogin } from '../api/auth'
 import { ApiError, storeSession } from '../api/client'
 
-/** 登录页：成功后存会话并进入工作台。 */
+/**
+ * 登录页：左侧品牌区 + 右侧表单卡。
+ *
+ * 交互细节：密码可见性切换、回车提交（表单原生）、错误区固定高度避免抖动、
+ * 演示账号一键填入（内部演示环境，省得每次手打）。
+ */
 export default function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPwd, setShowPwd] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -29,48 +35,95 @@ export default function Login() {
     }
   }
 
+  function fillDemo() {
+    setUsername('admin')
+    setPassword('lemon123456')
+    setError('')
+  }
+
   return (
-    <div className="login-wrap">
-      <div className="login-card">
-        <div className="logo-line">
-          <span className="dot">L</span>LemonAgent
+    <div className="auth-wrap">
+      <aside className="auth-brand">
+        <div className="auth-brand-glow" aria-hidden />
+        <div className="auth-brand-inner">
+          <div className="auth-logo">
+            <span className="auth-logo-mark">L</span>
+            <span className="auth-logo-text">LemonAgent<em>AI Agent Station</em></span>
+          </div>
+
+          <h1 className="auth-headline">
+            把 Agent 做成
+            <br />
+            <span>可回归、可溯源的工程制品</span>
+          </h1>
+          <p className="auth-sub">
+            执行图编排 · 双路知识检索 · 工具审批闭环 · 版本化评测回归，
+            一个工程视角的 Agent 工作台。
+          </p>
+
+          <ul className="auth-points">
+            <li><i>🧩</i><b>执行图调度</b><span>五类节点 / 条件路由 / 并行执行</span></li>
+            <li><i>🧪</i><b>评测回归</b><span>一批用例跨版本并排对比</span></li>
+            <li><i>🛡️</i><b>审批闭环</b><span>写操作挂起、批准后续跑</span></li>
+          </ul>
+
+          <div className="auth-brand-foot">v3.7 · Spring Boot 4.1 / Spring AI 2.0 / React 18</div>
         </div>
-        <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 24, lineHeight: 1.7 }}>
-          登录后管理模型与 MCP 连接（对话与 Agent 搭建将于后续版本开放）
-        </p>
-        <form onSubmit={onSubmit}>
-          <div className="field">
-            <label>用户名</label>
+      </aside>
+
+      <main className="auth-main">
+        <form className="auth-card" onSubmit={onSubmit}>
+          <h2>欢迎回来</h2>
+          <p className="auth-hint">登录后管理模型连接、MCP 工具与你的 Agent</p>
+
+          <label className="auth-field">
+            <span>用户名</span>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
+              placeholder="输入用户名"
+              autoFocus
               required
             />
-          </div>
-          <div className="field">
-            <label>密码</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </div>
-          <button
-            className="btn primary"
-            type="submit"
-            disabled={busy}
-            style={{ width: '100%', justifyContent: 'center', marginTop: 6 }}
-          >
-            {busy ? '登录中…' : '登录'}
+          </label>
+
+          <label className="auth-field">
+            <span>密码</span>
+            <div className="auth-input-wrap">
+              <input
+                type={showPwd ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                placeholder="输入密码"
+                required
+              />
+              <button
+                type="button"
+                className="auth-eye"
+                onClick={() => setShowPwd((v) => !v)}
+                tabIndex={-1}
+                aria-label={showPwd ? '隐藏密码' : '显示密码'}
+              >
+                {showPwd ? '隐藏' : '显示'}
+              </button>
+            </div>
+          </label>
+
+          <div className="auth-error" role="status">{error}</div>
+
+          <button className="auth-submit" type="submit" disabled={busy}>
+            {busy ? (<><span className="auth-spinner" />登录中…</>) : '登录'}
           </button>
-          <div className="pwd-status err" role="status">
-            {error}
+
+          <div className="auth-demo">
+            <span>演示账号：<code>admin</code> / <code>lemon123456</code></span>
+            <button type="button" onClick={fillDemo}>一键填入</button>
           </div>
         </form>
-      </div>
+        <div className="auth-copyright">© 2026 LemonAgent · 内部演示环境</div>
+      </main>
     </div>
   )
 }
