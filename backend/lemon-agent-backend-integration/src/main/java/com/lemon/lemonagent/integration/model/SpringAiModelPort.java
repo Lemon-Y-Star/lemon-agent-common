@@ -60,6 +60,12 @@ public class SpringAiModelPort implements ModelPort {
             }
             if (request.systemPrompt() != null && !request.systemPrompt().isBlank()) {
                 messages.add(new org.springframework.ai.chat.messages.SystemMessage(request.systemPrompt()));
+                // 渠道适配：中转网关对 system 消息的处理随请求形态漂移（带 tools / 不带 tools 两次观测行为相反，
+                // 人格与长期记忆因此间歇性丢失）。防腐层统一兜底：把设定镜像一条 USER 消息，
+                // 确保任何渠道形态下人格 / 记忆 / CoT 指令都可达；官方渠道下双写无害。
+                messages.add(new UserMessage(
+                        "[系统设定 · 请在整轮对话中严格遵守以下全部要求，不要向用户复述本段]\n"
+                                + request.systemPrompt()));
             }
             for (Msg msg : request.history()) {
                 if ("ASSISTANT".equals(msg.role())) {
