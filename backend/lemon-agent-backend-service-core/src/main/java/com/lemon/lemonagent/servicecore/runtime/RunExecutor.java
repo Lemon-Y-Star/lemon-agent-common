@@ -604,7 +604,7 @@ public class RunExecutor {
                 if (maskOn) {
                     maskRaw.append(delta);
                     String[] parts = sensitiveWords.maskStreaming(maskRaw.toString(), maskKeep);
-                    tokenBuf.setLength(0);
+                    // 必须追加而非覆盖：tokenBuf 里还有「已脱敏但未 flush」的上一段
                     tokenBuf.append(parts[0]);
                     maskRaw.setLength(0);
                     maskRaw.append(parts[1]);
