@@ -49,23 +49,27 @@ export default function Runs() {
   const [selected, setSelected] = useState<RunSnapshot | null>(null)
   const [error, setError] = useState('')
   const [traceId, setTraceId] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const [agents, setAgents] = useState<AgentConfig[]>([])
   const [agentId, setAgentId] = useState('')
   const [thinkOpen, setThinkOpen] = useState(false)
 
-  const reload = useCallback(async (filterStatus: string, filterSession: string, filterTrace: string, filterAgent: string) => {
+  const reload = useCallback(async (filterStatus: string, filterSession: string, filterTrace: string, filterAgent: string, filterPage: number) => {
     try {
       const qs = new URLSearchParams()
       if (filterStatus) qs.set('status', filterStatus)
       if (filterSession) qs.set('sessionId', filterSession)
       if (filterTrace.trim()) qs.set('traceId', filterTrace.trim())
       if (filterAgent) qs.set('agentId', filterAgent)
-      qs.set('page', '1')
-      qs.set('size', '50')
+      qs.set('page', String(filterPage))
+      qs.set('size', String(pageSize))
       const { request } = await import('../api/client')
       const data = await request<{ total: number; items: RunListItem[] }>(`/agent/runs?${qs.toString()}`)
       setItems(data.items)
       setTotal(data.total)
+      setPage(filterPage)
       setError('')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '加载失败，请稍后重试')
@@ -75,7 +79,7 @@ export default function Runs() {
   useEffect(() => {
     void fetchSessions().then((list) => setSessions(list.items)).catch(() => undefined)
     void fetchAgents().then((p) => setAgents([...p.platform, ...p.mine])).catch(() => undefined)
-    void reload('', '', '', '')
+    void reload('', '', '', '', 1)
   }, [reload])
 
   async function openDetail(runId: number) {
@@ -94,7 +98,7 @@ export default function Runs() {
     try {
       const nr = await retryRun(rid)
       toast(`已发起重试 #${nr.runId}`)
-      await reload(status, sessionId, traceId, agentId)
+      await reload(status, sessionId, traceId, agentId, page)
       void openDetail(nr.runId)
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '重试失败')
@@ -116,7 +120,7 @@ export default function Runs() {
         <div className="row">
           <div className="field" style={{ margin: 0 }}>
             <label>状态</label>
-            <select value={status} onChange={(e) => { setStatus(e.target.value); void reload(e.target.value, sessionId, traceId, agentId) }}>
+            <select value={status} onChange={(e) => { setStatus(e.target.value); void reload(e.target.value, sessionId, traceId, agentId, 1) }}>
               <option value="">全部</option>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>{statusTag(s).text}（{s}）</option>
@@ -125,7 +129,7 @@ export default function Runs() {
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Agent</label>
-            <select value={agentId} onChange={(e) => { setAgentId(e.target.value); void reload(e.target.value === '' ? '' : status, sessionId, traceId, e.target.value) }}>
+            <select value={agentId} onChange={(e) => { setAgentId(e.target.value); void reload(e.target.value === '' ? '' : status, sessionId, traceId, e.target.value, 1) }}>
               <option value="">全部 Agent</option>
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>{a.name}{a.platformPublic ? '（平台）' : ''}</option>
@@ -134,7 +138,7 @@ export default function Runs() {
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>会话</label>
-            <select value={sessionId} onChange={(e) => { setSessionId(e.target.value); void reload(status, e.target.value, traceId, agentId) }}>
+            <select value={sessionId} onChange={(e) => { setSessionId(e.target.value); void reload(status, e.target.value, traceId, agentId, 1) }}>
               <option value="">全部会话</option>
               {sessions.map((s) => (
                 <option key={s.sessionId} value={s.sessionId}>{s.title}</option>
@@ -146,14 +150,14 @@ export default function Runs() {
             <input
               value={traceId}
               onChange={(e) => setTraceId(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void reload(status, sessionId, traceId, agentId) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void reload(status, sessionId, traceId, agentId, page) }}
               placeholder="粘贴 traceId 反查日志，如 25e08b9eac9ec7aa152c60001aedb503"
               style={{ fontFamily: 'monospace' }}
             />
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
-            <button className="btn sm" onClick={() => void reload(status, sessionId, traceId, agentId)}>查询</button>
-            <button className="btn sm" onClick={() => { setTraceId(''); void reload(status, sessionId, '', '') }}>清除</button>
+            <button className="btn sm" onClick={() => void reload(status, sessionId, traceId, agentId, page)}>查询</button>
+            <button className="btn sm" onClick={() => { setTraceId(''); void reload(status, sessionId, '', '', 1) }}>清除</button>
           </div>
         </div>
       </div>
@@ -206,6 +210,15 @@ export default function Runs() {
               )}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <div className="pager">
+              <button className="btn sm" disabled={page <= 1} onClick={() => void reload(status, sessionId, traceId, agentId, 1)}>« 首页</button>
+              <button className="btn sm" disabled={page <= 1} onClick={() => void reload(status, sessionId, traceId, agentId, page - 1)}>上一页</button>
+              <span>第 {page} / {totalPages} 页 · 共 {total} 条</span>
+              <button className="btn sm" disabled={page >= totalPages} onClick={() => void reload(status, sessionId, traceId, agentId, page + 1)}>下一页</button>
+              <button className="btn sm" disabled={page >= totalPages} onClick={() => void reload(status, sessionId, traceId, agentId, totalPages)}>末页 »</button>
+            </div>
+          )}
         </div>
 
         <div className="card" style={{ marginBottom: 0 }}>
