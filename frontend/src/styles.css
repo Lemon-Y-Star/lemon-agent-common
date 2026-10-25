@@ -500,3 +500,7 @@ tr:hover td{background:#fafbfe}
 .pager{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted)}
 .pager-size{display:inline-flex;align-items:center;gap:4px}
 .pager-size select{padding:2px 4px;font-size:12px}
+
+/* ---------- v3.9.2 KaTeX 公式在深色气泡内不溢出 ---------- */
+.md .katex-display{overflow-x:auto;overflow-y:hidden;padding:2px 0}
+.md .katex{font-size:1.05em}
