@@ -469,3 +469,7 @@ tr:hover td{background:#fafbfe}
 .run-io .md{font-size:12.2px;line-height:1.65;background:#fff;border:1px solid #eef0f6;border-radius:8px;
   padding:8px 10px;max-height:240px;overflow:auto}
 @media(max-width:900px){.run-io{grid-template-columns:1fr}}
+
+/* ---------- v3.8 网站统计：6 张 KPI（3 列 × 2 行） ---------- */
+.kpi-row.k6{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:1100px){.kpi-row.k6{grid-template-columns:repeat(2,minmax(0,1fr))}}

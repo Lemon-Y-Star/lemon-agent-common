@@ -10,7 +10,8 @@ import { ToastHost } from '../components/Toast'
  * 零数据的日期也要占位——否则柱状图会"少几天"，让人以为是数据丢了。
  */
 
-const STATUS_META: Record<string, { label: string; color: string }> = {
+/** 运行状态 → 中文标签 + 主题色（用量页与管理端统计共用，改色两处同步）。 */
+export const STATUS_META: Record<string, { label: string; color: string }> = {
   COMPLETED: { label: '成功', color: '#16a34a' },
   FAILED: { label: '失败', color: '#dc2626' },
   CANCELLED: { label: '已取消', color: '#94a3b8' },

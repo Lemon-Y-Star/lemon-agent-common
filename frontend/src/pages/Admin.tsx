@@ -2,9 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchAdminStats, type AdminStats } from '../api/workspace'
 import { ApiError } from '../api/client'
 import { ToastHost } from '../components/Toast'
+import { STATUS_META } from './Usage'
 
 /**
  * 管理端统计（PRD FR-22.1 简化版）：admin 角色可见的平台总量统计。
+ *
+ * 视觉与「用量与观测」同一套语言：KPI 卡 + 横向状态条（v3.8 重做，此前 .stat 类没有样式，
+ * 页面是裸文字大表格）。
  */
 export default function Admin() {
   const [stats, setStats] = useState<AdminStats | null>(null)
@@ -23,6 +27,20 @@ export default function Admin() {
     void reload()
   }, [reload])
 
+  const byStatus = Object.entries(stats?.runsByStatus ?? {})
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count)
+  const totalRuns = byStatus.reduce((s, x) => s + x.count, 0)
+
+  const kpis: { lbl: string; num: string | number | undefined; sub: string }[] = [
+    { lbl: '用户', num: stats?.users, sub: '注册账号数' },
+    { lbl: '会话', num: stats?.sessions, sub: '对话会话总数' },
+    { lbl: '运行', num: stats?.runs, sub: '全部运行（含进行中）' },
+    { lbl: '消息', num: stats?.messages, sub: 'USER + ASSISTANT' },
+    { lbl: '工单', num: stats?.tickets, sub: 'demo_ticket 创建量' },
+    { lbl: '总 tokens', num: stats?.totalTokens?.toLocaleString(), sub: '输入 + 输出累计' },
+  ]
+
   return (
     <>
       <div className="page-head">
@@ -37,28 +55,39 @@ export default function Admin() {
 
       <p className="status-line" role="status">{error}</p>
 
-      <div className="grid g3" style={{ marginBottom: 16 }}>
-        <div className="stat"><div className="lbl">用户</div><div className="num">{stats?.users ?? '—'}</div></div>
-        <div className="stat"><div className="lbl">会话</div><div className="num">{stats?.sessions ?? '—'}</div></div>
-        <div className="stat"><div className="lbl">运行</div><div className="num">{stats?.runs ?? '—'}</div></div>
-        <div className="stat"><div className="lbl">消息</div><div className="num">{stats?.messages ?? '—'}</div></div>
-        <div className="stat"><div className="lbl">工单</div><div className="num">{stats?.tickets ?? '—'}</div></div>
-        <div className="stat"><div className="lbl">总 tokens</div><div className="num">{stats?.totalTokens.toLocaleString() ?? '—'}</div></div>
+      <div className="kpi-row k6">
+        {kpis.map((k) => (
+          <div className="kpi" key={k.lbl}>
+            <div className="kpi-lbl">{k.lbl}</div>
+            <div className="kpi-num">{k.num ?? '—'}</div>
+            <div className="kpi-sub">{k.sub}</div>
+          </div>
+        ))}
       </div>
 
       <div className="card">
-        <h3>运行状态分布</h3>
-        <table>
-          <thead><tr><th>状态</th><th>数量</th></tr></thead>
-          <tbody>
-            {Object.entries(stats?.runsByStatus ?? {}).map(([status, count]) => (
-              <tr key={status}><td>{status}</td><td>{count}</td></tr>
-            ))}
-            {Object.keys(stats?.runsByStatus ?? {}).length === 0 && (
-              <tr><td colSpan={2}><div className="note gray">暂无运行</div></td></tr>
-            )}
-          </tbody>
-        </table>
+        <h3>运行状态分布 <span className="sub">共 {totalRuns.toLocaleString()} 条运行</span></h3>
+        <div className="status-bars">
+          {byStatus.map((s) => {
+            const meta = STATUS_META[s.status] ?? { label: s.status, color: '#94a3b8' }
+            const pct = totalRuns === 0 ? 0 : Math.round((s.count / totalRuns) * 100)
+            return (
+              <div className="status-row" key={s.status}>
+                <span className="status-name">
+                  <i style={{ background: meta.color }} />
+                  {meta.label}
+                </span>
+                <div className="status-track">
+                  <div className="status-fill" style={{ width: `${pct}%`, background: meta.color }} />
+                </div>
+                <span className="status-count">
+                  {s.count.toLocaleString()}<em>{pct}%</em>
+                </span>
+              </div>
+            )
+          })}
+          {byStatus.length === 0 && <div className="note gray">暂无运行</div>}
+        </div>
       </div>
       <ToastHost />
     </>
