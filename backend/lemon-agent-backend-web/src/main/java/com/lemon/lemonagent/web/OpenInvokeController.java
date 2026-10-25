@@ -49,7 +49,7 @@ public class OpenInvokeController {
     private AgentRunRepository runRepository;
 
     /** 调用请求体。 */
-    public record OpenInvokeReq(String input, String strategy, Integer waitSeconds) {
+    public record OpenInvokeReq(String input, String strategy, Integer waitSeconds, Boolean thinking) {
     }
 
     /**
@@ -76,7 +76,7 @@ public class OpenInvokeController {
         int waitSeconds = request.waitSeconds() == null ? 60 : Math.min(Math.max(request.waitSeconds(), 1), 120);
 
         var run = agentRuntimeService.createRun(key.getUserId(), null, agentId, input, strategy,
-                "open_" + UUID.randomUUID());
+                "open_" + UUID.randomUUID(), request.thinking());
         AgentRunEntity entity = waitTerminal(key.getUserId(), run.getRunId(), waitSeconds);
         return BaseResult.success(toResult(entity));
     }

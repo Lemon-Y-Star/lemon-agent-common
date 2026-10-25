@@ -4,6 +4,7 @@ import { createEvalBatch, fetchEvalBatches, type EvalBatch, type EvalItem } from
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
 import Markdown from '../components/Markdown'
+import { stripThink } from '../components/ThinkingPanel'
 
 /**
  * 图评测回归（v3.5）：一批用例按当前图版本跑一遍，改完再跑一批，两批并排看差异。
@@ -26,7 +27,7 @@ function OutputCell({ item }: { item: EvalItem | null | undefined }) {
   }
   return (
     <div className="eval-out">
-      <Markdown text={item.output} />
+      <Markdown text={stripThink(item.output)} />
     </div>
   )
 }

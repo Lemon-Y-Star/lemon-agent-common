@@ -60,6 +60,12 @@ public class RunExecutor {
     /** 计划步骤上限（plan 策略）：再多就不是「计划」而是流水账，且每次运行的成本线性增长。 */
     private static final int MAX_PLAN_STEPS = 6;
 
+    /** 深度思考（CoT）指令：推理放进 <think> 标签（用户可见、流式展开），标签后是最终回答。 */
+    private static final String THINKING_INSTRUCTION =
+            "【深度思考模式】先用 <think> 与 </think> 标签包裹你的逐步推理（这部分用户可见，"
+                    + "推理要简洁、控制在 300 字以内、不要使用 markdown 标题），"
+                    + "标签结束后另起一行输出最终回答；最终回答要完整、可直接使用。";
+
     /** 规划阶段追加到 Agent 人格之后的约束：只输出 JSON，便于解析。 */
     /**
      * 规划阶段专用 system prompt：<b>不掺 Agent 人格</b>——人格里常带"调用 xx 工具"的话术，
@@ -224,7 +230,18 @@ public class RunExecutor {
 
         List<ModelPort.ToolSpec> tools = !fixed && depth < MAX_TOOL_ROUNDS
                 ? toolRegistry.specs(allowedTools) : List.of();
-        TurnResult turn = streamTurn(runId, conn, instructionOf(agent, run.getUserId()), context, userInput, tools, 0, true);
+        // 深度思考（CoT）：auto / fixed 均支持（plan / custom 有各自的可见进度）。
+        // 指令同时写 system 与用户消息——部分中转渠道在带 tools 的请求里会丢弃 system 消息（v3.0 已知缺陷），
+        // 只写 system 会让 CoT 在 auto 模式静默失效；落库的 USER 消息保持原始输入不受影响。
+        boolean thinkingOn = run.getThinking() != null && run.getThinking() == 1;
+        String systemPrompt = instructionOf(agent, run.getUserId());
+        if (thinkingOn) {
+            systemPrompt = systemPrompt + "\n\n" + THINKING_INSTRUCTION;
+        }
+        String modelInput = thinkingOn
+                ? "[系统指令]" + THINKING_INSTRUCTION + "\n\n用户问题：" + userInput
+                : userInput;
+        TurnResult turn = streamTurn(runId, conn, systemPrompt, context, modelInput, tools, 0, true);
 
         // ④ 分支：工具调用（挂起或直执行） vs 文本完成；fixed 模式没有装配工具，模型报 tool_calls 属异常，按文本收口
         if (turn.toolCalls() != null && !fixed) {

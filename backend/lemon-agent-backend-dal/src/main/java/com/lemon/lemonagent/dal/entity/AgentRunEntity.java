@@ -29,6 +29,9 @@ public class AgentRunEntity {
     /** 策略 */
     private String strategy;
 
+    /** 深度思考开关：1=开启（执行器追加 CoT 指令，正文含 <think> 标签） */
+    private Integer thinking;
+
     /** 32 位 hex 全链路 ID */
     private String traceId;
 

@@ -112,6 +112,15 @@ public interface AgentRunRepository {
     int saveModelInfo(Long id, String modelName, Long connId);
 
     /**
+     * 落库深度思考开关（创建时调用一次）。
+     *
+     * @param id       入参：运行 ID
+     * @param thinking 入参：1=开启 / 0=关闭
+     * @return 出参：影响行数
+     */
+    int saveThinking(Long id, int thinking);
+
+    /**
      * LLM 观测汇总（时间窗内）：调用数 / 失败数 / token 合计 / 平均时长(ms)。
      *
      * @param userId 入参：用户

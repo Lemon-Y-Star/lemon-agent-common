@@ -29,6 +29,9 @@ public class CreateRunReq extends BaseReq {
     /** 幂等键（前端生成的 UUID） */
     private String clientRequestId;
 
+    /** 深度思考（CoT）：true = 执行器追加 <think> 推理指令，前端拆分「思考 / 结论」 */
+    private Boolean thinking;
+
     /** 填充路由三元组。 */
     public void fillRoute(String source) {
         PlatformRoute.fill(this, source, Operations.RUN_CREATE);

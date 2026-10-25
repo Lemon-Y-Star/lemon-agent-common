@@ -118,7 +118,7 @@ public class EvalService {
 
         for (int i = 0; i < cases.size(); i++) {
             RunData run = agentRuntimeService.createRun(userId, null, agentId, cases.get(i), "custom",
-                    "eval_" + batch.getId() + "_" + i + "_" + UUID.randomUUID().toString().substring(0, 8));
+                    "eval_" + batch.getId() + "_" + i + "_" + UUID.randomUUID().toString().substring(0, 8), null);
             EvalItemEntity item = new EvalItemEntity();
             item.setBatchId(batch.getId());
             item.setSeq(i);

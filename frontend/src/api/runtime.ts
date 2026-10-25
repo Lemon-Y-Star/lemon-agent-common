@@ -81,6 +81,8 @@ export async function createRun(params: {
   agentId?: number
   input: string
   strategy: string
+  /** 深度思考（CoT）：true = 执行器追加 <think> 推理指令 */
+  thinking?: boolean
   clientRequestId: string
 }): Promise<RunData> {
   const { post } = await import('./client')

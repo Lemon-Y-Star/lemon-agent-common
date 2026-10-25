@@ -3,6 +3,7 @@ import { fetchArtifacts, submitFeedback, type ArtifactItem } from '../api/artifa
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
 import Markdown from '../components/Markdown'
+import { stripThink } from '../components/ThinkingPanel'
 
 /**
  * 产物与反馈（v3.8，FR-17 最小版）：我的有产出运行 + 运行级反馈。
@@ -40,7 +41,7 @@ function ArtifactCard({ item, onChanged }: { item: ArtifactItem; onChanged: () =
       </div>
       {item.output ? (
         <div className="eval-out">
-          <Markdown text={item.output} />
+          <Markdown text={stripThink(item.output)} />
         </div>
       ) : (
         <div className="note gray">（无产出）</div>

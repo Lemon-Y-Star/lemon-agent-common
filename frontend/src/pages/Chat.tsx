@@ -21,6 +21,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 import { ToastHost, toast } from '../components/Toast'
 import Markdown from '../components/Markdown'
+import ThinkingPanel, { splitThink } from '../components/ThinkingPanel'
 
 /**
  * 对话运行时（v2）：会话侧栏 + 消息区 + SSE 流式气泡 + 工具调用与审批。
@@ -53,6 +54,9 @@ interface Bubble {
   // 并行执行时按节点区分气泡
   stepIndex?: number
   stepTitle?: string
+  // 深度思考（v3.9）：thinkOpen = 面板展开；thinkTouched = 用户手动开合过（自动行为让位）
+  thinkOpen?: boolean
+  thinkTouched?: boolean
 }
 
 const STRATEGIES = [
@@ -72,6 +76,7 @@ export default function Chat() {
   const [bubbles, setBubbles] = useState<Bubble[]>([])
   const [input, setInput] = useState('')
   const [strategy, setStrategy] = useState('auto')
+  const [thinkingOn, setThinkingOn] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [connected, setConnected] = useState(true)
   const [activeRunId, setActiveRunId] = useState<number | null>(null)
@@ -234,13 +239,21 @@ export default function Chat() {
               const b = next[i]
               if (b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId
                 && (b.stepIndex ?? 0) === stepIndex) {
-                next[i] = { ...b, content: b.content + delta }
+                const merged = b.content + delta
+                // 深度思考：首个 <think> 到达即自动展开面板（用户没手动操作过时）
+                const thinkOpen = merged.includes('<think>') && b.thinkOpen === undefined && !b.thinkTouched
+                  ? true
+                  : b.thinkOpen
+                next[i] = { ...b, content: merged, thinkOpen }
                 return next
               }
             }
             const plan = next.find((x) => x.kind === 'plan' && x.runId === runId)
             const title = plan?.planSteps?.[stepIndex]?.title
-            next.push({ kind: 'msg', role: 'ASSISTANT', content: delta, runId, stepIndex, stepTitle: title })
+            next.push({
+              kind: 'msg', role: 'ASSISTANT', content: delta, runId, stepIndex, stepTitle: title,
+              thinkOpen: delta.includes('<think>') ? true : undefined,
+            })
             return next
           })
         } else if (ev.type === 'graph_started') {
@@ -335,7 +348,12 @@ export default function Chat() {
             for (let i = next.length - 1; i >= 0; i--) {
               const b = next[i]
               if (b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId) {
-                next[i] = { ...b, content: outputText }
+                // 深度思考：结论输出完自动收起思考面板（用户手动开合过则尊重其选择）
+                next[i] = {
+                  ...b,
+                  content: outputText,
+                  thinkOpen: b.thinkTouched ? b.thinkOpen : false,
+                }
                 break
               }
             }
@@ -487,6 +505,7 @@ export default function Chat() {
         agentId: agentId ?? undefined,
         input: text,
         strategy,
+        thinking: thinkingOn || undefined,
         clientRequestId: crypto.randomUUID(),
       })
       if (!activeSession) {
@@ -506,7 +525,7 @@ export default function Chat() {
         : '发起运行失败'
       pushNotice(activeSession ?? undefined, message)
     }
-  }, [input, streaming, activeSession, strategy, customNotReady, agents, agentId, subscribe, reloadSessions])
+  }, [input, streaming, activeSession, strategy, thinkingOn, customNotReady, agents, agentId, subscribe, reloadSessions])
 
   const onNewSession = useCallback(async () => {
     if (streaming) {
@@ -583,9 +602,31 @@ export default function Chat() {
         <div className="msg-body">
           {b.stepTitle && <div className="msg-step">{b.stepTitle}</div>}
           <div className={`bubble ${b.role === 'ASSISTANT' ? 'md-bubble' : ''}`}>
-            {b.role === 'ASSISTANT' && b.content
-              ? <Markdown text={b.content} />
-              : (b.content || (streaming ? '…' : ''))}
+            {b.role === 'ASSISTANT' && b.content && (() => {
+              const parts = splitThink(b.content)
+              if (!parts.think) {
+                return parts.answer
+                  ? <Markdown text={parts.answer} />
+                  : (b.content || (streaming ? '…' : ''))
+              }
+              return (
+                <>
+                  <ThinkingPanel
+                    think={parts.think}
+                    done={parts.done}
+                    open={b.thinkOpen ?? false}
+                    onToggle={() => setBubbles((prev) => prev.map((x, xi) => (
+                      xi === i ? { ...x, thinkOpen: !(x.thinkOpen ?? false), thinkTouched: true } : x
+                    )))}
+                  />
+                  {parts.answer
+                    ? <Markdown text={parts.answer} />
+                    : (parts.done ? <div className="note gray">（无正文）</div> : null)}
+                </>
+              )
+            })()}
+            {b.role === 'USER' && (b.content || (streaming ? '…' : ''))}
+            {b.role === 'ASSISTANT' && !b.content && (streaming ? '…' : '')}
           </div>
         </div>
       </div>
@@ -618,6 +659,13 @@ export default function Chat() {
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
+            <button
+              className={`btn sm ${thinkingOn ? 'primary' : ''}`}
+              title="深度思考：流式时自动展开推理面板，结论输出完自动收起；可随时手动开合（仅 auto / fixed 策略）"
+              onClick={() => setThinkingOn(!thinkingOn)}
+            >
+              🧠 思考{thinkingOn ? '·开' : ''}
+            </button>
             <select
               className="btn sm"
               style={{ width: 'auto' }}

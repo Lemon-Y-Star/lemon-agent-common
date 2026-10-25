@@ -25,7 +25,7 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     private static final String COLUMNS =
             "id, session_id, agent_id, user_id, client_request_id, status, strategy, trace_id, last_seq, "
                     + "output_text, error_code, error_msg, pending_approval_json, plan_json, plan_step, "
-                    + "graph_json, graph_state_json, model_name, model_conn_id, "
+                    + "graph_json, graph_state_json, model_name, model_conn_id, thinking, "
                     + "input_tokens, output_tokens, started_at, ended_at, created_at, updated_at";
 
     private final JdbcTemplate jdbcTemplate;
@@ -55,6 +55,7 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
             e.setModelName(rs.getString("model_name"));
             long modelConnId = rs.getLong("model_conn_id");
             e.setModelConnId(rs.wasNull() ? null : modelConnId);
+            e.setThinking((Integer) rs.getObject("thinking"));
             e.setInputTokens((Integer) rs.getObject("input_tokens"));
             e.setOutputTokens((Integer) rs.getObject("output_tokens"));
             e.setStartedAt(toInstant(rs.getTimestamp("started_at")));
@@ -200,6 +201,12 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
         return jdbcTemplate.update(
                 "UPDATE agent_run SET model_name = ?, model_conn_id = ? WHERE id = ?",
                 modelName, connId, id);
+    }
+
+    @Override
+    public int saveThinking(Long id, int thinking) {
+        return jdbcTemplate.update(
+                "UPDATE agent_run SET thinking = ? WHERE id = ?", thinking, id);
     }
 
     /** 时间窗条件拼接（started_at >= since）。 */

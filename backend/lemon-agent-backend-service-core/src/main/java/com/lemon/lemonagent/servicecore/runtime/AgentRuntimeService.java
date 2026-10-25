@@ -211,7 +211,8 @@ public class AgentRuntimeService {
      *
      * @return 出参：运行数据（duplicated=true 时为原 run）
      */
-    public RunData createRun(Long userId, Long sessionId, Long agentId, String input, String strategyRaw, String clientRequestId) {
+    public RunData createRun(Long userId, Long sessionId, Long agentId, String input, String strategyRaw,
+                             String clientRequestId, Boolean thinking) {
         if (input == null || input.isBlank() || input.length() > MAX_INPUT_LENGTH) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "输入不能为空且不超过 4000 字符");
         }
@@ -308,12 +309,16 @@ public class AgentRuntimeService {
         sessionRepository.touch(session.getId());
 
         // ⑥ run_started 事件（seq=1）：游标回填运行实体，响应 lastSeq 即为前端续流起点
+        int thinkingFlag = thinking != null && thinking ? 1 : 0;
+        run.setThinking(thinkingFlag);
+        runRepository.saveThinking(run.getId(), thinkingFlag);
         long startedSeq = eventPublisher.append(run.getId(), RuntimeEventType.RUN_STARTED.wireName(),
                 objectMapper.writeValueAsString(Map.of(
                         "runId", run.getId(),
                         "sessionId", run.getSessionId(),
                         "traceId", run.getTraceId(),
                         "strategy", run.getStrategy(),
+                        "thinking", thinkingFlag == 1,
                         "ts", System.currentTimeMillis())));
         run.setLastSeq(startedSeq);
         runExecutor.submit(run);
