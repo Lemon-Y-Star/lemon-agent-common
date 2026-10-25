@@ -661,7 +661,10 @@ export default function Chat() {
             </select>
             <button
               className={`btn sm ${thinkingOn ? 'primary' : ''}`}
-              title="深度思考：流式时自动展开推理面板，结论输出完自动收起；可随时手动开合（仅 auto / fixed 策略）"
+              disabled={strategy === 'plan' || strategy === 'custom'}
+              title={strategy === 'plan' || strategy === 'custom'
+                ? '深度思考仅 auto / fixed 策略可用（plan / custom 已有计划卡 / 节点进度）'
+                : '深度思考：流式时自动展开推理面板，结论输出完自动收起；可随时手动开合'}
               onClick={() => setThinkingOn(!thinkingOn)}
             >
               🧠 思考{thinkingOn ? '·开' : ''}

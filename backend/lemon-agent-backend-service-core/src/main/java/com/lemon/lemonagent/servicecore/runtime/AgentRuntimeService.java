@@ -309,7 +309,9 @@ public class AgentRuntimeService {
         sessionRepository.touch(session.getId());
 
         // ⑥ run_started 事件（seq=1）：游标回填运行实体，响应 lastSeq 即为前端续流起点
-        int thinkingFlag = thinking != null && thinking ? 1 : 0;
+        // 深度思考只对 auto / fixed 生效（plan / custom 已有计划卡 / 节点进度作为可见过程），其余策略归零
+        int thinkingFlag = thinking != null && thinking
+                && (strategy == Strategy.AUTO || strategy == Strategy.FIXED) ? 1 : 0;
         run.setThinking(thinkingFlag);
         runRepository.saveThinking(run.getId(), thinkingFlag);
         long startedSeq = eventPublisher.append(run.getId(), RuntimeEventType.RUN_STARTED.wireName(),

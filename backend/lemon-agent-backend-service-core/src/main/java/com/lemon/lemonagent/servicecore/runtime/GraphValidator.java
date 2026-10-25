@@ -73,6 +73,13 @@ final class GraphValidator {
                     throw new BusinessException(ResultCodes.VALIDATION_ERROR,
                             "TOOL 节点 " + node.getId() + " 必须指定工具");
                 }
+                if (node.getTool().startsWith("run_wf_")) {
+                    // 图内禁止调用工作流工具：TOOL 节点会再发起同一工作流的子运行，
+                    // 造成「图 → 工作流 → 图」的无限递归链（图执行内 LLM 白名单已过滤 run_wf_*）
+                    throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                            "TOOL 节点 " + node.getId() + " 不能调用工作流工具（" + node.getTool()
+                                    + "）：工作流经 auto / plan 对话调用，避免嵌套递归");
+                }
                 if (!registry.names().contains(node.getTool())) {
                     throw new BusinessException(ResultCodes.VALIDATION_ERROR,
                             "TOOL 节点 " + node.getId() + " 引用了未注册的工具：" + node.getTool());
