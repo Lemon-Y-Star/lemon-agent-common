@@ -8,6 +8,10 @@ import com.lemon.lemonagent.dal.repository.AgentConfigRepository;
 import com.lemon.lemonagent.dal.repository.AgentMessageRepository;
 import com.lemon.lemonagent.dal.repository.AgentRunRepository;
 import com.lemon.lemonagent.dal.repository.ModelConnectionRepository;
+import com.lemon.lemonagent.model.runtime.AgentGraphData;
+import com.lemon.lemonagent.model.runtime.GraphEdge;
+import com.lemon.lemonagent.model.runtime.GraphNode;
+import com.lemon.lemonagent.model.runtime.GraphStateData;
 import com.lemon.lemonagent.model.runtime.ModelPort;
 import com.lemon.lemonagent.model.runtime.PlanStepData;
 import com.lemon.lemonagent.model.runtime.Strategy;
@@ -181,6 +185,11 @@ public class RunExecutor {
         // plan-execute：先规划再逐步执行；工具审批恢复后也回到这里，按库里的 plan_step 接着跑
         if (Strategy.PLAN.wireName().equals(run.getStrategy())) {
             planLoop(run, continuationNotes, depth);
+            return;
+        }
+        // 执行图（custom）：按拓扑序节点执行；节点审批恢复后同样回到这里，按 done 集合续跑
+        if (Strategy.CUSTOM.wireName().equals(run.getStrategy())) {
+            graphLoop(run, continuationNotes, depth);
             return;
         }
         Long runId = run.getId();
@@ -626,6 +635,283 @@ public class RunExecutor {
     private String lastUserInput(AgentRunEntity run) {
         List<AgentMessageEntity> history = messageRepository.findBySession(run.getSessionId(), run.getUserId());
         return history.isEmpty() ? null : history.get(history.size() - 1).getContent();
+    }
+
+    // ---------- 执行图（v3.2.0） ----------
+
+    /**
+     * 执行图主流程：按 Kahn 拓扑序逐节点执行（v3.2.0 串行；并行留后续切片）。
+     *
+     * <p><b>无内存态</b>：图快照在创建运行时冻结（{@code agent_run.graph_json}），
+     * 进度（done / outputs / current）逐步落 {@code graph_state_json}——
+     * 节点审批挂起、进程重启后都从断点续跑，已完成的节点不会重跑。</p>
+     */
+    private void graphLoop(AgentRunEntity run, List<String> notes, int depth) {
+        Long runId = run.getId();
+        AgentConfigEntity agent = agentOf(run);
+        List<String> agentTools = allowedToolsOf(agent);
+        ModelConnectionEntity conn = resolveConnection(run, agent);
+        if (conn == null || conn.getApiKeyCipher() == null) {
+            failIfStillRunning(runId, "MODEL_ERROR", "尚未配置启用的模型连接，请先在「模型连接」页添加并启用。");
+            return;
+        }
+        AgentGraphData graph = GraphCodec.decodeGraph(run.getGraphJson());
+        if (graph == null || graph.getNodes() == null || graph.getNodes().isEmpty()) {
+            failIfStillRunning(runId, "GRAPH_MISSING", "该运行缺少执行图快照，无法调度。");
+            return;
+        }
+        String userInput = lastUserInput(run);
+        if (userInput == null) {
+            failIfStillRunning(runId, "MODEL_ERROR", "会话内没有用户消息，无法发起运行。");
+            return;
+        }
+
+        List<GraphNode> order = GraphValidator.topoOrder(graph);
+        GraphStateData state = GraphCodec.decodeState(run.getGraphStateJson());
+        int total = order.size();
+
+        if (state.getDone().isEmpty() && state.getCurrent() == null) {
+            List<Map<String, Object>> brief = new ArrayList<>();
+            for (GraphNode node : order) {
+                brief.add(Map.of("id", node.getId(), "type", node.getType(), "title", nodeLabel(node)));
+            }
+            appendEvent(runId, RuntimeEventType.GRAPH_STARTED, objectMapper.writeValueAsString(Map.of(
+                    "nodes", brief,
+                    "total", total,
+                    "ts", System.currentTimeMillis())));
+            log.info("run {} 执行图开始，共 {} 个节点（拓扑序：{}）", runId, total,
+                    order.stream().map(GraphNode::getId).toList());
+        }
+
+        for (int i = 0; i < total; i++) {
+            GraphNode node = order.get(i);
+            if (state.getDone().contains(node.getId())) {
+                continue;
+            }
+            if (isTerminal(run)) {
+                return;
+            }
+
+            // 审批门：挂起等人批（run 与节点同时 BLOCKED，kind=NODE）
+            if ("APPROVAL".equals(node.getType())) {
+                suspendForNodeApproval(run, node);
+                return;
+            }
+
+            // 同一节点可能因"工具执行后重入"再次进入：current 已是本节点时不重复发 step_started
+            boolean reentry = node.getId().equals(state.getCurrent());
+            state.setCurrent(node.getId());
+            String currentJson = GraphCodec.encodeState(state);
+            runRepository.saveGraphState(runId, currentJson);
+            // 同步回内存实体：工具执行后重入时靠它识别"同一节点"，避免重复 step_started
+            run.setGraphStateJson(currentJson);
+            if (!reentry) {
+                appendEvent(runId, RuntimeEventType.STEP_STARTED, objectMapper.writeValueAsString(Map.of(
+                        "stepIndex", i,
+                        "nodeId", node.getId(),
+                        "nodeType", node.getType(),
+                        "title", nodeLabel(node),
+                        "total", total,
+                        "ts", System.currentTimeMillis())));
+            }
+
+            if ("START".equals(node.getType()) || "END".equals(node.getType())) {
+                markNodeDone(run, state, node, "", i);
+                continue;
+            }
+
+            if ("TOOL".equals(node.getType())) {
+                ToolRegistry.ToolHandler handler = toolRegistry.find(node.getTool());
+                if (handler == null) {
+                    failIfStillRunning(runId, "GRAPH_TOOL_MISSING", "节点 " + node.getId()
+                            + " 引用的工具已不可用：" + node.getTool());
+                    return;
+                }
+                Map<String, Object> args = new HashMap<>(node.getArgs() == null ? Map.of() : node.getArgs());
+                args.put("__runId", runId);
+                args.put("__userId", run.getUserId());
+                args.put("__callId", "node_" + node.getId());
+                appendEvent(runId, RuntimeEventType.TOOL_CALL, objectMapper.writeValueAsString(Map.of(
+                        "callId", "node_" + node.getId(),
+                        "toolName", node.getTool(),
+                        "args", node.getArgs() == null ? Map.of() : node.getArgs(),
+                        "riskLevel", handler.needsApproval ? "HIGH" : "LOW",
+                        "stepIndex", i,
+                        "ts", System.currentTimeMillis())));
+                // 作者显式配置的工具节点 = 已授权，直接执行（审批只拦"模型自主发起的写操作"）
+                List<String> noteBuf = new ArrayList<>();
+                executeAndEmitToolResult(run, node.getTool(), handler, args, noteBuf);
+                String output = noteBuf.isEmpty() ? "" : noteBuf.get(noteBuf.size() - 1);
+                markNodeDone(run, state, node, output, i);
+                continue;
+            }
+
+            // LLM 节点（context 要在 lambda 里用，必须是 effectively final）
+            List<ModelPort.Msg> history = historyContext(run);
+            final List<ModelPort.Msg> context = history == null ? new ArrayList<>() : history;
+            for (String upstream : upstreamOutputs(graph, state, node.getId())) {
+                context.add(new ModelPort.Msg("ASSISTANT", upstream));
+            }
+            notes.forEach(note -> context.add(new ModelPort.Msg("USER", "[系统] " + note)));
+
+            List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
+            List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
+                    ? toolRegistry.specs(allowed) : List.of();
+            TurnResult turn = streamTurn(runId, conn, nodeSystemPrompt(instructionOf(agent), node),
+                    context, nodeInput(node, userInput), tools, i, true);
+            if (turn.toolCalls() != null) {
+                handleToolCalls(run, turn.toolCalls(), notes, depth, allowed);
+                return;
+            }
+            if (!turn.completed()) {
+                failIfStillRunning(runId, "MODEL_ERROR", "模型调用失败，请检查模型配置。");
+                return;
+            }
+            notes.clear();
+            state.setInputTokens(state.getInputTokens() + turn.inputTokens());
+            state.setOutputTokens(state.getOutputTokens() + turn.outputTokens());
+            markNodeDone(run, state, node, turn.text(), i);
+        }
+
+        // 收口：正文 = 各节点产出按拓扑序拼装
+        StringBuilder sb = new StringBuilder();
+        for (GraphNode node : order) {
+            if ("START".equals(node.getType()) || "APPROVAL".equals(node.getType())) {
+                continue;
+            }
+            String output = state.getOutputs().get(node.getId());
+            if (output == null || output.isBlank()) {
+                continue;
+            }
+            sb.append("### ").append(nodeLabel(node)).append("\n").append(output).append("\n\n");
+        }
+        String outputText = sb.toString().trim();
+        int rows = runRepository.finish(runId, RunStatus.COMPLETED.name(), outputText, null, null,
+                (int) state.getInputTokens(), (int) state.getOutputTokens());
+        if (rows > 0) {
+            appendEvent(runId, RuntimeEventType.GRAPH_COMPLETED, objectMapper.writeValueAsString(Map.of(
+                    "completed", state.getDone(),
+                    "total", total,
+                    "ts", System.currentTimeMillis())));
+            appendEvent(runId, RuntimeEventType.RUN_COMPLETED, objectMapper.writeValueAsString(Map.of(
+                    "runId", runId,
+                    "outputText", outputText,
+                    "usage", Map.of("inputTokens", state.getInputTokens(), "outputTokens", state.getOutputTokens()),
+                    "ts", System.currentTimeMillis())));
+            insertAssistantMessage(run, outputText, runId);
+        }
+    }
+
+    /** 节点完成：写 done/outputs + 覆盖进度（一次 UPDATE，进度与产出同源）。 */
+    private void markNodeDone(AgentRunEntity run, GraphStateData state, GraphNode node, String output, int stepIndex) {
+        if (!state.getDone().contains(node.getId())) {
+            state.getDone().add(node.getId());
+        }
+        state.getOutputs().put(node.getId(), output == null ? "" : output);
+        state.setCurrent(null);
+        String json = GraphCodec.encodeState(state);
+        runRepository.saveGraphState(run.getId(), json);
+        run.setGraphStateJson(json);
+        appendEvent(run.getId(), RuntimeEventType.STEP_COMPLETED, objectMapper.writeValueAsString(Map.of(
+                "stepIndex", stepIndex,
+                "nodeId", node.getId(),
+                "title", nodeLabel(node),
+                "outputText", output == null ? "" : output,
+                "usage", Map.of("inputTokens", state.getInputTokens(), "outputTokens", state.getOutputTokens()),
+                "ts", System.currentTimeMillis())));
+    }
+
+    /** 上游节点产出（用于拼下游上下文）：取所有指向本节点的边的来源节点输出。 */
+    private List<String> upstreamOutputs(AgentGraphData graph, GraphStateData state, String nodeId) {
+        List<String> result = new ArrayList<>();
+        for (GraphEdge edge : graph.getEdges() == null ? List.<GraphEdge>of() : graph.getEdges()) {
+            if (!nodeId.equals(edge.getTo())) {
+                continue;
+            }
+            String output = state.getOutputs().get(edge.getFrom());
+            if (output != null && !output.isBlank()) {
+                result.add("[上游 " + edge.getFrom() + "] " + output);
+            }
+        }
+        return result;
+    }
+
+    /** 节点展示名：title 优先，否则用 id。 */
+    private String nodeLabel(GraphNode node) {
+        return node.getTitle() == null || node.getTitle().isBlank() ? node.getId() : node.getTitle();
+    }
+
+    /** LLM 节点的 system prompt：Agent 人格 + 节点指令（节点指令是这一步的局部目标）。 */
+    private String nodeSystemPrompt(String base, GraphNode node) {
+        String instruction = node.getPrompt() == null || node.getPrompt().isBlank()
+                ? nodeLabel(node) : node.getPrompt();
+        return base + "\n\n【当前节点： " + nodeLabel(node) + "】" + instruction
+                + "\n只完成本节点职责，不要提前完成后续节点的工作。";
+    }
+
+    /** LLM 节点的用户输入：节点目标 + 上游产出 + 用户原始请求。 */
+    private String nodeInput(GraphNode node, String userInput) {
+        String instruction = node.getPrompt() == null || node.getPrompt().isBlank()
+                ? nodeLabel(node) : node.getPrompt();
+        return "本节点任务：" + instruction + "\n用户原始请求：" + userInput;
+    }
+
+    /** 节点审批挂起：RUNNING→BLOCKED + pending(kind=NODE) + approval_required 事件。 */
+    private void suspendForNodeApproval(AgentRunEntity run, GraphNode node) {
+        long expiresAt = System.currentTimeMillis() + approvalTimeoutSeconds * 1000L;
+        String approvalId = "ap_" + UUID.randomUUID().toString().substring(0, 8);
+        String prompt = node.getApprovalPrompt() == null || node.getApprovalPrompt().isBlank()
+                ? "执行到审批节点「" + nodeLabel(node) + "」，是否继续？" : node.getApprovalPrompt();
+        String pendingJson = objectMapper.writeValueAsString(Map.of(
+                "kind", "NODE",
+                "approvalId", approvalId,
+                "nodeId", node.getId(),
+                "title", nodeLabel(node),
+                "prompt", prompt,
+                "riskLevel", "HIGH",
+                "expiresAt", expiresAt));
+        int rows = runRepository.suspend(run.getId(), approvalId, pendingJson);
+        if (rows == 0) {
+            return;
+        }
+        appendEvent(run.getId(), RuntimeEventType.APPROVAL_REQUIRED, objectMapper.writeValueAsString(Map.of(
+                "approvalId", approvalId,
+                "kind", "NODE",
+                "nodeId", node.getId(),
+                "prompt", prompt,
+                "riskLevel", "HIGH",
+                "expiresAt", expiresAt,
+                "ts", System.currentTimeMillis())));
+        log.info("运行挂起等待节点审批 runId:{} node:{} approvalId:{}", run.getId(), node.getId(), approvalId);
+    }
+
+    /**
+     * 节点审批通过后的续跑：把该节点标记完成，然后回到图调度继续下一个节点。
+     *
+     * @param run    入参：运行实体（已回到 RUNNING）
+     * @param nodeId 入参：审批节点 ID
+     */
+    public void resumeNodeApproved(AgentRunEntity run, String nodeId) {
+        cancelFlags.put(run.getId(), new AtomicBoolean(false));
+        Thread.startVirtualThread(() -> {
+            try {
+                GraphStateData state = GraphCodec.decodeState(run.getGraphStateJson());
+                if (!state.getDone().contains(nodeId)) {
+                    state.getDone().add(nodeId);
+                }
+                state.getOutputs().putIfAbsent(nodeId, "（人工审批通过）");
+                state.setCurrent(null);
+                String json = GraphCodec.encodeState(state);
+                runRepository.saveGraphState(run.getId(), json);
+                run.setGraphStateJson(json);
+                runLoop(run, new ArrayList<>(), 0);
+            } catch (Exception e) {
+                log.error("节点审批续跑异常 runId={}", run.getId(), e);
+                failIfStillRunning(run.getId(), "GRAPH_ERROR", "审批后续跑失败，请重试。");
+            } finally {
+                cancelFlags.remove(run.getId());
+            }
+        });
     }
 
     /** 工具调用决策：名单内挂起等审批，名单外直接执行进下一轮；未授权工具在执行前兜底拦截。 */

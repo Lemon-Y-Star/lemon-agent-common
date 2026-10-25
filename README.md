@@ -15,8 +15,9 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 | v2.4 | 会话管理全闭环：重命名 / 删除（run → event → message → session 级联）/ 深链复用 | ✅ |
 | v2.5 | Agent 管理（FR-6 最小充分版：平台公共只读 + 自建增删改 + 对话页挂载）+ 用量与额度（FR-16）+ 网站统计（FR-22.1，admin）+ 收件箱派生通知（FR-21） | ✅ |
 | v3.0 | Agent 三要素补齐：可用工具白名单（每 Agent 勾选，运行时只装配已授权工具）+ 模型来源绑定 + 启停开关；新增工具目录接口 | ✅ |
-| v3.1（本版） | 策略模板 plan-execute：先出计划（2..5 步，落库）再逐步执行，SSE 可视化计划进度，与工具审批打通 | ✅ |
-| v3.2+ | 节点编辑器 + 执行图（FR-7.1：按图调度 / 审批门节点） | 规划中 |
+| v3.1 | 策略模板 plan-execute：先出计划（2..5 步，落库）再逐步执行，SSE 可视化计划进度，与工具审批打通 | ✅ |
+| v3.2.0（本版） | 执行图后端：`agent_graph` 版本化 + Kahn 校验 + START/LLM/TOOL/APPROVAL/END 五类节点调度 + 图快照冻结 + `graph_started/graph_completed` 事件 | ✅ |
+| v3.2.1 | 执行图画布编辑（拖拽 / 连线 / 检查器 / 保存校验提示） | 进行中 |
 
 ## 结构
 
@@ -102,6 +103,25 @@ lemon-agent-common/
 - **与工具审批的组合**：步骤内触发高风险工具 → 照常 BLOCKED → 批准后 `resumeApproved` 重新进入
   `planLoop`，从**同一个 step** 重跑（工具结果作为合成上下文注入），这是"计划可恢复"的关键。
 - **成本口径**：N+1 次模型调用（N ≤ 6），run 的 token 用量 = 各步累加（含规划那次不计入步骤）。
+
+## v3.2.0 执行图后端实现要点（FR-7.1 最小落地）
+
+- **图是版本化实体**：`agent_graph(agent_id, version, graph_json, status)`——保存即 `version+1`，旧版本置 `status=0`；
+  Agent 被删除时级联清理图（不留孤儿行）。
+- **运行冻结快照**：创建 `custom` 运行时把图**快照**写进 `agent_run.graph_json`——之后再改图，**在跑的运行不受影响**、可复现。
+- **校验双跑**：保存时校验一次，创建运行时再校验一次（图可能被历史版本带进来）。规则：节点 ≤20、
+  ID 唯一、类型白名单、唯一 START、至少一个 END、边两端存在、START 无入边、非 START 必有入边、
+  TOOL 引用已注册工具、无环（Kahn）。失败直接 400，**不分配事件 seq**——运行时永远看不到半张图。
+- **五类节点**：START/END（占位）· LLM（一次模型调用，system = Agent 人格 + 节点指令，输入带上游产出）·
+  TOOL（执行作者显式配置的工具，**作者配置 = 已授权，不再走审批**）· APPROVAL（run 与节点同时 BLOCKED，
+  `kind=NODE`，批准后 `resumeNodeApproved` 标记节点完成再续跑）。
+- **授权仍然双闸**：节点可声明 `tools`（PRD FR-6.5 §⑪ 三态），未声明继承 Agent；模型自主发起的工具调用
+  照旧走装配闸 + 执行闸 + 工具审批。
+- **事件协议**：只用 `graph_started` / `graph_completed` 两个新事件，节点级复用 `step_started/step_completed`
+  （额外带 `nodeId` / `nodeType`），`token` 带 `stepIndex` —— 前端改造成本≈0。
+- **串行调度**：v3.2.0 按 Kahn 拓扑序**串行**执行（进度落 `graph_state_json`：done/outputs/current/用量），
+  并行与条件路由留后续切片；节点完成即覆盖写一次，审批挂起/进程重启都能续跑。
+- **迁移注意**：MySQL DDL 非事务，V007 首跑失败会留下半截列；处理方式是先清理残留（表/列/flyway 记录）再重跑。
 
 ## 启动
 

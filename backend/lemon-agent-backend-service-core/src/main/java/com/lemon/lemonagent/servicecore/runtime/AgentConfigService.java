@@ -37,14 +37,18 @@ public class AgentConfigService {
 
     private final ToolRegistry toolRegistry;
 
+    private final com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository;
+
     private final tools.jackson.databind.ObjectMapper objectMapper = new tools.jackson.databind.ObjectMapper();
 
     public AgentConfigService(AgentConfigRepository repository,
                               ModelConnectionRepository modelConnectionRepository,
-                              ToolRegistry toolRegistry) {
+                              ToolRegistry toolRegistry,
+                              com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository) {
         this.repository = repository;
         this.modelConnectionRepository = modelConnectionRepository;
         this.toolRegistry = toolRegistry;
+        this.agentGraphRepository = agentGraphRepository;
     }
 
     /**
@@ -122,6 +126,8 @@ public class AgentConfigService {
     public void delete(Long userId, Long agentId) {
         requireOwned(userId, agentId);
         repository.delete(agentId, userId);
+        // 级联清理执行图：图是 Agent 的附属物，不留下孤儿版本
+        agentGraphRepository.deleteByAgent(agentId);
     }
 
     /**

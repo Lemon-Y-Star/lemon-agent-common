@@ -59,6 +59,9 @@ public final class Operations {
     /** 删除个人 Agent */
     public static final String AGENT_DELETE = "AGENT_DELETE";
 
+    /** 保存执行图（v3.2.0） */
+    public static final String GRAPH_SAVE = "GRAPH_SAVE";
+
     private Operations() {
     }
 

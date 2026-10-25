@@ -137,6 +137,25 @@ public interface AgentRunRepository {
     int savePlan(Long id, String planJson, int planStep);
 
     /**
+     * 保存执行图快照与初始进度（创建运行、且策略为 custom 时调用）。
+     *
+     * @param id        入参：运行 ID
+     * @param graphJson 入参：图快照 JSON
+     * @param stateJson 入参：初始进度 JSON
+     * @return 出参：影响行数
+     */
+    int saveGraph(Long id, String graphJson, String stateJson);
+
+    /**
+     * 更新执行图进度（每个节点完成后覆盖写）。
+     *
+     * @param id        入参：运行 ID
+     * @param stateJson 入参：进度 JSON
+     * @return 出参：影响行数
+     */
+    int saveGraphState(Long id, String stateJson);
+
+    /**
      * 按状态查运行（审批超时扫描用）。
      *
      * @param status 入参：状态

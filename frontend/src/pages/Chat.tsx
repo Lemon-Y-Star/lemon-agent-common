@@ -46,13 +46,15 @@ interface Bubble {
   // 审批卡
   approvalId?: string
   decided?: 'APPROVE' | 'REJECT'
-  // 计划卡（plan 策略）
+  // 计划卡（plan 策略）/ 执行图卡（custom 策略）
   planSteps?: { title: string; status: string }[]
+  graphMode?: boolean
 }
 
 const STRATEGIES = [
   { value: 'auto', label: 'auto（自主迭代）' },
   { value: 'plan', label: 'plan（先规划再执行）' },
+  { value: 'custom', label: 'custom（按执行图调度）' },
 ]
 
 export default function Chat() {
@@ -224,6 +226,17 @@ export default function Chat() {
             }
             return next
           })
+        } else if (ev.type === 'graph_started') {
+          const raw = (ev.payload.nodes ?? []) as { id: string; type: string; title: string }[]
+          setBubbles((prev) => [...prev, {
+            kind: 'plan',
+            runId,
+            graphMode: true,
+            planSteps: raw.map((x) => ({
+              title: `${x.title}${x.type && x.type !== 'LLM' ? `（${x.type}）` : ''}`,
+              status: 'PENDING',
+            })),
+          }])
         } else if (ev.type === 'plan_created') {
           const raw = (ev.payload.steps ?? []) as { index: number; title: string }[]
           setBubbles((prev) => [...prev, {
@@ -481,8 +494,8 @@ export default function Chat() {
       return (
         <div key={i} className="plan-card">
           <div className="plan-head">
-            🗺️ 执行计划
-            <span className="tag info">{done}/{b.planSteps?.length ?? 0} 步完成</span>
+            {b.graphMode ? '🧩 执行图' : '🗺️ 执行计划'}
+            <span className="tag info">{done}/{b.planSteps?.length ?? 0} 节点完成</span>
           </div>
           <ol className="plan-steps">
             {(b.planSteps ?? []).map((st, idx) => (

@@ -17,7 +17,13 @@ public enum RuntimeEventType {
     /** 计划已生成（plan 策略）：{steps:[{index,title}], total, ts} */
     PLAN_CREATED("plan_created"),
 
-    /** 计划步骤开始：{stepIndex, title, total, ts} */
+    /** 执行图开始（custom 策略）：{nodes:[{id,type,title}], total, ts} */
+    GRAPH_STARTED("graph_started"),
+
+    /** 执行图完成：{completed:[nodeId], total, ts} */
+    GRAPH_COMPLETED("graph_completed"),
+
+    /** 计划步骤开始：{stepIndex, title, total, ts}（执行图复用，额外带 nodeId/nodeType） */
     STEP_STARTED("step_started"),
 
     /** 计划步骤完成：{stepIndex, title, outputText, usage:{inputTokens,outputTokens}, ts} */

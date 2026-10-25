@@ -53,6 +53,12 @@ public class AgentRunEntity {
     /** 当前计划步骤下标（0 起；等于步骤数表示计划已跑完） */
     private Integer planStep;
 
+    /** 执行图快照 JSON（custom 策略；提交时冻结，改图不影响在跑的运行） */
+    private String graphJson;
+
+    /** 执行图进度 JSON（done / outputs / current） */
+    private String graphStateJson;
+
     /** 输入 tokens */
     private Integer inputTokens;
 

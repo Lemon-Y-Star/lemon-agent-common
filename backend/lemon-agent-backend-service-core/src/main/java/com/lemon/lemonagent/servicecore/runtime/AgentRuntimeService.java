@@ -72,6 +72,10 @@ public class AgentRuntimeService {
 
     private final AgentConfigService agentConfigService;
 
+    private final com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository;
+
+    private final ToolRegistry toolRegistry;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final SecureRandom random = new SecureRandom();
@@ -82,7 +86,9 @@ public class AgentRuntimeService {
                                AgentRunEventRepository eventRepository,
                                EventPublisher eventPublisher,
                                RunExecutor runExecutor,
-                               AgentConfigService agentConfigService) {
+                               AgentConfigService agentConfigService,
+                               com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository,
+                               ToolRegistry toolRegistry) {
         this.sessionRepository = sessionRepository;
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
@@ -90,6 +96,8 @@ public class AgentRuntimeService {
         this.eventPublisher = eventPublisher;
         this.runExecutor = runExecutor;
         this.agentConfigService = agentConfigService;
+        this.agentGraphRepository = agentGraphRepository;
+        this.toolRegistry = toolRegistry;
     }
 
     // ---------- 会话 ----------
@@ -236,16 +244,39 @@ public class AgentRuntimeService {
         // Agent 挂载：跟随当前已启用版本（PRD S2 工具语义）；未指定时取平台默认
         AgentConfigEntity agent = resolveAgent(userId, agentId);
 
+        // custom（执行图）：提交时冻结图快照并校验，改图不影响在跑的运行；图非法则直接拒绝，不分配 seq
+        String graphSnapshot = null;
+        String graphStateSnapshot = null;
+        if (strategy == Strategy.CUSTOM) {
+            com.lemon.lemonagent.dal.entity.AgentGraphEntity graphEntity =
+                    agentGraphRepository.findActive(agent.getId());
+            if (graphEntity == null) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                        "该 Agent 还没有执行图，请先在「执行图」里配置后再用 custom 策略");
+            }
+            com.lemon.lemonagent.model.runtime.AgentGraphData graph =
+                    GraphCodec.decodeGraph(graphEntity.getGraphJson());
+            GraphValidator.validate(graph, toolRegistry);
+            graph.setVersion(graphEntity.getVersion());
+            graphSnapshot = GraphCodec.encodeGraph(graph);
+            graphStateSnapshot = GraphCodec.encodeState(new com.lemon.lemonagent.model.runtime.GraphStateData());
+        }
+
         AgentRunEntity run = new AgentRunEntity();
         run.setSessionId(session.getId());
         run.setUserId(userId);
         run.setAgentId(agent.getId());
+        run.setGraphJson(graphSnapshot);
+        run.setGraphStateJson(graphStateSnapshot);
         run.setClientRequestId(clientRequestId);
         run.setStatus(RunStatus.RUNNING.name());
         run.setStrategy(strategy.wireName());
         run.setTraceId(newTraceId());
         run.setLastSeq(0);
         runRepository.insert(run);
+        if (graphSnapshot != null) {
+            runRepository.saveGraph(run.getId(), graphSnapshot, graphStateSnapshot);
+        }
         eventPublisher.initCounter(run.getId(), 0);
 
         // ⑤ USER 消息落库 + 会话活跃（run_started 事件由 appendStarted 在下一步落库，seq=1）
@@ -329,7 +360,7 @@ public class AgentRuntimeService {
         data.setErrorMsg(run.getErrorMsg());
         Map<String, Object> pending = parsePending(run.getPendingApprovalJson());
         data.setPendingApproval(pending.isEmpty() ? null : pending);
-        data.setGraph(null);
+        data.setGraph(graphView(run));
         // plan 策略：刷新页面后仍能看到计划与进度（auto 策略为 null）
         data.setPlan(PlanCodec.decode(run.getPlanJson()));
         data.setPlanStep(run.getPlanStep());
@@ -381,16 +412,24 @@ public class AgentRuntimeService {
 
         appendApprovalResolved(runId, approvalId, approved ? "APPROVE" : "REJECT");
 
+        String kind = String.valueOf(pending.getOrDefault("kind", "TOOL"));
+        boolean nodeApproval = "NODE".equals(kind);
         if (approved) {
-            // 异步续跑：执行工具 → tool_result → 继续模型循环
-            runExecutor.resumeApproved(run,
-                    String.valueOf(pending.get("toolName")),
-                    (Map<String, Object>) pending.get("args"));
+            if (nodeApproval) {
+                // 节点审批：标记该节点完成，回到图调度继续下一个节点
+                runExecutor.resumeNodeApproved(run, String.valueOf(pending.get("nodeId")));
+            } else {
+                // 工具审批：执行工具 → tool_result → 继续模型循环
+                runExecutor.resumeApproved(run,
+                        String.valueOf(pending.get("toolName")),
+                        (Map<String, Object>) pending.get("args"));
+            }
         } else {
+            String errorMsg = nodeApproval ? "你拒绝了该审批节点，任务已终止。" : "你拒绝了本次工具调用，任务已终止。";
             appendEvent(runId, RuntimeEventType.RUN_FAILED, objectMapper.writeValueAsString(Map.of(
                     "runId", runId,
                     "errorCode", "TOOL_REJECTED",
-                    "errorMsg", "你拒绝了本次工具调用，任务已终止。",
+                    "errorMsg", errorMsg,
                     "ts", System.currentTimeMillis())));
         }
         AgentRunEntity current = requireRun(userId, runId);
@@ -504,6 +543,31 @@ public class AgentRuntimeService {
                 "decision", decision,
                 "operator", "USER",
                 "ts", System.currentTimeMillis())));
+    }
+
+    /**
+     * 执行图视图：节点 + 当前状态（前端刷新后复原用）。非 custom 运行返回 null。
+     *
+     * @param run 入参：运行实体
+     * @return 出参：图视图
+     */
+    private Object graphView(AgentRunEntity run) {
+        com.lemon.lemonagent.model.runtime.AgentGraphData graph = GraphCodec.decodeGraph(run.getGraphJson());
+        if (graph == null || graph.getNodes() == null || graph.getNodes().isEmpty()) {
+            return null;
+        }
+        com.lemon.lemonagent.model.runtime.GraphStateData state = GraphCodec.decodeState(run.getGraphStateJson());
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        for (com.lemon.lemonagent.model.runtime.GraphNode node : graph.getNodes()) {
+            String status = state.getDone().contains(node.getId()) ? "DONE"
+                    : node.getId().equals(state.getCurrent()) ? "RUNNING" : "PENDING";
+            String title = node.getTitle() == null || node.getTitle().isBlank() ? node.getId() : node.getTitle();
+            nodes.add(Map.of("id", node.getId(), "type", node.getType(), "title", title, "status", status));
+        }
+        return Map.of(
+                "version", graph.getVersion() == null ? 1 : graph.getVersion(),
+                "nodes", nodes,
+                "edges", graph.getEdges() == null ? List.of() : graph.getEdges());
     }
 
     private void appendEvent(Long runId, RuntimeEventType type, String payload) {

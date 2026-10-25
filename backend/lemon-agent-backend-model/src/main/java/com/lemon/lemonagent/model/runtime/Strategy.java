@@ -6,8 +6,9 @@ import com.lemon.architecture.model.ResultCodes;
 /**
  * 执行策略（契约 §4.5）。
  *
- * <p>已实现：{@code auto}（单 Agent 自主迭代）、{@code plan}（plan-execute：先出计划再逐步执行，
- * v3.1）。{@code fixed} / {@code flow} 按契约返回 UNSUPPORTED_STRATEGY（执行图落地后才允许它们进入）。</p>
+ * <p>已实现：{@code auto}（单 Agent 自主迭代）、{@code plan}（plan-execute：先出计划再逐步执行，v3.1）、
+ * {@code custom}（执行图：按 Agent 的图定义做 Kahn 拓扑调度，v3.2.0）。{@code fixed} / {@code flow}
+ * 仍返回 UNSUPPORTED_STRATEGY——它们本质是同一种图的预设，等图编辑器稳定后再降级成模板。</p>
  */
 public enum Strategy {
 
@@ -35,10 +36,10 @@ public enum Strategy {
     /**
      * 本增量是否支持该策略。
      *
-     * @return 出参：auto 与 plan 支持
+     * @return 出参：auto / plan / custom（执行图）支持
      */
     public boolean supported() {
-        return this == AUTO || this == PLAN;
+        return this == AUTO || this == PLAN || this == CUSTOM;
     }
 
     /**
@@ -53,7 +54,7 @@ public enum Strategy {
         for (Strategy s : values()) {
             if (s.wire.equals(value)) {
                 if (!s.supported()) {
-                    throw new BusinessException(ResultCodes.BAD_REQUEST, "策略 " + s.wire + " 尚未实现，当前支持 auto / plan");
+                    throw new BusinessException(ResultCodes.BAD_REQUEST, "策略 " + s.wire + " 尚未实现，当前支持 auto / plan / custom");
                 }
                 return s;
             }
