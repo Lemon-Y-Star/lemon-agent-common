@@ -24,6 +24,9 @@ public class AgentConfigData {
     /** 可用工具白名单；null = 全部已注册工具 */
     private java.util.List<String> tools;
 
+    /** 当前执行图版本；0 = 还没有图（前端据此决定是否显示「执行图」入口） */
+    private Integer graphVersion;
+
     /** 绑定模型连接；null = 运行时取用户最新启用连接 */
     private Long modelConnectionId;
 

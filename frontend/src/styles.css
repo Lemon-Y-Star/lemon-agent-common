@@ -180,7 +180,7 @@ tr:hover td{background:#fafbfe}
 .plan-step.done .plan-idx{background:#dcfce7;color:#15803d}
 
 /* ---------- v3.2.1 执行图画布 ---------- */
-.ge-wrap{display:grid;grid-template-columns:170px 1fr 300px;gap:12px;align-items:start}
+.ge-wrap{display:grid;grid-template-columns:150px minmax(360px,1fr) 250px;gap:12px;align-items:start}
 .ge-palette h3,.ge-inspector h3{margin:0 0 8px}
 .ge-palette-btns{display:grid;gap:6px}
 .ge-tips{margin-top:12px;font-size:11.5px;line-height:1.9;color:var(--muted)}
@@ -250,3 +250,18 @@ tr:hover td{background:#fafbfe}
 
 /* 行高修正：中文在 flex 行里默认行距偏紧，最后统一覆盖一次 */
 .tools-all,.tool-row,.tool-info{line-height:1.75}
+
+/* ---------- 执行图空态 ---------- */
+.ge-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:8px;text-align:center;color:var(--muted);padding:24px}
+.ge-empty-icon{font-size:30px;opacity:.7}
+.ge-empty b{font-size:14px;color:#374151}
+.ge-empty p{max-width:420px;font-size:12.5px;line-height:1.8;margin:0}
+
+/* ---------- 画布内层：内容超出时由外层滚动，节点不再被裁 ---------- */
+.ge-canvas{overflow:auto}
+.ge-canvas-inner{position:relative;min-width:100%;min-height:100%}
+.ge-node{padding:8px 10px;gap:4px}
+.ge-node-head{font-size:10px}
+.ge-node-title{font-size:13px;line-height:1.5}
+.ge-node-actions{margin-top:6px}

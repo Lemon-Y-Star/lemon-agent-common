@@ -19,8 +19,8 @@ import { ToastHost, toast } from '../components/Toast'
  * 避免两套校验规则打架：**能存下就一定能跑**这条保证由后端负责。
  */
 
-const NODE_W = 168
-const NODE_H = 64
+const NODE_W = 150
+const NODE_H = 96
 
 const TYPE_LABEL: Record<GraphNodeType, string> = {
   START: '开始',
@@ -62,8 +62,16 @@ function buildRoute(kind: RouteKind, keyword: string): string | null {
   return kind
 }
 
-function defaultPos(index: number): { x: number; y: number } {
-  return { x: 40 + (index % 4) * 230, y: 40 + Math.floor(index / 4) * 140 }
+const GAP_X = 40
+const GAP_Y = 52
+
+/** 网格位置：列数由画布实际宽度决定（宽屏 3~4 列、窄屏 2 列），避免节点排到可视区外。 */
+function gridPos(index: number, columns: number): { x: number; y: number } {
+  const cols = Math.max(1, columns)
+  return {
+    x: 40 + (index % cols) * (NODE_W + GAP_X),
+    y: 40 + Math.floor(index / cols) * (NODE_H + GAP_Y),
+  }
 }
 
 export default function GraphEditor() {
@@ -82,19 +90,23 @@ export default function GraphEditor() {
 
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
+  const innerRef = useRef<HTMLDivElement | null>(null)
+  const fitRef = useRef(false)
+
+  /** 画布能放几列（留 40px 边距）。 */
+  const columns = useCallback(() => {
+    const width = canvasRef.current?.clientWidth ?? 760
+    return Math.max(1, Math.floor((width - 40) / (NODE_W + GAP_X)))
+  }, [])
 
   const reload = useCallback(async () => {
     if (!Number.isFinite(id)) return
     try {
       const g = await fetchGraph(id)
-      // 没坐标的节点做一次自动布局（只在本地，保存时随图写回）
-      const nodes = g.nodes.map((n, i) => {
-        const p = defaultPos(i)
-        return { ...n, x: n.x ?? p.x, y: n.y ?? p.y }
-      })
-      setGraph({ ...g, nodes })
+      setGraph(g)
       setDirty(false)
       setError('')
+      fitRef.current = true
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '加载执行图失败')
     }
@@ -104,6 +116,19 @@ export default function GraphEditor() {
     void reload()
     void fetchTools().then(setTools).catch(() => setTools([]))
   }, [reload])
+
+  // 加载后按当前画布宽度补齐坐标；若已有坐标排到可视区外，就地重排（只影响本地，不置脏）
+  useEffect(() => {
+    if (!graph || !fitRef.current || graph.nodes.length === 0) return
+    const cols = columns()
+    const maxRight = Math.max(...graph.nodes.map((n) => (n.x ?? 0) + NODE_W))
+    const canvasWidth = canvasRef.current?.clientWidth ?? 760
+    const needsLayout = graph.nodes.some((n) => n.x == null || n.y == null) || maxRight > canvasWidth - 12
+    if (needsLayout) {
+      setGraph((g) => (g ? { ...g, nodes: g.nodes.map((n, i) => ({ ...n, ...gridPos(i, cols) })) } : g))
+    }
+    fitRef.current = false
+  }, [graph, columns])
 
   const selectedNode = useMemo(
     () => graph?.nodes.find((n) => n.id === selected) ?? null,
@@ -126,7 +151,7 @@ export default function GraphEditor() {
     const exist = new Set(graph.nodes.map((n) => n.id))
     let i = graph.nodes.length + 1
     while (exist.has(`n${i}`)) i++
-    const node: GraphNode = { id: `n${i}`, type, title: TYPE_LABEL[type], ...defaultPos(graph.nodes.length) }
+    const node: GraphNode = { id: `n${i}`, type, title: TYPE_LABEL[type], ...gridPos(graph.nodes.length, columns()) }
     setGraph({ ...graph, nodes: [...graph.nodes, node] })
     setSelected(node.id)
     setDirty(true)
@@ -177,8 +202,8 @@ export default function GraphEditor() {
 
   function onCanvasMouseMove(e: React.MouseEvent) {
     const drag = dragRef.current
-    if (!drag || !canvasRef.current) return
-    const rect = canvasRef.current.getBoundingClientRect()
+    if (!drag || !innerRef.current) return
+    const rect = innerRef.current.getBoundingClientRect()
     updateNode(drag.id, {
       x: Math.max(0, Math.round(e.clientX - rect.left - drag.dx)),
       y: Math.max(0, Math.round(e.clientY - rect.top - drag.dy)),
@@ -194,10 +219,8 @@ export default function GraphEditor() {
         nodes: graph.nodes.map((n) => ({ ...n })),
         edges: graph.edges,
       })
-      setGraph({ ...saved, nodes: saved.nodes.map((n, i) => {
-        const p = defaultPos(i)
-        return { ...n, x: n.x ?? p.x, y: n.y ?? p.y }
-      }) })
+      const cols = columns()
+      setGraph({ ...saved, nodes: saved.nodes.map((n, i) => ({ ...n, ...gridPos(i, cols) })) })
       setDirty(false)
       toast(`已保存为 v${saved.version}`)
     } catch (err) {
@@ -229,6 +252,17 @@ export default function GraphEditor() {
   }
 
   const nodeById = new Map((graph?.nodes ?? []).map((n) => [n.id, n]))
+  const emptyGraph = (graph?.nodes.length ?? 0) === 0
+  const contentW = emptyGraph ? 0 : Math.max(320, ...(graph?.nodes ?? []).map((n) => (n.x ?? 0) + NODE_W + 40))
+  const contentH = emptyGraph ? 0 : Math.max(480, ...(graph?.nodes ?? []).map((n) => (n.y ?? 0) + NODE_H + 40))
+
+  /** 把节点按网格重排（位置丢失/挤在一起时一键恢复）。 */
+  function onAutoLayout() {
+    if (!graph) return
+    const cols = columns()
+    setGraph({ ...graph, nodes: graph.nodes.map((n, i) => ({ ...n, ...gridPos(i, cols) })) })
+    setDirty(true)
+  }
 
   return (
     <>
@@ -246,6 +280,9 @@ export default function GraphEditor() {
           <button className="btn" onClick={() => navigate('/agents')}>返回</button>
           <button className="btn" onClick={() => navigate(`/agents/${id}/eval`)}>评测回归</button>
           <button className="btn" onClick={() => navigate('/chat')}>去对话</button>
+          {editable && (
+            <button className="btn" onClick={onAutoLayout}>整理布局</button>
+          )}
           {editable && (
             <button className="btn primary" disabled={saving || !dirty} onClick={() => void onSave()}>
               {saving ? '保存中…' : '保存'}
@@ -298,6 +335,11 @@ export default function GraphEditor() {
           onMouseLeave={() => { dragRef.current = null }}
           onClick={() => { if (!connectingFrom) setSelected(null) }}
         >
+          <div
+            className="ge-canvas-inner"
+            ref={innerRef}
+            style={{ width: contentW, height: contentH }}
+          >
           <svg className="ge-links" width="100%" height="100%">
             <defs>
               <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
@@ -338,7 +380,7 @@ export default function GraphEditor() {
               style={{ left: n.x ?? 0, top: n.y ?? 0, width: NODE_W, height: NODE_H, borderLeft: `3px solid ${TYPE_COLOR[n.type]}` }}
               onMouseDown={(e) => {
                 if (!editable) return
-                const rect = canvasRef.current?.getBoundingClientRect()
+                const rect = innerRef.current?.getBoundingClientRect()
                 if (!rect) return
                 dragRef.current = { id: n.id, dx: e.clientX - rect.left - (n.x ?? 0), dy: e.clientY - rect.top - (n.y ?? 0) }
                 setSelected(n.id)
@@ -372,6 +414,23 @@ export default function GraphEditor() {
               )}
             </div>
           ))}
+          </div>
+          {emptyGraph && (
+            <div className="ge-empty">
+              <div className="ge-empty-icon">🧩</div>
+              <b>这个 Agent 还没有执行图</b>
+              <p>
+                {editable
+                  ? '点左侧「＋ 大模型」加节点，用「连线」串成 START → … → END，保存后即可用 custom 策略跑。'
+                  : '平台公共 Agent 的执行图只读；要自己画，请先创建一个自己的 Agent。'}
+              </p>
+              {editable && (
+                <button className="btn primary sm" onClick={() => addNode('LLM')}>
+                  ＋ 先加一个大模型节点
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <aside className="ge-inspector card">

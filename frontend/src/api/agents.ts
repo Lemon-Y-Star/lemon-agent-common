@@ -9,6 +9,8 @@ export interface AgentConfig {
   instruction: string | null
   /** 可用工具白名单；null = 全部已注册工具 */
   tools: string[] | null
+  /** 当前执行图版本；0 = 还没有图 */
+  graphVersion: number
   modelConnectionId: number | null
   enabled: boolean
   platformPublic: boolean

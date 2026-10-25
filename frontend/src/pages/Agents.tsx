@@ -159,13 +159,13 @@ export default function Agents() {
                 <td>
                   {a.name}
                   {!owned && <span className="tag gray" style={{ marginLeft: 6 }}>平台公共</span>}
-                  {!owned && (
+                  {!owned && a.graphVersion > 0 && (
                     <button
                       className="btn sm"
                       style={{ marginLeft: 6 }}
                       onClick={() => navigate(`/agents/${a.id}/graph`)}
                     >
-                      执行图
+                      执行图 v{a.graphVersion}
                     </button>
                   )}
                 </td>
@@ -205,7 +205,9 @@ export default function Agents() {
                       编辑
                     </button>{' '}
                     <button className="btn sm danger" onClick={() => setDeleting(a)}>删除</button>
-                    <button className="btn sm" onClick={() => navigate(`/agents/${a.id}/graph`)}>执行图</button>
+                    <button className="btn sm" onClick={() => navigate(`/agents/${a.id}/graph`)}>
+                      执行图{a.graphVersion > 0 ? ` v${a.graphVersion}` : ''}
+                    </button>
                   </td>
                 )}
               </tr>

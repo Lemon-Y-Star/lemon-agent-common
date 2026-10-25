@@ -251,6 +251,8 @@ public class AgentConfigService {
         data.setPlatformPublic(entity.getUserId() == null);
         data.setUsable(enabled);
         data.setVersion(entity.getVersion());
+        com.lemon.lemonagent.dal.entity.AgentGraphEntity graph = agentGraphRepository.findActive(entity.getId());
+        data.setGraphVersion(graph == null ? 0 : graph.getVersion());
         data.setCreatedAt(format(entity.getCreatedAt()));
         data.setUpdatedAt(format(entity.getUpdatedAt()));
         return data;
