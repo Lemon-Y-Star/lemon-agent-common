@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { fetchAgents, type AgentConfig } from '../api/agents'
 import { ApiError } from '../api/client'
 import {
@@ -21,6 +22,7 @@ import { ToastHost, toast } from '../components/Toast'
  */
 
 export default function Workflows() {
+  const navigate = useNavigate()
   const [items, setItems] = useState<WorkflowItem[]>([])
   const [agents, setAgents] = useState<AgentConfig[]>([])
   const [error, setError] = useState('')
@@ -188,6 +190,12 @@ export default function Workflows() {
                   <td>{w.versionCount}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn sm" onClick={() => void openDetail(w.id)}>版本</button>{' '}
+                    <button
+                      className="btn sm"
+                      disabled={w.currentVersion === 0}
+                      title={w.currentVersion === 0 ? '还没有版本，先从 Agent 执行图另存' : '打开独立画布编辑（保存 = 新版本）'}
+                      onClick={() => navigate(`/workflows/${w.id}/edit`)}
+                    >画布</button>{' '}
                     <select
                       value={versionAgent[w.id] ?? ''}
                       onChange={(e) => setVersionAgent({ ...versionAgent, [w.id]: Number(e.target.value) })}

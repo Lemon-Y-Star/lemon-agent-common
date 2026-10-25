@@ -1,4 +1,5 @@
 import { del, get, post, put } from './client'
+import type { AgentGraph, GraphEdge, GraphNode } from './graph'
 
 /** 工作流 API（v3.7）：独立实体，可被多个 Agent 挂载。 */
 
@@ -54,4 +55,17 @@ export function saveWorkflowVersion(
 /** 删除工作流（被 Agent 挂载时后端会拒绝）。 */
 export function deleteWorkflow(workflowId: number): Promise<null> {
   return del<null>(`/workspace/workflows/${workflowId}`)
+}
+
+/** 读取工作流当前生效版本的图（独立画布编辑用；version=0 表示还没有版本）。 */
+export function fetchWorkflowGraph(workflowId: number): Promise<AgentGraph> {
+  return get<AgentGraph>(`/workspace/workflows/${workflowId}/graph`)
+}
+
+/** 独立画布保存 = 新版本（服务端 GraphValidator 校验）。 */
+export function saveWorkflowGraph(
+  workflowId: number,
+  graph: { nodes: GraphNode[]; edges: GraphEdge[] },
+): Promise<WorkflowDetail> {
+  return put<WorkflowDetail>(`/workspace/workflows/${workflowId}/graph`, graph)
 }

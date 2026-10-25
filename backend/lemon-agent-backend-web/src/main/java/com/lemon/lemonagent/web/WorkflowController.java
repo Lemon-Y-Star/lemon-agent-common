@@ -2,8 +2,11 @@ package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.CreateWorkflowReq;
 import com.lemon.lemonagent.model.runtime.CreateWorkflowResp;
+import com.lemon.lemonagent.model.runtime.AgentGraphData;
 import com.lemon.lemonagent.model.runtime.DeleteWorkflowReq;
 import com.lemon.lemonagent.model.runtime.DeleteWorkflowResp;
+import com.lemon.lemonagent.model.runtime.SaveWorkflowGraphReq;
+import com.lemon.lemonagent.model.runtime.SaveWorkflowGraphResp;
 import com.lemon.lemonagent.model.runtime.SaveWorkflowVersionReq;
 import com.lemon.lemonagent.model.runtime.SaveWorkflowVersionResp;
 import com.lemon.lemonagent.model.runtime.WorkflowDetailData;
@@ -103,6 +106,41 @@ public class WorkflowController {
         request.fillRoute(source);
         return optUtil.exec(request, new SaveWorkflowVersionResp(), req -> {
             AssertUtils.notNull(req.getSourceAgentId(), "必须指定来源 Agent");
+        });
+    }
+
+    /**
+     * 读取工作流当前生效版本的图（独立画布编辑用；没有版本时 version=0、空图）。
+     *
+     * @param workflowId 路径参数：工作流 ID
+     * @param userId     当前用户
+     * @return 图
+     */
+    @GetMapping("/{workflowId}/graph")
+    public BaseResult<AgentGraphData> graph(@PathVariable Long workflowId,
+                                            @RequestAttribute("lemon.userId") Long userId) {
+        return BaseResult.success(workflowService.graph(userId, workflowId));
+    }
+
+    /**
+     * 独立画布保存（整体覆盖，保存 = 新版本，服务端 GraphValidator 校验）。
+     *
+     * @param workflowId 路径参数：工作流 ID
+     * @param request    图定义
+     * @param userId     当前用户
+     * @param source     调用来源
+     * @return 详情（含新版本）
+     */
+    @PutMapping("/{workflowId}/graph")
+    public SaveWorkflowGraphResp saveGraph(@PathVariable Long workflowId,
+                                           @RequestBody SaveWorkflowGraphReq request,
+                                           @RequestAttribute("lemon.userId") Long userId,
+                                           @RequestHeader(value = "X-Source", defaultValue = "web") String source) {
+        request.setWorkflowId(workflowId);
+        request.setUserId(userId);
+        request.fillRoute(source);
+        return optUtil.exec(request, new SaveWorkflowGraphResp(), req -> {
+            AssertUtils.isTrue(req.getNodes() != null && !req.getNodes().isEmpty(), "执行图不能为空");
         });
     }
 

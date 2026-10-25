@@ -868,7 +868,7 @@ public class RunExecutor {
 
             List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
             List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
-                    ? toolRegistry.specs(allowed) : List.of();
+                    ? graphTools(allowed) : List.of();
             TurnResult turn = streamTurn(runId, conn, nodeSystemPrompt(instructionOf(agent, run.getUserId()), node),
                     context, nodeInput(node, userInput), tools, stepIndex, true);
             if (turn.toolCalls() != null) {
@@ -972,7 +972,7 @@ public class RunExecutor {
                 final int stepIndex = all.indexOf(node);
                 final List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
                 final List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
-                        ? toolRegistry.specs(allowed) : List.of();
+                        ? graphTools(allowed) : List.of();
                 futures.add(executor.submit(() -> {
                     TurnResult turn = streamTurn(runId, conn,
                             nodeSystemPrompt(instructionOf(agent, run.getUserId()), node), ctx,
@@ -1163,6 +1163,16 @@ public class RunExecutor {
         String instruction = node.getPrompt() == null || node.getPrompt().isBlank()
                 ? nodeLabel(node) : node.getPrompt();
         return "本节点任务：" + instruction + "\n用户原始请求：" + userInput;
+    }
+
+    /**
+     * 图执行内可用的工具定义：过滤工作流工具（run_wf_*），
+     * 防止「图 → 工作流 → 图」的嵌套递归——工作流工具只在 auto / plan 对话中装配。
+     */
+    private List<ModelPort.ToolSpec> graphTools(java.util.Collection<String> allowed) {
+        return toolRegistry.specs(allowed).stream()
+                .filter(spec -> !spec.name().startsWith("run_wf_"))
+                .toList();
     }
 
     /** 节点审批挂起：RUNNING→BLOCKED + pending(kind=NODE) + approval_required 事件。 */

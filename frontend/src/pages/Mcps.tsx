@@ -1,6 +1,8 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
-import { ApiError } from '../api/client'
+import { ApiError, getStoredUser } from '../api/client'
 import {
+  adminCreateMcp,
+  adminUpdateMcp,
   createMcp,
   deleteMcp,
   fetchMcps,
@@ -13,8 +15,9 @@ import Switch from '../components/Switch'
 import { ToastHost, toast } from '../components/Toast'
 
 /**
- * MCP 连接管理（PRD FR-12）：平台公共连接（editable=false）只读展示，
+ * MCP 连接管理（PRD FR-12）：平台公共连接（editable=false）对普通用户只读展示，
  * 「我的 MCP 连接」区块支持新建 / 编辑 / 删除。
+ * v3.9 起 admin 可在页面内直接编辑平台公共连接（名称/端点/启停）并新增平台连接（密文不出库）。
  */
 
 interface FormState {
@@ -49,6 +52,8 @@ export default function Mcps() {
   const [form, setForm] = useState<FormState | null>(null)
   const [deleting, setDeleting] = useState<McpConnection | null>(null)
   const [busy, setBusy] = useState(false)
+  const [adminForm, setAdminForm] = useState<FormState | null>(null)
+  const isAdmin = getStoredUser()?.role === 'admin'
 
   const reload = useCallback(async () => {
     try {
@@ -82,6 +87,54 @@ export default function Mcps() {
       enabled: conn.enabled,
     })
     setError('')
+  }
+
+  /** admin：编辑平台公共连接（密文不出库，留空即保留）。 */
+  function openAdminEdit(conn: McpConnection) {
+    setAdminForm({
+      id: conn.id,
+      name: conn.name,
+      transportType: conn.transportType,
+      url: conn.url ?? '',
+      command: conn.command ?? '',
+      secret: '',
+      enabled: conn.enabled,
+    })
+    setError('')
+  }
+
+  function openAdminCreate() {
+    setAdminForm({ ...EMPTY_FORM })
+    setError('')
+  }
+
+  async function onAdminSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!adminForm) return
+    const payload = {
+      name: adminForm.name.trim(),
+      transportType: adminForm.transportType,
+      url: adminForm.transportType === 'STDIO' ? undefined : adminForm.url.trim(),
+      command: adminForm.transportType === 'STDIO' ? adminForm.command.trim() : undefined,
+      status: adminForm.enabled ? 1 : 0,
+    }
+    setBusy(true)
+    setError('')
+    try {
+      if (adminForm.id === null) {
+        await adminCreateMcp(payload)
+        toast('平台公共连接已创建')
+      } else {
+        await adminUpdateMcp(adminForm.id, payload)
+        toast('平台公共连接已更新（对所有用户生效）')
+      }
+      setAdminForm(null)
+      await reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '保存失败，请稍后重试')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function onDelete() {
@@ -137,7 +190,7 @@ export default function Mcps() {
             <th>密钥</th>
             <th>状态</th>
             <th>版本</th>
-            {readonly || <th>操作</th>}
+            {readonly ? (isAdmin && <th>管理</th>) : <th>操作</th>}
           </tr>
         </thead>
         <tbody>
@@ -163,7 +216,13 @@ export default function Mcps() {
                   )}
                 </td>
                 <td style={{ color: 'var(--muted)' }}>v{conn.version}</td>
-                {readonly || (
+                {readonly ? (
+                  isAdmin && (
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn sm" onClick={() => openAdminEdit(conn)}>管理编辑</button>
+                    </td>
+                  )
+                ) : (
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn sm" onClick={() => openEdit(conn)}>
                       编辑
@@ -202,7 +261,15 @@ export default function Mcps() {
 
       <div className="card">
         <h3>
-          平台公共 MCP <span className="sub">{platform.length} 个 · 不可编辑</span>
+          平台公共 MCP{' '}
+          <span className="sub">
+            {platform.length} 个 · {isAdmin ? '管理员可编辑（对所有用户生效）' : '不可编辑'}
+          </span>
+          {isAdmin && (
+            <span style={{ marginLeft: 'auto' }}>
+              <button className="btn sm primary" onClick={openAdminCreate}>＋ 新增平台连接</button>
+            </span>
+          )}
         </h3>
         {renderTable(platform, true)}
       </div>
@@ -289,6 +356,61 @@ export default function Mcps() {
                 </button>
                 <button type="submit" className="btn primary" disabled={busy}>
                   {busy ? '保存中…' : '保存连接'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {adminForm && (
+        <div className="mask" onClick={() => setAdminForm(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>
+              {adminForm.id === null ? '新增平台公共连接' : `管理编辑：${adminForm.name}`}
+              <span className="x" onClick={() => setAdminForm(null)}>✕</span>
+            </h3>
+            <div className="note gray" style={{ marginBottom: 8 }}>
+              管理端直改平台行，对所有用户生效；密钥密文不出库、不在此展示（需要鉴权的端点请预置密文或走迁移）。
+            </div>
+            <form onSubmit={onAdminSubmit}>
+              <div className="row">
+                <div className="field">
+                  <label>连接名称 *</label>
+                  <input value={adminForm.name} onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })} required />
+                </div>
+                <div className="field">
+                  <label>传输类型</label>
+                  <select
+                    value={adminForm.transportType}
+                    onChange={(e) => setAdminForm({ ...adminForm, transportType: e.target.value })}
+                  >
+                    <option value="SSE">SSE</option>
+                    <option value="STREAMABLE">Streamable HTTP</option>
+                    <option value="STDIO">STDIO（本地进程）</option>
+                  </select>
+                </div>
+              </div>
+              {adminForm.transportType === 'STDIO' ? (
+                <div className="field">
+                  <label>启动命令</label>
+                  <input value={adminForm.command} onChange={(e) => setAdminForm({ ...adminForm, command: e.target.value })} placeholder="uvx weather-mcp" />
+                </div>
+              ) : (
+                <div className="field">
+                  <label>HTTP 端点 *</label>
+                  <input value={adminForm.url} onChange={(e) => setAdminForm({ ...adminForm, url: e.target.value })} placeholder="https://mcp.example.com/sse" required />
+                </div>
+              )}
+              <div className="switch-row">
+                <Switch on={adminForm.enabled} onChange={(on) => setAdminForm({ ...adminForm, enabled: on })} />
+                启用该连接（停用后所有用户不可用）
+              </div>
+              <p className="status-line" role="status">{error}</p>
+              <div className="modal-btns">
+                <button type="button" className="btn" onClick={() => setAdminForm(null)}>取消</button>
+                <button type="submit" className="btn primary" disabled={busy}>
+                  {busy ? '保存中…' : '保存'}
                 </button>
               </div>
             </form>

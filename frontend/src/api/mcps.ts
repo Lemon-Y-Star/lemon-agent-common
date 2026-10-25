@@ -48,3 +48,21 @@ export function updateMcp(id: number, payload: McpConnectionPayload): Promise<Mc
 export function deleteMcp(id: number): Promise<null> {
   return del<null>(`/workspace/mcps/${id}`)
 }
+
+/** 管理端（v3.9）：平台公共连接的编辑 / 新增（仅 admin；密文不出库）。 */
+export function adminUpdateMcp(
+  id: number,
+  payload: { name: string; url?: string; command?: string; status: number },
+): Promise<null> {
+  return put<null>(`/admin/mcps/${id}`, payload)
+}
+
+export function adminCreateMcp(payload: {
+  name: string
+  transportType: string
+  url?: string
+  command?: string
+  status: number
+}): Promise<null> {
+  return post<null>('/admin/mcps', payload)
+}

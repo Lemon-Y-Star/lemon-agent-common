@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { getToken } from './api/client'
 import Agents from './pages/Agents'
 import GraphEditor from './pages/GraphEditor'
@@ -19,6 +19,12 @@ import Artifacts from './pages/Artifacts'
 import Evals from './pages/Evals'
 import LlmObs from './pages/LlmObs'
 import ApiKeysPage from './pages/ApiKeys'
+
+/** 工作流独立画布路由：复用执行图画布，加载/保存走工作流端点。 */
+function WorkflowGraphRoute() {
+  const { workflowId } = useParams()
+  return <GraphEditor workflowId={Number(workflowId)} />
+}
 
 /**
  * 路由表：登录页独立；业务页共用 Layout（侧栏 + 顶栏）。
@@ -44,6 +50,7 @@ export default function App() {
         <Route path="/knowledge" element={<Knowledge />} />
         <Route path="/memory" element={<MemoryPage />} />
         <Route path="/workflows" element={<Workflows />} />
+        <Route path="/workflows/:workflowId/edit" element={<WorkflowGraphRoute />} />
         <Route path="/artifacts" element={<Artifacts />} />
         <Route path="/evals" element={<Evals />} />
         <Route path="/llm" element={<LlmObs />} />

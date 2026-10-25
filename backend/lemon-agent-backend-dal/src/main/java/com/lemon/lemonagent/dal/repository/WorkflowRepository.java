@@ -17,6 +17,13 @@ public interface WorkflowRepository {
     List<WorkflowEntity> findByUser(Long userId);
 
     /**
+     * 全部启用中的工作流（启动时回放为 run_wf_* 工具）。
+     *
+     * @return 出参：工作流列表
+     */
+    List<WorkflowEntity> findAllEnabled();
+
+    /**
      * 按 ID 读取（不校验归属，由领域服务校验）。
      *
      * @param id 入参：工作流 ID

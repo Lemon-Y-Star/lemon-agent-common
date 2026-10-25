@@ -23,8 +23,9 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 | v3.5 | 图运行接评测回归：一批用例按当前图版本跑成一组运行，两批并排看输出/分支差异（输出实时读运行，不另存） | ✅ |
 | v3.6 | 我的知识库（文档入库 + 检索测试，关键词/向量双路降级）+ 长期记忆（用户级事实，运行时注入 system prompt，最多 8 条） | ✅ |
 | v3.7 | 工作流（PRD FR-25 最小闭环）：`workflow` + `workflow_version` 版本化独立实体 + 从执行图「另存为工作流」+ Agent 挂载（可 pin 版本）/ 取消挂载回落自有图；custom 运行优先跑挂载的工作流快照 | ✅ |
-| v3.8（本版） | 收尾四件套（侧边栏占位清零）：产物与反馈（运行级点赞点踩+评论，upsert）· 我的评测（跨 Agent 批次总览）· LLM 观测（执行器回填实际模型名，按模型聚合调用量/token/时长/失败率）· API 分发（sk- 密钥只存哈希、明文仅创建时返回一次 + 开放端点 `/open/**` 同步调用，越权口径不变） | ✅ |
-| 待排期 | 工作流发布为工具（`workflow://`）、工作流独立画布、管理端 MCP 管理页 | 规划中 |
+| v3.8 | 收尾四件套（侧边栏占位清零）：产物与反馈（运行级点赞点踩+评论，upsert）· 我的评测（跨 Agent 批次总览）· LLM 观测（执行器回填实际模型名，按模型聚合调用量/token/时长/失败率）· API 分发（sk- 密钥只存哈希、明文仅创建时返回一次 + 开放端点 `/open/**` 同步调用，越权口径不变） | ✅ |
+| v3.9（本版） | 待排期清零：工作流发布为工具（`run_wf_<id>` 动态注册，执行=子运行跑当前生效版本，图内过滤防嵌套递归，目录按用户过滤）· 工作流独立画布（复用执行图画布，保存=新版本「画布编辑」）· 管理端 MCP 管理（admin 编辑平台连接 name/url/启停 + 新增/删除，密文不出库） | ✅ |
+| 待排期 | （无——PRD 明确「不做」的除外：插件市场 / 多租户 / A2A / 触发器 / 7 类节点中的 branch+http 等规格项） | — |
 
 ## 结构
 
@@ -253,6 +254,33 @@ lemon-agent-common/
   `X-Api-Key`——哈希查库 + 启用校验后**以密钥归属用户的身份**走 `createRun`（幂等/互斥/越权口径全部复用）。
 - `invoke` 同步等待终态（默认 60s、上限 120s，超时返回 runId 用 `GET /open/runs/{runId}` 续查）；
   鉴权失败返回平台统一包络（`code=UNAUTHORIZED/FORBIDDEN`），与站内接口语义一致。
+
+## v3.9 待排期清零实现要点
+
+**工作流发布为工具（FR-25.4 最小版）**
+
+- `ToolRegistry` 动态注册 `run_wf_<id>`：启动时回放全部启用中的工作流（`findAllEnabled`），
+  创建工作流即绑定、删除即解绑；执行时取**当前生效版本**，保存新版本无需重新绑定。
+- 执行语义 = **子运行**：以调用方身份、独立会话、custom 策略、宿主 Agent（父运行的 agentId）发起，
+  复用 `createRun` 的幂等/互斥/越权口径，轮询到终态（上限 120s）后把产出返回给模型。
+- **防嵌套递归**：图执行内（`graphLoop` / 并行批次）装配工具时过滤 `run_wf_*`——
+  工作流工具只在 auto / plan 对话中可被模型调用，图里永远不会再触发工作流。
+- 目录按用户过滤：`catalog(userId)` 只把 `run_wf_*` 给发布者；Agent 白名单勾选即挂载（normalize 校验自动通过）。
+- `ObjectProvider<AgentRuntimeService>` 打破 ToolRegistry ↔ AgentRuntimeService 构造环。
+
+**工作流独立画布（P18 最小版）**
+
+- 后端 `GET/PUT /workspace/workflows/{id}/graph`：读当前生效版本（无版本给空图）；
+  保存走 `GraphValidator` 校验后 **version+1（note=「画布编辑」）**，与「从 Agent 另存」共用版本链。
+- 前端复用执行图画布（`GraphEditor` 参数化 `{ workflowId }`）：同一套拖拽/连线/检查器/服务端校验；
+  工作流模式下隐藏「评测回归 / 去对话 / 另存为工作流」。节点类型与执行器同构（5 类），
+  PRD 规格的 7 类中 branch/http 等为后续扩展。
+
+**管理端 MCP 管理（FR-22 切片补全）**
+
+- `/api/v1/admin/mcps`：列表（密文不出库）/ PUT 编辑平台行（name/url/command/status，version+1）/
+  POST 新增平台连接 / DELETE 删除——全部 `user_id IS NULL` 收口 + admin 角色校验。
+- 前端 Mcps 页：admin 登录时平台表多「管理」列与「＋ 新增平台连接」，弹窗直改、对所有用户即时生效。
 
 ## 启动
 

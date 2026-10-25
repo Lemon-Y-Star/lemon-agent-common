@@ -9,7 +9,7 @@ import {
   type GraphNodeType,
 } from '../api/graph'
 import { fetchTools, type ToolInfo } from '../api/agents'
-import { createWorkflow } from '../api/workflow'
+import { createWorkflow, fetchWorkflowGraph, saveWorkflowGraph } from '../api/workflow'
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
 
@@ -18,6 +18,9 @@ import { ToastHost, toast } from '../components/Toast'
  *
  * 保存走服务端校验（类型/拓扑/工具存在/无环），前端只做「明显错误」的即时提示，
  * 避免两套校验规则打架：**能存下就一定能跑**这条保证由后端负责。
+ *
+ * v3.9 起同一画布复用于工作流（{@code workflowId} 传入即工作流模式）：
+ * 加载/保存走工作流端点，保存 = 工作流新版本。
  */
 
 const NODE_W = 150
@@ -75,9 +78,10 @@ function gridPos(index: number, columns: number): { x: number; y: number } {
   }
 }
 
-export default function GraphEditor() {
+export default function GraphEditor({ workflowId }: { workflowId?: number } = {}) {
   const { agentId } = useParams()
-  const id = Number(agentId)
+  const isWorkflow = workflowId !== undefined
+  const id = isWorkflow ? (workflowId as number) : Number(agentId)
   const navigate = useNavigate()
 
   const [graph, setGraph] = useState<AgentGraph | null>(null)
@@ -103,7 +107,7 @@ export default function GraphEditor() {
   const reload = useCallback(async () => {
     if (!Number.isFinite(id)) return
     try {
-      const g = await fetchGraph(id)
+      const g = isWorkflow ? await fetchWorkflowGraph(id) : await fetchGraph(id)
       setGraph(g)
       setDirty(false)
       setError('')
@@ -111,7 +115,7 @@ export default function GraphEditor() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '加载执行图失败')
     }
-  }, [id])
+  }, [id, isWorkflow])
 
   useEffect(() => {
     void reload()
@@ -216,6 +220,16 @@ export default function GraphEditor() {
     setSaving(true)
     setError('')
     try {
+      if (isWorkflow) {
+        const detail = await saveWorkflowGraph(id, {
+          nodes: graph.nodes.map((n) => ({ ...n })),
+          edges: graph.edges,
+        })
+        setGraph((g) => (g ? { ...g, version: detail.currentVersion } : g))
+        setDirty(false)
+        toast(`已保存为 v${detail.currentVersion}`)
+        return
+      }
       const saved = await saveGraph(id, {
         nodes: graph.nodes.map((n) => ({ ...n })),
         edges: graph.edges,
@@ -291,22 +305,23 @@ export default function GraphEditor() {
     <>
       <div className="page-head">
         <div>
-          <h2>执行图 · Agent #{id}</h2>
+          <h2>{isWorkflow ? `工作流画布 · #${id}` : `执行图 · Agent #${id}`}</h2>
           <div className="desc">
             五类节点（开始 / 大模型 / 工具 / 审批门 / 结束），按拓扑序调度；保存时服务端校验唯一 START、
             必达、无环与工具存在。<b>能存下就一定跑得起来。</b>
+            {isWorkflow && ' 工作流模式下每次保存生成新版本；发布为工具后由 auto/plan 对话调用。'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span className="tag gray">v{graph?.version ?? 0}</span>
           {dirty && <span className="tag warn">未保存</span>}
-          <button className="btn" onClick={() => navigate('/agents')}>返回</button>
-          <button className="btn" onClick={() => navigate(`/agents/${id}/eval`)}>评测回归</button>
-          <button className="btn" onClick={() => navigate('/chat')}>去对话</button>
+          <button className="btn" onClick={() => navigate(isWorkflow ? '/workflows' : '/agents')}>返回</button>
+          {!isWorkflow && <button className="btn" onClick={() => navigate(`/agents/${id}/eval`)}>评测回归</button>}
+          {!isWorkflow && <button className="btn" onClick={() => navigate('/chat')}>去对话</button>}
           {editable && (
             <button className="btn" onClick={onAutoLayout}>整理布局</button>
           )}
-          {editable && (
+          {editable && !isWorkflow && (
             <button className="btn" onClick={() => void onSaveAsWorkflow()}>另存为工作流</button>
           )}
           {editable && (
@@ -444,7 +459,7 @@ export default function GraphEditor() {
           {emptyGraph && (
             <div className="ge-empty">
               <div className="ge-empty-icon">🧩</div>
-              <b>这个 Agent 还没有执行图</b>
+              <b>{isWorkflow ? '这个工作流还没有图' : '这个 Agent 还没有执行图'}</b>
               <p>
                 {editable
                   ? '点左侧「＋ 大模型」加节点，用「连线」串成 START → … → END，保存后即可用 custom 策略跑。'

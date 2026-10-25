@@ -97,6 +97,8 @@ public class WorkflowService {
         wf.setDescription(description);
         wf.setStatus(1);
         workflowRepository.insert(wf);
+        // 发布为工具（run_wf_<id>）；执行时取当前生效版本，之后保存新版本无需重新绑定
+        toolRegistry.bindWorkflow(wf);
 
         if (sourceAgentId != null) {
             AgentGraphData graph = requireAgentGraph(userId, sourceAgentId);
@@ -146,6 +148,52 @@ public class WorkflowService {
         }
         workflowRepository.deleteVersions(workflowId);
         workflowRepository.delete(workflowId, userId);
+        toolRegistry.unbindWorkflow(workflowId);
+    }
+
+    /**
+     * 读取工作流当前生效版本的图（独立画布编辑用；没有版本时给空图）。
+     *
+     * @param userId     入参：当前用户
+     * @param workflowId 入参：工作流 ID
+     * @return 出参：图（version=0 表示还没有版本）
+     */
+    public AgentGraphData graph(Long userId, Long workflowId) {
+        requireOwned(userId, workflowId);
+        WorkflowVersionEntity v = workflowRepository.findActive(workflowId);
+        AgentGraphData graph = v == null ? null : GraphCodec.decodeGraph(v.getGraphJson());
+        if (graph == null) {
+            graph = new AgentGraphData();
+            graph.setNodes(new ArrayList<>());
+            graph.setEdges(new ArrayList<>());
+        }
+        graph.setVersion(v == null ? 0 : v.getVersion());
+        graph.setEditable(true);
+        return graph;
+    }
+
+    /**
+     * 独立画布保存 = 新版本（GraphValidator 校验后 version+1，note=「画布编辑」）。
+     *
+     * @param userId     入参：当前用户
+     * @param workflowId 入参：工作流 ID
+     * @param graph      入参：图（nodes + edges）
+     * @return 出参：详情
+     */
+    public WorkflowDetailData saveGraph(Long userId, Long workflowId, AgentGraphData graph) {
+        WorkflowEntity wf = requireOwned(userId, workflowId);
+        GraphValidator.validate(graph, toolRegistry);
+        WorkflowVersionEntity current = workflowRepository.findActive(workflowId);
+        int version = current == null ? 1 : current.getVersion() + 1;
+        workflowRepository.deactivateAll(workflowId);
+        WorkflowVersionEntity v = new WorkflowVersionEntity();
+        v.setWorkflowId(workflowId);
+        v.setVersion(version);
+        v.setGraphJson(GraphCodec.encodeGraph(graph));
+        v.setNote("画布编辑");
+        v.setStatus(1);
+        workflowRepository.insertVersion(v);
+        return toDetail(wf, workflowRepository.findVersions(workflowId));
     }
 
     /**

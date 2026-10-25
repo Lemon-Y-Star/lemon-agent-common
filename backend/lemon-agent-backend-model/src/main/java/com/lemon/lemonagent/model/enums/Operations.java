@@ -85,6 +85,9 @@ public final class Operations {
     /** 工作流删除（被 Agent 挂载时禁止，v3.8 补齐 PRD P17） */
     public static final String WORKFLOW_DELETE = "WORKFLOW_DELETE";
 
+    /** 工作流独立画布保存（保存 = 新版本，v3.9） */
+    public static final String WORKFLOW_GRAPH_SAVE = "WORKFLOW_GRAPH_SAVE";
+
     /** 运行反馈（产物与反馈，v3.8） */
     public static final String RUN_FEEDBACK = "RUN_FEEDBACK";
 

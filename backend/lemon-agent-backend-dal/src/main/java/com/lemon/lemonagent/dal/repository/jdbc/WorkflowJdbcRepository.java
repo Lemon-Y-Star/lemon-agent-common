@@ -72,6 +72,12 @@ public class WorkflowJdbcRepository implements WorkflowRepository {
     }
 
     @Override
+    public List<WorkflowEntity> findAllEnabled() {
+        return jdbcTemplate.query(
+                "SELECT " + WF_COLUMNS + " FROM workflow WHERE status = 1 ORDER BY id", wfMapper);
+    }
+
+    @Override
     public WorkflowEntity findById(Long id) {
         var list = jdbcTemplate.query(
                 "SELECT " + WF_COLUMNS + " FROM workflow WHERE id = ?", wfMapper, id);
