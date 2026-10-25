@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { getToken } from './api/client'
 import Agents from './pages/Agents'
 import GraphEditor from './pages/GraphEditor'
+import Eval from './pages/Eval'
 import Chat from './pages/Chat'
 import Admin from './pages/Admin'
 import Runs from './pages/Runs'
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/account" element={<Account />} />
         <Route path="/agents" element={<Agents />} />
         <Route path="/agents/:agentId/graph" element={<GraphEditor />} />
+        <Route path="/agents/:agentId/eval" element={<Eval />} />
         <Route path="/models" element={<ModelConnections />} />
         <Route path="/mcps" element={<Mcps />} />
       </Route>

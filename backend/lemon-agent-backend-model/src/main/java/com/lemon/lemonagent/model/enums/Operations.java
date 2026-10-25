@@ -62,6 +62,9 @@ public final class Operations {
     /** 保存执行图（v3.2.0） */
     public static final String GRAPH_SAVE = "GRAPH_SAVE";
 
+    /** 发起评测批次（v3.5） */
+    public static final String EVAL_CREATE = "EVAL_CREATE";
+
     private Operations() {
     }
 

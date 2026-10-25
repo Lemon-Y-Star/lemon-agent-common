@@ -49,6 +49,9 @@ interface Bubble {
   // 计划卡（plan 策略）/ 执行图卡（custom 策略）
   planSteps?: { title: string; status: string }[]
   graphMode?: boolean
+  // 并行执行时按节点区分气泡
+  stepIndex?: number
+  stepTitle?: string
 }
 
 const STRATEGIES = [
@@ -216,14 +219,21 @@ export default function Chat() {
         lastSeqRef.current = ev.seq
         if (ev.type === 'token') {
           const delta = String(ev.payload.delta ?? '')
+          const stepIndex = Number(ev.payload.stepIndex ?? 0)
           setBubbles((prev) => {
             const next = [...prev]
-            const last = next[next.length - 1]
-            if (last && last.kind === 'msg' && last.role === 'ASSISTANT' && last.runId === runId) {
-              next[next.length - 1] = { ...last, content: last.content + delta }
-            } else {
-              next.push({ kind: 'msg', role: 'ASSISTANT', content: delta, runId })
+            // 并行执行时不同节点的 token 会交错到达：按 (runId, stepIndex) 归位到各自气泡
+            for (let i = next.length - 1; i >= 0; i--) {
+              const b = next[i]
+              if (b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId
+                && (b.stepIndex ?? 0) === stepIndex) {
+                next[i] = { ...b, content: b.content + delta }
+                return next
+              }
             }
+            const plan = next.find((x) => x.kind === 'plan' && x.runId === runId)
+            const title = plan?.planSteps?.[stepIndex]?.title
+            next.push({ kind: 'msg', role: 'ASSISTANT', content: delta, runId, stepIndex, stepTitle: title })
             return next
           })
         } else if (ev.type === 'graph_started') {
@@ -309,6 +319,11 @@ export default function Chat() {
           // 权威正文覆盖（§5.7）：只覆盖最后一条 ASSISTANT 文本气泡
           const outputText = String(ev.payload.outputText ?? '')
           setBubbles((prev) => {
+            const texts = prev.filter((b) => b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId)
+            // 单气泡（auto/plan）以权威正文覆盖；多气泡（并行图）保留各节点文本，避免重复一遍
+            if (texts.length > 1) {
+              return prev
+            }
             const next = [...prev]
             for (let i = next.length - 1; i >= 0; i--) {
               const b = next[i]
@@ -554,7 +569,10 @@ export default function Chat() {
     return (
       <div key={i} className={`msg ${b.role === 'USER' ? 'user' : 'ai'}`}>
         <div className="mk">{b.role === 'USER' ? '🧑' : '🤖'}</div>
-        <div className="bubble">{b.content || (streaming ? '…' : '')}</div>
+        <div>
+          {b.stepTitle && <div className="msg-step">{b.stepTitle}</div>}
+          <div className="bubble">{b.content || (streaming ? '…' : '')}</div>
+        </div>
       </div>
     )
   }

@@ -244,6 +244,7 @@ export default function GraphEditor() {
           <span className="tag gray">v{graph?.version ?? 0}</span>
           {dirty && <span className="tag warn">未保存</span>}
           <button className="btn" onClick={() => navigate('/agents')}>返回</button>
+          <button className="btn" onClick={() => navigate(`/agents/${id}/eval`)}>评测回归</button>
           <button className="btn" onClick={() => navigate('/chat')}>去对话</button>
           {editable && (
             <button className="btn primary" disabled={saving || !dirty} onClick={() => void onSave()}>

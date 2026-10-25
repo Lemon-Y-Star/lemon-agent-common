@@ -90,6 +90,9 @@ public class RunExecutor {
 
     private final long approvalTimeoutSeconds;
 
+    /** 执行图并行度（同层无依赖节点的并发上限；1 = 串行）。 */
+    private final int graphParallelism;
+
     /** runId → 取消标志（取消接口置位，onChunk 回调检查后中断模型流）。 */
     private final Map<Long, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
 
@@ -104,7 +107,8 @@ public class RunExecutor {
                        EventPublisher eventPublisher,
                        ToolRegistry toolRegistry,
                        @Value("${lemon.runtime.system-prompt:你是 LemonAgent 平台的智能助手，请用中文、简洁准确地回答用户的问题。你可以使用提供的工具完成任务；需要创建工单时调用 create_ticket 工具；涉及平台知识的问题先调用 search_docs 检索。当 search_docs 返回的 hits 为空时，必须直说文档中没有相关内容，不得基于自身知识编造。}") String systemPrompt,
-                       @Value("${lemon.runtime.approval-timeout-seconds:300}") long approvalTimeoutSeconds) {
+                       @Value("${lemon.runtime.approval-timeout-seconds:300}") long approvalTimeoutSeconds,
+                       @Value("${lemon.graph.parallelism:2}") int graphParallelism) {
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
         this.modelConnectionRepository = modelConnectionRepository;
@@ -114,6 +118,7 @@ public class RunExecutor {
         this.toolRegistry = toolRegistry;
         this.systemPrompt = systemPrompt;
         this.approvalTimeoutSeconds = approvalTimeoutSeconds;
+        this.graphParallelism = graphParallelism;
     }
 
     /**
@@ -752,6 +757,28 @@ public class RunExecutor {
                 break;
             }
 
+            // 并行批次：同层就绪节点（互无依赖）最多 graphParallelism 个并发执行。
+            // 审批门不参与并发——它一旦挂起整个 run 就 BLOCKED，兄弟节点在飞会无法收口。
+            if (graphParallelism > 1) {
+                List<GraphNode> batch = new ArrayList<>();
+                for (GraphNode candidate : ready) {
+                    if ("APPROVAL".equals(candidate.getType())) {
+                        continue;
+                    }
+                    batch.add(candidate);
+                    if (batch.size() >= graphParallelism) {
+                        break;
+                    }
+                }
+                if (batch.size() >= 2) {
+                    if (executeBatch(run, agent, conn, graph, state, all, batch, done, userInput,
+                            depth, agentTools)) {
+                        return;
+                    }
+                    continue;
+                }
+            }
+
             GraphNode node = ready.get(0);
             int stepIndex = all.indexOf(node);
 
@@ -872,6 +899,139 @@ public class RunExecutor {
                     "ts", System.currentTimeMillis())));
             insertAssistantMessage(run, outputText, runId);
         }
+    }
+
+    /**
+     * 并行执行一批就绪节点（同层、互无依赖）。
+     *
+     * <p><b>线程模型</b>：节点任务跑在虚拟线程里（模型流式调用各自独立）；
+     * 事件由 EventPublisher 保证 seq 原子，token 交错到达前端按 stepIndex 归位；
+     * <b>状态与落库只在主线程做</b>——批量结束后按图内顺序应用结果，避免并发写 state。</p>
+     *
+     * <p>批内任一节点要挂审批（模型自主工具调用）时：先把已完成节点的结果应用掉，再挂起，
+     * 恢复后只重跑挂起那个节点——兄弟节点的产出不会白跑。</p>
+     *
+     * @return true 表示本方法已经收口（挂起或失败），调用方应直接 return
+     */
+    private boolean executeBatch(AgentRunEntity run, AgentConfigEntity agent, ModelConnectionEntity conn,
+                                 AgentGraphData graph, GraphStateData state, List<GraphNode> all,
+                                 List<GraphNode> batch, java.util.Set<String> done, String userInput,
+                                 int depth, List<String> agentTools) {
+        Long runId = run.getId();
+        List<String> notesCopy = new ArrayList<>();
+        state.setCurrent(batch.get(0).getId());
+        String currentJson = GraphCodec.encodeState(state);
+        runRepository.saveGraphState(runId, currentJson);
+        run.setGraphStateJson(currentJson);
+        for (GraphNode node : batch) {
+            appendEvent(runId, RuntimeEventType.STEP_STARTED, objectMapper.writeValueAsString(Map.of(
+                    "stepIndex", all.indexOf(node),
+                    "nodeId", node.getId(),
+                    "nodeType", node.getType(),
+                    "title", nodeLabel(node),
+                    "total", all.size(),
+                    "parallel", true,
+                    "ts", System.currentTimeMillis())));
+        }
+
+        List<NodeOutcome> outcomes = new ArrayList<>();
+        try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            List<java.util.concurrent.Future<NodeOutcome>> futures = new ArrayList<>();
+            for (GraphNode node : batch) {
+                if ("TOOL".equals(node.getType())) {
+                    outcomes.add(runToolNode(run, graph, state, all, node, notesCopy));
+                    continue;
+                }
+                List<ModelPort.Msg> context = historyContext(run);
+                final List<ModelPort.Msg> ctx = context == null ? new ArrayList<>() : context;
+                for (String upstream : upstreamOutputs(graph, state, node.getId())) {
+                    ctx.add(new ModelPort.Msg("ASSISTANT", upstream));
+                }
+                final int stepIndex = all.indexOf(node);
+                final List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
+                final List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
+                        ? toolRegistry.specs(allowed) : List.of();
+                futures.add(executor.submit(() -> {
+                    TurnResult turn = streamTurn(runId, conn,
+                            nodeSystemPrompt(instructionOf(agent), node), ctx,
+                            nodeInput(node, userInput), tools, stepIndex, true);
+                    return new NodeOutcome(node, stepIndex, turn.text(), turn.inputTokens(),
+                            turn.outputTokens(), turn.toolCalls(), turn.completed(),
+                            allowed, null, null);
+                }));
+            }
+            for (var future : futures) {
+                try {
+                    outcomes.add(future.get(180, java.util.concurrent.TimeUnit.SECONDS));
+                } catch (java.util.concurrent.TimeoutException e) {
+                    failIfStillRunning(runId, "MODEL_TIMEOUT", "节点执行超时（180s），已终止本次运行。");
+                    return true;
+                } catch (Exception e) {
+                    log.error("并行节点执行异常 runId={}", runId, e);
+                    failIfStillRunning(runId, "GRAPH_ERROR", "节点执行异常，请重试。");
+                    return true;
+                }
+            }
+        }
+
+        outcomes.sort(java.util.Comparator.comparingInt(NodeOutcome::stepIndex));
+        List<ModelPort.ModelToolCall> pendingCalls = null;
+        List<String> pendingAllowed = null;
+        for (NodeOutcome outcome : outcomes) {
+            if (!outcome.completed()) {
+                failIfStillRunning(runId, "MODEL_ERROR", "模型调用失败，请检查模型配置。");
+                return true;
+            }
+            if (outcome.toolCalls() != null && !outcome.toolCalls().isEmpty()) {
+                if (pendingCalls == null) {
+                    pendingCalls = outcome.toolCalls();
+                    pendingAllowed = outcome.allowed();
+                }
+                continue;
+            }
+            state.setInputTokens(state.getInputTokens() + outcome.inputTokens());
+            state.setOutputTokens(state.getOutputTokens() + outcome.outputTokens());
+            done.add(outcome.node().getId());
+            markNodeDone(run, state, outcome.node(), outcome.output(), outcome.stepIndex());
+        }
+        if (pendingCalls != null) {
+            // 先把并行任务里要审批的那条挂起；其节点保持未完成，恢复后会重跑
+            handleToolCalls(run, pendingCalls, new ArrayList<>(), depth, pendingAllowed);
+            return true;
+        }
+        return false;
+    }
+
+    /** 并行批次里的 TOOL 节点（作者显式配置、无审批，主线程直接执行）。 */
+    private NodeOutcome runToolNode(AgentRunEntity run, AgentGraphData graph, GraphStateData state,
+                                    List<GraphNode> all, GraphNode node, List<String> notes) {
+        int stepIndex = all.indexOf(node);
+        ToolRegistry.ToolHandler handler = toolRegistry.find(node.getTool());
+        if (handler == null) {
+            return new NodeOutcome(node, stepIndex, "", 0, 0, null, false, null,
+                    "GRAPH_TOOL_MISSING", "工具已不可用：" + node.getTool());
+        }
+        Map<String, Object> args = new HashMap<>(node.getArgs() == null ? Map.of() : node.getArgs());
+        args.put("__runId", run.getId());
+        args.put("__userId", run.getUserId());
+        args.put("__callId", "node_" + node.getId());
+        appendEvent(run.getId(), RuntimeEventType.TOOL_CALL, objectMapper.writeValueAsString(Map.of(
+                "callId", "node_" + node.getId(),
+                "toolName", node.getTool(),
+                "args", node.getArgs() == null ? Map.of() : node.getArgs(),
+                "riskLevel", handler.needsApproval ? "HIGH" : "LOW",
+                "stepIndex", stepIndex,
+                "ts", System.currentTimeMillis())));
+        List<String> noteBuf = new ArrayList<>();
+        executeAndEmitToolResult(run, node.getTool(), handler, args, noteBuf);
+        String output = noteBuf.isEmpty() ? "" : noteBuf.get(noteBuf.size() - 1);
+        return new NodeOutcome(node, stepIndex, output, 0, 0, null, true, null, null, null);
+    }
+
+    /** 并行节点执行结果（主线程据此统一落库与发事件）。 */
+    private record NodeOutcome(GraphNode node, int stepIndex, String output, long inputTokens,
+                               long outputTokens, List<ModelPort.ModelToolCall> toolCalls,
+                               boolean completed, List<String> allowed, String errorCode, String errorMsg) {
     }
 
     /** 入边列表。 */
