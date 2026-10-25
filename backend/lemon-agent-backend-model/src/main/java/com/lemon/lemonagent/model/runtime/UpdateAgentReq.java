@@ -32,6 +32,12 @@ public class UpdateAgentReq extends BaseReq {
     /** 绑定模型连接（null = 保持不变；0 = 清除绑定，回落用户最新启用连接） */
     private Long modelConnectionId;
 
+    /** 挂载工作流（null = 保持不变；0 = 取消挂载，回落 Agent 自己的执行图） */
+    private Long workflowId;
+
+    /** 挂载的工作流版本（null = 保持不变；0 = 清除，跟随工作流当前生效版本） */
+    private Integer workflowVersion;
+
     /** 启用状态 */
     private Boolean enabled;
 

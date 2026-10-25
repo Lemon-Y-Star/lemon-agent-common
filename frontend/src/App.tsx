@@ -14,6 +14,7 @@ import Account from './pages/Account'
 import Login from './pages/Login'
 import Mcps from './pages/Mcps'
 import ModelConnections from './pages/ModelConnections'
+import Workflows from './pages/Workflows'
 
 /**
  * 路由表：登录页独立；业务页共用 Layout（侧栏 + 顶栏）。
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/agents/:agentId/eval" element={<Eval />} />
         <Route path="/knowledge" element={<Knowledge />} />
         <Route path="/memory" element={<MemoryPage />} />
+        <Route path="/workflows" element={<Workflows />} />
         <Route path="/models" element={<ModelConnections />} />
         <Route path="/mcps" element={<Mcps />} />
       </Route>

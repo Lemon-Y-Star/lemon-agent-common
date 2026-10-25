@@ -9,6 +9,7 @@ import {
   type GraphNodeType,
 } from '../api/graph'
 import { fetchTools, type ToolInfo } from '../api/agents'
+import { createWorkflow } from '../api/workflow'
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
 
@@ -230,6 +231,28 @@ export default function GraphEditor() {
     }
   }
 
+  /** 另存为工作流：把当前 Agent 的执行图复制成工作流的 v1（v3.7）。 */
+  async function onSaveAsWorkflow() {
+    if (!graph || graph.nodes.length === 0) {
+      setError('执行图是空的，先加节点再另存为工作流')
+      return
+    }
+    const suggested = graph.nodes.find((n) => n.title)?.title ?? `Agent #${id} 的工作流`
+    const name = window.prompt('工作流名称', suggested)
+    if (!name || !name.trim()) return
+    setSaving(true)
+    setError('')
+    try {
+      const detail = await createWorkflow({ name: name.trim(), sourceAgentId: id })
+      toast(`已另存为工作流「${detail.name}」v${detail.currentVersion}`)
+      navigate('/workflows')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '另存为工作流失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   function onArgsChange(text: string) {
     setArgsText(text)
     if (!selectedNode) return
@@ -282,6 +305,9 @@ export default function GraphEditor() {
           <button className="btn" onClick={() => navigate('/chat')}>去对话</button>
           {editable && (
             <button className="btn" onClick={onAutoLayout}>整理布局</button>
+          )}
+          {editable && (
+            <button className="btn" onClick={() => void onSaveAsWorkflow()}>另存为工作流</button>
           )}
           {editable && (
             <button className="btn primary" disabled={saving || !dirty} onClick={() => void onSave()}>

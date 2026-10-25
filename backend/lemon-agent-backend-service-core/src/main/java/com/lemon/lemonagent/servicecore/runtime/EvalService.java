@@ -1,9 +1,11 @@
 package com.lemon.lemonagent.servicecore.runtime;
 
+import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.AgentGraphEntity;
 import com.lemon.lemonagent.dal.entity.AgentRunEntity;
 import com.lemon.lemonagent.dal.entity.EvalBatchEntity;
 import com.lemon.lemonagent.dal.entity.EvalItemEntity;
+import com.lemon.lemonagent.dal.repository.AgentConfigRepository;
 import com.lemon.lemonagent.dal.repository.AgentGraphRepository;
 import com.lemon.lemonagent.dal.repository.AgentRunRepository;
 import com.lemon.lemonagent.dal.repository.EvalBatchRepository;
@@ -44,6 +46,10 @@ public class EvalService {
 
     private final AgentGraphRepository agentGraphRepository;
 
+    private final AgentConfigRepository agentConfigRepository;
+
+    private final WorkflowService workflowService;
+
     private final AgentRunRepository runRepository;
 
     private final AgentRuntimeService agentRuntimeService;
@@ -51,11 +57,15 @@ public class EvalService {
     public EvalService(EvalBatchRepository batchRepository,
                        EvalItemRepository itemRepository,
                        AgentGraphRepository agentGraphRepository,
+                       AgentConfigRepository agentConfigRepository,
+                       WorkflowService workflowService,
                        AgentRunRepository runRepository,
                        AgentRuntimeService agentRuntimeService) {
         this.batchRepository = batchRepository;
         this.itemRepository = itemRepository;
         this.agentGraphRepository = agentGraphRepository;
+        this.agentConfigRepository = agentConfigRepository;
+        this.workflowService = workflowService;
         this.runRepository = runRepository;
         this.agentRuntimeService = agentRuntimeService;
     }
@@ -80,15 +90,29 @@ public class EvalService {
         if (cases.size() > MAX_CASES) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "单批用例不能超过 " + MAX_CASES + " 条");
         }
-        AgentGraphEntity graph = agentGraphRepository.findActive(agentId);
-        if (graph == null) {
-            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "该 Agent 还没有执行图，无法做图评测");
+        // v3.7：挂载了工作流就按工作流的版本做基线，否则按 Agent 自己的执行图
+        AgentConfigEntity agent = agentConfigRepository.findByIdVisible(agentId, userId);
+        Integer graphVersion;
+        if (agent != null && agent.getWorkflowId() != null) {
+            com.lemon.lemonagent.dal.entity.WorkflowVersionEntity wfVersion =
+                    workflowService.resolveVersion(agent.getWorkflowId(), agent.getWorkflowVersion());
+            if (wfVersion == null) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                        "该 Agent 挂载的工作流没有可用版本，无法做图评测");
+            }
+            graphVersion = wfVersion.getVersion();
+        } else {
+            AgentGraphEntity graph = agentGraphRepository.findActive(agentId);
+            if (graph == null) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR, "该 Agent 还没有执行图，无法做图评测");
+            }
+            graphVersion = graph.getVersion();
         }
 
         EvalBatchEntity batch = new EvalBatchEntity();
         batch.setUserId(userId);
         batch.setAgentId(agentId);
-        batch.setGraphVersion(graph.getVersion());
+        batch.setGraphVersion(graphVersion);
         batch.setNote(note == null ? "" : note.trim());
         batchRepository.insert(batch);
 

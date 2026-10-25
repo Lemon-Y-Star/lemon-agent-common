@@ -2,8 +2,11 @@ package com.lemon.lemonagent.servicecore.runtime;
 
 import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.ModelConnectionEntity;
+import com.lemon.lemonagent.dal.entity.WorkflowEntity;
+import com.lemon.lemonagent.dal.entity.WorkflowVersionEntity;
 import com.lemon.lemonagent.dal.repository.AgentConfigRepository;
 import com.lemon.lemonagent.dal.repository.ModelConnectionRepository;
+import com.lemon.lemonagent.dal.repository.WorkflowRepository;
 import com.lemon.lemonagent.model.runtime.AgentConfigData;
 import com.lemon.lemonagent.model.runtime.AgentConfigsData;
 import com.lemon.architecture.model.BusinessException;
@@ -39,16 +42,20 @@ public class AgentConfigService {
 
     private final com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository;
 
+    private final WorkflowRepository workflowRepository;
+
     private final tools.jackson.databind.ObjectMapper objectMapper = new tools.jackson.databind.ObjectMapper();
 
     public AgentConfigService(AgentConfigRepository repository,
                               ModelConnectionRepository modelConnectionRepository,
                               ToolRegistry toolRegistry,
-                              com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository) {
+                              com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository,
+                              WorkflowRepository workflowRepository) {
         this.repository = repository;
         this.modelConnectionRepository = modelConnectionRepository;
         this.toolRegistry = toolRegistry;
         this.agentGraphRepository = agentGraphRepository;
+        this.workflowRepository = workflowRepository;
     }
 
     /**
@@ -73,10 +80,13 @@ public class AgentConfigService {
      * @param instruction 入参：系统提示词
      * @param tools     入参：可用工具白名单（null = 全部）
      * @param modelConnectionId 入参：绑定连接（可空）
+     * @param workflowId        入参：挂载工作流（可空）
+     * @param workflowVersion   入参：挂载的工作流版本（可空 = 跟随工作流当前生效版本）
      * @return 出参：创建后的 Agent
      */
     public AgentConfigData create(Long userId, String name, String description,
-                                  String instruction, List<String> tools, Long modelConnectionId) {
+                                  String instruction, List<String> tools, Long modelConnectionId,
+                                  Long workflowId, Integer workflowVersion) {
         validate(name, instruction);
         AgentConfigEntity entity = new AgentConfigEntity();
         entity.setUserId(userId);
@@ -85,6 +95,9 @@ public class AgentConfigService {
         entity.setInstruction(instruction.trim());
         entity.setToolsJson(normalizeTools(tools));
         entity.setModelConnectionId(requireModelConnection(userId, modelConnectionId));
+        Long wf = requireWorkflow(userId, workflowId);
+        entity.setWorkflowId(wf);
+        entity.setWorkflowVersion(wf == null ? null : resolveWorkflowVersion(wf, workflowVersion));
         entity.setStatus(1);
         entity.setVersion(1);
         repository.insert(entity);
@@ -100,7 +113,7 @@ public class AgentConfigService {
      */
     public AgentConfigData update(Long userId, Long agentId, String name, String description,
                                   String instruction, List<String> tools, Long modelConnectionId,
-                                  Boolean enabled) {
+                                  Boolean enabled, Long workflowId, Integer workflowVersion) {
         validate(name, instruction);
         AgentConfigEntity entity = requireOwned(userId, agentId);
         entity.setName(name.trim());
@@ -110,6 +123,16 @@ public class AgentConfigService {
         if (modelConnectionId != null) {
             entity.setModelConnectionId(modelConnectionId == CLEAR_MODEL_CONNECTION
                     ? null : requireModelConnection(userId, modelConnectionId));
+        }
+        if (workflowId != null) {
+            // 0 = 取消挂载（回落 Agent 自己的执行图）；非 0 校验归属与启用状态
+            Long wf = requireWorkflow(userId, workflowId);
+            entity.setWorkflowId(wf);
+            entity.setWorkflowVersion(wf == null ? null : resolveWorkflowVersion(wf, workflowVersion));
+        } else if (workflowVersion != null) {
+            // 只调版本：沿用当前已挂载的工作流；0 = 清除版本（跟随最新）
+            entity.setWorkflowVersion(entity.getWorkflowId() == null ? null
+                    : resolveWorkflowVersion(entity.getWorkflowId(), workflowVersion));
         }
         if (enabled != null) {
             entity.setStatus(enabled ? 1 : 0);
@@ -236,6 +259,48 @@ public class AgentConfigService {
         return modelConnectionId;
     }
 
+    /**
+     * 挂载工作流校验：必须属于本人且已启用；0 = 取消挂载（回落 Agent 自己的执行图）。
+     *
+     * @param userId     入参：归属用户
+     * @param workflowId 入参：工作流 ID（可空 / 0 = 取消挂载）
+     * @return 出参：校验通过的工作流 ID；取消挂载则为 null
+     */
+    private Long requireWorkflow(Long userId, Long workflowId) {
+        if (workflowId == null || workflowId == CLEAR_MODEL_CONNECTION) {
+            return null;
+        }
+        WorkflowEntity wf = workflowRepository.findById(workflowId);
+        if (wf == null) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "挂载的工作流不存在");
+        }
+        if (!wf.getUserId().equals(userId)) {
+            throw new BusinessException(ResultCodes.FORBIDDEN, "只能挂载自己的工作流");
+        }
+        if (wf.getStatus() == null || wf.getStatus() != 1) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "该工作流已停用，请先启用");
+        }
+        return workflowId;
+    }
+
+    /**
+     * 工作流版本解析：null / 0 = 跟随工作流当前生效版本；非 0 校验版本存在。
+     *
+     * @param workflowId 入参：工作流 ID
+     * @param version    入参：版本号
+     * @return 出参：生效版本号；跟随最新则为 null
+     */
+    private Integer resolveWorkflowVersion(Long workflowId, Integer version) {
+        if (version == null || version == 0 || workflowId == null) {
+            return null;
+        }
+        WorkflowVersionEntity v = workflowRepository.findVersion(workflowId, version);
+        if (v == null) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "工作流版本不存在：" + version);
+        }
+        return version;
+    }
+
     private AgentConfigData toData(AgentConfigEntity entity) {
         AgentConfigData data = new AgentConfigData();
         data.setId(entity.getId());
@@ -253,6 +318,12 @@ public class AgentConfigService {
         data.setVersion(entity.getVersion());
         com.lemon.lemonagent.dal.entity.AgentGraphEntity graph = agentGraphRepository.findActive(entity.getId());
         data.setGraphVersion(graph == null ? 0 : graph.getVersion());
+        data.setWorkflowId(entity.getWorkflowId());
+        data.setWorkflowVersion(entity.getWorkflowVersion());
+        if (entity.getWorkflowId() != null) {
+            WorkflowEntity wf = workflowRepository.findById(entity.getWorkflowId());
+            data.setWorkflowName(wf == null ? null : wf.getName());
+        }
         data.setCreatedAt(format(entity.getCreatedAt()));
         data.setUpdatedAt(format(entity.getUpdatedAt()));
         return data;

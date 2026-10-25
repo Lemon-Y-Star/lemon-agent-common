@@ -22,7 +22,8 @@ import java.util.List;
 public class AgentConfigJdbcRepository implements AgentConfigRepository {
 
     private static final String COLUMNS =
-            "id, user_id, name, description, instruction, tools_json, model_connection_id, status, version, "
+            "id, user_id, name, description, instruction, tools_json, model_connection_id, "
+                    + "workflow_id, workflow_version, status, version, "
                     + "created_at, updated_at";
 
     private final JdbcTemplate jdbcTemplate;
@@ -40,6 +41,10 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
             e.setToolsJson(rs.getString("tools_json"));
             long connId = rs.getLong("model_connection_id");
             e.setModelConnectionId(rs.wasNull() ? null : connId);
+            long wfId = rs.getLong("workflow_id");
+            e.setWorkflowId(rs.wasNull() ? null : wfId);
+            int wfVer = rs.getInt("workflow_version");
+            e.setWorkflowVersion(rs.wasNull() ? null : wfVer);
             e.setStatus(rs.getInt("status"));
             e.setVersion(rs.getInt("version"));
             e.setCreatedAt(toInstant(rs.getTimestamp("created_at")));
@@ -87,8 +92,9 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO agent_config (user_id, name, description, instruction, tools_json, "
-                            + "model_connection_id, status, version, created_at, updated_at) "
-                            + "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                            + "model_connection_id, workflow_id, workflow_version, status, version, "
+                            + "created_at, updated_at) "
+                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     Statement.RETURN_GENERATED_KEYS);
             if (e.getUserId() == null) {
                 ps.setNull(1, Types.BIGINT);
@@ -104,10 +110,20 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
             } else {
                 ps.setLong(6, e.getModelConnectionId());
             }
-            ps.setInt(7, e.getStatus());
-            ps.setInt(8, e.getVersion());
-            ps.setTimestamp(9, Timestamp.from(now));
-            ps.setTimestamp(10, Timestamp.from(now));
+            if (e.getWorkflowId() == null) {
+                ps.setNull(7, Types.BIGINT);
+            } else {
+                ps.setLong(7, e.getWorkflowId());
+            }
+            if (e.getWorkflowVersion() == null) {
+                ps.setNull(8, Types.INTEGER);
+            } else {
+                ps.setInt(8, e.getWorkflowVersion());
+            }
+            ps.setInt(9, e.getStatus());
+            ps.setInt(10, e.getVersion());
+            ps.setTimestamp(11, Timestamp.from(now));
+            ps.setTimestamp(12, Timestamp.from(now));
             return ps;
         }, keys);
         e.setId(keys.getKey().longValue());
@@ -120,9 +136,11 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
     public int update(AgentConfigEntity e) {
         return jdbcTemplate.update(
                 "UPDATE agent_config SET name = ?, description = ?, instruction = ?, tools_json = ?, "
-                        + "model_connection_id = ?, status = ?, version = version + 1 WHERE id = ? AND user_id = ?",
+                        + "model_connection_id = ?, workflow_id = ?, workflow_version = ?, status = ?, "
+                        + "version = version + 1 WHERE id = ? AND user_id = ?",
                 e.getName(), e.getDescription(), e.getInstruction(), e.getToolsJson(),
-                e.getModelConnectionId(), e.getStatus(), e.getId(), e.getUserId());
+                e.getModelConnectionId(), e.getWorkflowId(), e.getWorkflowVersion(), e.getStatus(),
+                e.getId(), e.getUserId());
     }
 
     @Override

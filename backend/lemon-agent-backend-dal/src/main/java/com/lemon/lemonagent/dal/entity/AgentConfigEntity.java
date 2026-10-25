@@ -34,6 +34,12 @@ public class AgentConfigEntity {
     /** 绑定模型连接；NULL = 用户最新启用连接 */
     private Long modelConnectionId;
 
+    /** 挂载的工作流；NULL = 用 Agent 自己的执行图 */
+    private Long workflowId;
+
+    /** 挂载的工作流版本；NULL = 跟随工作流当前生效版本 */
+    private Integer workflowVersion;
+
     /** 状态：1 启用 / 0 停用 */
     private Integer status;
 

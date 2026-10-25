@@ -45,6 +45,8 @@ export default function Layout() {
       ? '我的知识库'
       : location.pathname.startsWith('/memory')
       ? '长期记忆'
+      : location.pathname.startsWith('/workflows')
+      ? '工作流'
       : location.pathname.startsWith('/runs')
       ? '运行历史'
       : location.pathname.startsWith('/usage')
@@ -82,7 +84,7 @@ export default function Layout() {
           </NavLink>
           <NavLink className="nav-item" to="/knowledge">📚 我的知识库</NavLink>
           <NavLink className="nav-item" to="/memory">🧠 长期记忆</NavLink>
-          <NavPending>🔀 工作流</NavPending>
+          <NavLink className="nav-item" to="/workflows">🔀 工作流</NavLink>
         </div>
         <div className="nav-group">
           <div className="gt">运行与产物</div>

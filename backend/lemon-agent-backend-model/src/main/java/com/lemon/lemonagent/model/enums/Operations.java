@@ -77,6 +77,11 @@ public final class Operations {
 
     public static final String MEMORY_DELETE = "MEMORY_DELETE";
 
+    /** 工作流创建 / 保存新版本（v3.7） */
+    public static final String WORKFLOW_CREATE = "WORKFLOW_CREATE";
+
+    public static final String WORKFLOW_VERSION_SAVE = "WORKFLOW_VERSION_SAVE";
+
     private Operations() {
     }
 

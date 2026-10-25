@@ -74,6 +74,8 @@ public class AgentRuntimeService {
 
     private final com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository;
 
+    private final WorkflowService workflowService;
+
     private final ToolRegistry toolRegistry;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -88,6 +90,7 @@ public class AgentRuntimeService {
                                RunExecutor runExecutor,
                                AgentConfigService agentConfigService,
                                com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository,
+                               WorkflowService workflowService,
                                ToolRegistry toolRegistry) {
         this.sessionRepository = sessionRepository;
         this.runRepository = runRepository;
@@ -97,6 +100,7 @@ public class AgentRuntimeService {
         this.runExecutor = runExecutor;
         this.agentConfigService = agentConfigService;
         this.agentGraphRepository = agentGraphRepository;
+        this.workflowService = workflowService;
         this.toolRegistry = toolRegistry;
     }
 
@@ -248,16 +252,31 @@ public class AgentRuntimeService {
         String graphSnapshot = null;
         String graphStateSnapshot = null;
         if (strategy == Strategy.CUSTOM) {
-            com.lemon.lemonagent.dal.entity.AgentGraphEntity graphEntity =
-                    agentGraphRepository.findActive(agent.getId());
-            if (graphEntity == null) {
-                throw new BusinessException(ResultCodes.VALIDATION_ERROR,
-                        "该 Agent 还没有执行图，请先在「执行图」里配置后再用 custom 策略");
+            // v3.7：挂载了工作流就跑工作流的版本快照，否则跑 Agent 自己的执行图
+            String rawGraphJson;
+            Integer rawVersion;
+            if (agent.getWorkflowId() != null) {
+                com.lemon.lemonagent.dal.entity.WorkflowVersionEntity wfVersion =
+                        workflowService.resolveVersion(agent.getWorkflowId(), agent.getWorkflowVersion());
+                if (wfVersion == null) {
+                    throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                            "该 Agent 挂载的工作流没有可用版本，请先在「工作流」里保存版本");
+                }
+                rawGraphJson = wfVersion.getGraphJson();
+                rawVersion = wfVersion.getVersion();
+            } else {
+                com.lemon.lemonagent.dal.entity.AgentGraphEntity graphEntity =
+                        agentGraphRepository.findActive(agent.getId());
+                if (graphEntity == null) {
+                    throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                            "该 Agent 还没有执行图，请先在「执行图」里配置后再用 custom 策略");
+                }
+                rawGraphJson = graphEntity.getGraphJson();
+                rawVersion = graphEntity.getVersion();
             }
-            com.lemon.lemonagent.model.runtime.AgentGraphData graph =
-                    GraphCodec.decodeGraph(graphEntity.getGraphJson());
+            com.lemon.lemonagent.model.runtime.AgentGraphData graph = GraphCodec.decodeGraph(rawGraphJson);
             GraphValidator.validate(graph, toolRegistry);
-            graph.setVersion(graphEntity.getVersion());
+            graph.setVersion(rawVersion);
             graphSnapshot = GraphCodec.encodeGraph(graph);
             graphStateSnapshot = GraphCodec.encodeState(new com.lemon.lemonagent.model.runtime.GraphStateData());
         }

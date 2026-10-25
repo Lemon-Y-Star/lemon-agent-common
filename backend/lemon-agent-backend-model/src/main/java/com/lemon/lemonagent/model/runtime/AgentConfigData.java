@@ -27,6 +27,15 @@ public class AgentConfigData {
     /** 当前执行图版本；0 = 还没有图（前端据此决定是否显示「执行图」入口） */
     private Integer graphVersion;
 
+    /** 挂载的工作流；null = 用 Agent 自己的执行图 */
+    private Long workflowId;
+
+    /** 挂载的工作流版本；null = 跟随工作流当前生效版本 */
+    private Integer workflowVersion;
+
+    /** 挂载的工作流名称（列表/表单直接显示用；null = 未挂载） */
+    private String workflowName;
+
     /** 绑定模型连接；null = 运行时取用户最新启用连接 */
     private Long modelConnectionId;
 

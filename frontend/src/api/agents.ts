@@ -11,6 +11,12 @@ export interface AgentConfig {
   tools: string[] | null
   /** 当前执行图版本；0 = 还没有图 */
   graphVersion: number
+  /** 挂载的工作流；null = 用 Agent 自己的执行图 */
+  workflowId: number | null
+  /** 挂载的工作流版本；null = 跟随工作流当前生效版本 */
+  workflowVersion: number | null
+  /** 挂载的工作流名称（未挂载为 null） */
+  workflowName: string | null
   modelConnectionId: number | null
   enabled: boolean
   platformPublic: boolean
@@ -49,6 +55,10 @@ export function createAgent(payload: {
   instruction: string
   tools: string[] | null
   modelConnectionId: number | null
+  /** 挂载工作流（可空） */
+  workflowId?: number | null
+  /** 挂载的工作流版本（可空 = 跟随当前生效版本） */
+  workflowVersion?: number | null
 }): Promise<AgentConfig> {
   return post<AgentConfig>('/workspace/agents', payload)
 }
@@ -63,6 +73,10 @@ export function updateAgent(
     /** null = 保持不变；0 = 清除绑定 */
     modelConnectionId?: number | null
     enabled?: boolean
+    /** 挂载工作流：null = 保持不变；0 = 取消挂载 */
+    workflowId?: number | null
+    /** 挂载版本：null = 保持不变；0 = 清除（跟随最新） */
+    workflowVersion?: number | null
   },
 ): Promise<AgentConfig> {
   return put<AgentConfig>(`/workspace/agents/${id}`, payload)

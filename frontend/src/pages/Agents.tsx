@@ -11,6 +11,12 @@ import {
   type ToolInfo,
 } from '../api/agents'
 import { fetchModelConnections, type ModelConnection } from '../api/modelConnections'
+import {
+  fetchWorkflow,
+  fetchWorkflows,
+  type WorkflowItem,
+  type WorkflowVersionItem,
+} from '../api/workflow'
 import Switch from '../components/Switch'
 import { useNavigate } from 'react-router-dom'
 import { ToastHost, toast } from '../components/Toast'
@@ -28,6 +34,10 @@ interface FormState {
   /** null = 全部工具 */
   tools: string[] | null
   modelConnectionId: number | null
+  /** 挂载的工作流；null = 用 Agent 自己的执行图 */
+  workflowId: number | null
+  /** 挂载的工作流版本；null = 跟随工作流当前生效版本 */
+  workflowVersion: number | null
 }
 
 const ALL_TOOLS_HINT = '全部工具'
@@ -37,6 +47,8 @@ export default function Agents() {
   const [page, setPage] = useState<AgentPage | null>(null)
   const [tools, setTools] = useState<ToolInfo[]>([])
   const [connections, setConnections] = useState<ModelConnection[]>([])
+  const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
+  const [wfVersions, setWfVersions] = useState<WorkflowVersionItem[]>([])
   const [form, setForm] = useState<FormState | null>(null)
   const [deleting, setDeleting] = useState<AgentConfig | null>(null)
   const [toggling, setToggling] = useState<number | null>(null)
@@ -59,7 +71,23 @@ export default function Agents() {
     void fetchModelConnections()
       .then((p) => setConnections(p.connections.filter((c) => c.enabled)))
       .catch(() => setConnections([]))
+    void fetchWorkflows().then((d) => setWorkflows(d.workflows)).catch(() => setWorkflows([]))
   }, [reload])
+
+  /** 选中工作流时顺带拉版本列表（用于「指定版本」下拉）。 */
+  async function onPickWorkflow(id: number | null, version: number | null = null) {
+    setForm((prev) => (prev ? { ...prev, workflowId: id, workflowVersion: version } : prev))
+    if (id === null) {
+      setWfVersions([])
+      return
+    }
+    try {
+      const detail = await fetchWorkflow(id)
+      setWfVersions(detail.versions)
+    } catch {
+      setWfVersions([])
+    }
+  }
 
   async function onDelete() {
     if (!deleting) return
@@ -109,11 +137,19 @@ export default function Agents() {
     setError('')
     try {
       if (form.id === null) {
-        await createAgent({ ...payload, modelConnectionId: form.modelConnectionId })
+        await createAgent({
+          ...payload,
+          modelConnectionId: form.modelConnectionId,
+          workflowId: form.workflowId,
+          workflowVersion: form.workflowVersion,
+        })
       } else {
         await updateAgent(form.id, {
           ...payload,
           modelConnectionId: form.modelConnectionId ?? 0,
+          // 后端 null = 保持不变，0 = 取消挂载；表单里「不挂载」就是这个 0
+          workflowId: form.workflowId ?? 0,
+          workflowVersion: form.workflowVersion ?? 0,
         })
       }
       toast(form.id === null ? 'Agent 已创建' : 'Agent 已更新')
@@ -191,7 +227,7 @@ export default function Agents() {
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button
                       className="btn sm"
-                      onClick={() =>
+                      onClick={() => {
                         setForm({
                           id: a.id,
                           name: a.name,
@@ -199,8 +235,15 @@ export default function Agents() {
                           instruction: a.instruction ?? '',
                           tools: a.tools,
                           modelConnectionId: a.modelConnectionId,
+                          workflowId: a.workflowId,
+                          workflowVersion: a.workflowVersion,
                         })
-                      }
+                        if (a.workflowId !== null) {
+                          void onPickWorkflow(a.workflowId, a.workflowVersion)
+                        } else {
+                          setWfVersions([])
+                        }
+                      }}
                     >
                       编辑
                     </button>{' '}
@@ -261,10 +304,14 @@ export default function Agents() {
           <span style={{ marginLeft: 'auto' }}>
             <button
               className="btn sm primary"
-              onClick={() => setForm({
-                id: null, name: '', description: '', instruction: '',
-                tools: null, modelConnectionId: null,
-              })}
+              onClick={() => {
+                setForm({
+                  id: null, name: '', description: '', instruction: '',
+                  tools: null, modelConnectionId: null,
+                  workflowId: null, workflowVersion: null,
+                })
+                setWfVersions([])
+              }}
             >
               ＋ 创建 Agent
             </button>
@@ -315,6 +362,47 @@ export default function Agents() {
                   ))}
                 </select>
               </div>
+
+              <div className="field">
+                <label>
+                  挂载工作流
+                  <span className="hint">
+                    挂载后 custom 策略跑的是工作流的图；不挂载则跑 Agent 自己的执行图（v3.7）
+                  </span>
+                </label>
+                <select
+                  value={form.workflowId ?? ''}
+                  onChange={(e) => void onPickWorkflow(e.target.value === '' ? null : Number(e.target.value))}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">不挂载（用我自己的执行图）</option>
+                  {workflows.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}（当前 v{w.currentVersion} · {w.versionCount} 个版本）
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {form.workflowId !== null && (
+                <div className="field">
+                  <label>工作流版本</label>
+                  <select
+                    value={form.workflowVersion ?? ''}
+                    onChange={(e) => setForm({ ...form, workflowVersion: e.target.value === '' ? null : Number(e.target.value) })}
+                    style={{ width: '100%' }}
+                  >
+                    <option value="">
+                      跟随最新（当前 v{wfVersions.find((v) => v.active)?.version ?? 0}）
+                    </option>
+                    {wfVersions.map((v) => (
+                      <option key={v.version} value={v.version}>
+                        v{v.version} · {v.nodeCount} 节点{v.note ? ` · ${v.note}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="field">
                 <label>

@@ -29,6 +29,12 @@ public class CreateAgentReq extends BaseReq {
     /** 绑定模型连接（可空） */
     private Long modelConnectionId;
 
+    /** 挂载工作流（可空） */
+    private Long workflowId;
+
+    /** 挂载的工作流版本（可空 = 跟随工作流当前生效版本） */
+    private Integer workflowVersion;
+
     /** 填充路由三元组。 */
     public void fillRoute(String source) {
         PlatformRoute.fill(this, source, Operations.AGENT_CREATE);
