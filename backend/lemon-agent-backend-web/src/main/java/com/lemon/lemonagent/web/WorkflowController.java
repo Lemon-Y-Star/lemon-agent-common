@@ -2,6 +2,8 @@ package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.CreateWorkflowReq;
 import com.lemon.lemonagent.model.runtime.CreateWorkflowResp;
+import com.lemon.lemonagent.model.runtime.DeleteWorkflowReq;
+import com.lemon.lemonagent.model.runtime.DeleteWorkflowResp;
 import com.lemon.lemonagent.model.runtime.SaveWorkflowVersionReq;
 import com.lemon.lemonagent.model.runtime.SaveWorkflowVersionResp;
 import com.lemon.lemonagent.model.runtime.WorkflowDetailData;
@@ -11,6 +13,7 @@ import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;
 import jakarta.annotation.Resource;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -101,6 +104,26 @@ public class WorkflowController {
         return optUtil.exec(request, new SaveWorkflowVersionResp(), req -> {
             AssertUtils.notNull(req.getSourceAgentId(), "必须指定来源 Agent");
         });
+    }
+
+    /**
+     * 删除工作流（被 Agent 挂载时禁止删除，PRD P17）。
+     *
+     * @param workflowId 路径参数：工作流 ID
+     * @param userId     当前用户
+     * @param source     调用来源
+     * @return 空
+     */
+    @DeleteMapping("/{workflowId}")
+    public DeleteWorkflowResp delete(@PathVariable Long workflowId,
+                                     @RequestAttribute("lemon.userId") Long userId,
+                                     @RequestHeader(value = "X-Source", defaultValue = "web") String source) {
+        DeleteWorkflowReq request = new DeleteWorkflowReq();
+        request.setWorkflowId(workflowId);
+        request.setUserId(userId);
+        request.fillRoute(source);
+        return optUtil.exec(request, new DeleteWorkflowResp(), req ->
+                AssertUtils.notNull(req.getWorkflowId(), "工作流 ID 不能为空"));
     }
 
 }

@@ -86,6 +86,13 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
     }
 
     @Override
+    public long countByWorkflowId(Long workflowId) {
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM agent_config WHERE workflow_id = ?", Long.class, workflowId);
+        return n == null ? 0 : n;
+    }
+
+    @Override
     public int insert(AgentConfigEntity e) {
         Instant now = Instant.now();
         KeyHolder keys = new GeneratedKeyHolder();

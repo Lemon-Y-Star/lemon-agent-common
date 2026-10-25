@@ -73,4 +73,21 @@ public interface WorkflowRepository {
      */
     int deactivateAll(Long workflowId);
 
+    /**
+     * 删除工作流本体（本人，调用方先做挂载检查）。
+     *
+     * @param id     入参：工作流 ID
+     * @param userId 入参：归属用户
+     * @return 出参：影响行数
+     */
+    int delete(Long id, Long userId);
+
+    /**
+     * 级联删除全部版本（删除本体前调用）。
+     *
+     * @param workflowId 入参：工作流 ID
+     * @return 出参：影响行数
+     */
+    int deleteVersions(Long workflowId);
+
 }

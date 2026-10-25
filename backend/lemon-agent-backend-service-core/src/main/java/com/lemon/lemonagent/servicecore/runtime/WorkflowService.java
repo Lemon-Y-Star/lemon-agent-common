@@ -132,6 +132,23 @@ public class WorkflowService {
     }
 
     /**
+     * 删除工作流（PRD P17：被 Agent 挂载时禁止删除，先卸载；已冻结进历史的运行快照不受影响）。
+     *
+     * @param userId     入参：当前用户
+     * @param workflowId 入参：工作流 ID
+     */
+    public void delete(Long userId, Long workflowId) {
+        requireOwned(userId, workflowId);
+        long mounted = agentConfigRepository.countByWorkflowId(workflowId);
+        if (mounted > 0) {
+            throw new BusinessException(ResultCodes.FORBIDDEN,
+                    "工作流正在被 " + mounted + " 个 Agent 挂载，请先在「我的 Agent → 编辑」里取消挂载");
+        }
+        workflowRepository.deleteVersions(workflowId);
+        workflowRepository.delete(workflowId, userId);
+    }
+
+    /**
      * 取工作流当前生效版本的图（供运行时冻结快照用）。
      *
      * @param workflowId 入参：工作流 ID

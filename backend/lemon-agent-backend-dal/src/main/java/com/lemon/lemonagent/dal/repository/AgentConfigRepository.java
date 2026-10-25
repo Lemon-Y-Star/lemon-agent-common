@@ -40,6 +40,14 @@ public interface AgentConfigRepository {
     AgentConfigEntity findById(Long id);
 
     /**
+     * 统计挂载了某工作流的 Agent 数（删除工作流前的保护检查）。
+     *
+     * @param workflowId 入参：工作流 ID
+     * @return 出参：挂载中的 Agent 数
+     */
+    long countByWorkflowId(Long workflowId);
+
+    /**
      * 插入自建 Agent，回填自增主键。
      *
      * @param entity 入参：待插入实体

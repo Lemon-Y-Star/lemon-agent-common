@@ -1,4 +1,4 @@
-import { get, post, put } from './client'
+import { del, get, post, put } from './client'
 
 /** 工作流 API（v3.7）：独立实体，可被多个 Agent 挂载。 */
 
@@ -49,4 +49,9 @@ export function saveWorkflowVersion(
   payload: { sourceAgentId: number; note?: string },
 ): Promise<WorkflowDetail> {
   return put<WorkflowDetail>(`/workspace/workflows/${workflowId}/versions`, payload)
+}
+
+/** 删除工作流（被 Agent 挂载时后端会拒绝）。 */
+export function deleteWorkflow(workflowId: number): Promise<null> {
+  return del<null>(`/workspace/workflows/${workflowId}`)
 }

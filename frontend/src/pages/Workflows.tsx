@@ -3,6 +3,7 @@ import { fetchAgents, type AgentConfig } from '../api/agents'
 import { ApiError } from '../api/client'
 import {
   createWorkflow,
+  deleteWorkflow,
   fetchWorkflow,
   fetchWorkflows,
   saveWorkflowVersion,
@@ -99,6 +100,18 @@ export default function Workflows() {
     }
   }
 
+  async function onDelete(w: WorkflowItem) {
+    if (!window.confirm(`删除工作流「${w.name}」？全部版本会一起删除；已跑过的运行不受影响。`)) return
+    try {
+      await deleteWorkflow(w.id)
+      toast('工作流已删除')
+      if (detail?.id === w.id) setDetail(null)
+      await reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '删除失败')
+    }
+  }
+
   return (
     <>
       <div className="page-head">
@@ -187,7 +200,8 @@ export default function Workflows() {
                     </select>{' '}
                     <button className="btn sm" disabled={busy} onClick={() => void onSaveVersion(w.id)}>
                       另存新版本
-                    </button>
+                    </button>{' '}
+                    <button className="btn sm danger" onClick={() => void onDelete(w)}>删除</button>
                   </td>
                 </tr>
               ))}

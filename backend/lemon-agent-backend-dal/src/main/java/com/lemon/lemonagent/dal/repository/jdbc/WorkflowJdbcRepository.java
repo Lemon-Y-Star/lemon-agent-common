@@ -141,6 +141,16 @@ public class WorkflowJdbcRepository implements WorkflowRepository {
         return jdbcTemplate.update("UPDATE workflow_version SET status = 0 WHERE workflow_id = ?", workflowId);
     }
 
+    @Override
+    public int delete(Long id, Long userId) {
+        return jdbcTemplate.update("DELETE FROM workflow WHERE id = ? AND user_id = ?", id, userId);
+    }
+
+    @Override
+    public int deleteVersions(Long workflowId) {
+        return jdbcTemplate.update("DELETE FROM workflow_version WHERE workflow_id = ?", workflowId);
+    }
+
     private static Instant toInstant(Timestamp ts) {
         return ts == null ? null : ts.toInstant();
     }
