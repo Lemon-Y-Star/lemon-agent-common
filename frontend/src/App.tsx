@@ -3,6 +3,8 @@ import { getToken } from './api/client'
 import Agents from './pages/Agents'
 import GraphEditor from './pages/GraphEditor'
 import Eval from './pages/Eval'
+import Knowledge from './pages/Knowledge'
+import MemoryPage from './pages/Memory'
 import Chat from './pages/Chat'
 import Admin from './pages/Admin'
 import Runs from './pages/Runs'
@@ -34,6 +36,8 @@ export default function App() {
         <Route path="/agents" element={<Agents />} />
         <Route path="/agents/:agentId/graph" element={<GraphEditor />} />
         <Route path="/agents/:agentId/eval" element={<Eval />} />
+        <Route path="/knowledge" element={<Knowledge />} />
+        <Route path="/memory" element={<MemoryPage />} />
         <Route path="/models" element={<ModelConnections />} />
         <Route path="/mcps" element={<Mcps />} />
       </Route>

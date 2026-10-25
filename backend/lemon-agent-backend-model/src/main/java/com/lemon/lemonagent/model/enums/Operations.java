@@ -65,6 +65,18 @@ public final class Operations {
     /** 发起评测批次（v3.5） */
     public static final String EVAL_CREATE = "EVAL_CREATE";
 
+    /** 知识库文档新增 / 删除（v3.6） */
+    public static final String KB_DOC_CREATE = "KB_DOC_CREATE";
+
+    public static final String KB_DOC_DELETE = "KB_DOC_DELETE";
+
+    /** 长期记忆新增 / 启停 / 删除（v3.6） */
+    public static final String MEMORY_CREATE = "MEMORY_CREATE";
+
+    public static final String MEMORY_TOGGLE = "MEMORY_TOGGLE";
+
+    public static final String MEMORY_DELETE = "MEMORY_DELETE";
+
     private Operations() {
     }
 

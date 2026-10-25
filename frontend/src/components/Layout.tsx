@@ -41,6 +41,10 @@ export default function Layout() {
       ? '模型连接'
       : location.pathname.startsWith('/mcps')
       ? 'MCP 连接与工具'
+      : location.pathname.startsWith('/knowledge')
+      ? '我的知识库'
+      : location.pathname.startsWith('/memory')
+      ? '长期记忆'
       : location.pathname.startsWith('/runs')
       ? '运行历史'
       : location.pathname.startsWith('/usage')
@@ -76,8 +80,8 @@ export default function Layout() {
           <NavLink className="nav-item" to="/models">
             🔌 模型连接
           </NavLink>
-          <NavPending>📚 我的知识库</NavPending>
-          <NavPending>🧠 长期记忆</NavPending>
+          <NavLink className="nav-item" to="/knowledge">📚 我的知识库</NavLink>
+          <NavLink className="nav-item" to="/memory">🧠 长期记忆</NavLink>
           <NavPending>🔀 工作流</NavPending>
         </div>
         <div className="nav-group">

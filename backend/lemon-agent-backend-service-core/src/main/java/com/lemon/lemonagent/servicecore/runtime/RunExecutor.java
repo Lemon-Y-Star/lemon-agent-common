@@ -99,10 +99,14 @@ public class RunExecutor {
     /** Agent 配置仓储：每轮循环按 run.agent_id 回查，挂起恢复后语义不变（无内存态依赖）。 */
     private final AgentConfigRepository agentConfigRepository;
 
+    /** 长期记忆：拼进 system prompt。 */
+    private final MemoryService memoryService;
+
     public RunExecutor(AgentRunRepository runRepository,
                        AgentMessageRepository messageRepository,
                        ModelConnectionRepository modelConnectionRepository,
                        AgentConfigRepository agentConfigRepository,
+                       MemoryService memoryService,
                        ModelPort modelPort,
                        EventPublisher eventPublisher,
                        ToolRegistry toolRegistry,
@@ -113,6 +117,7 @@ public class RunExecutor {
         this.messageRepository = messageRepository;
         this.modelConnectionRepository = modelConnectionRepository;
         this.agentConfigRepository = agentConfigRepository;
+        this.memoryService = memoryService;
         this.modelPort = modelPort;
         this.eventPublisher = eventPublisher;
         this.toolRegistry = toolRegistry;
@@ -217,7 +222,7 @@ public class RunExecutor {
 
         List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                 ? toolRegistry.specs(allowedTools) : List.of();
-        TurnResult turn = streamTurn(runId, conn, instructionOf(agent), context, userInput, tools, 0, true);
+        TurnResult turn = streamTurn(runId, conn, instructionOf(agent, run.getUserId()), context, userInput, tools, 0, true);
 
         // ④ 分支：工具调用（挂起或直执行） vs 文本完成
         if (turn.toolCalls() != null) {
@@ -329,7 +334,7 @@ public class RunExecutor {
             }
             notes.forEach(note -> context.add(new ModelPort.Msg("USER", "[系统] " + note)));
 
-            String prompt = stepPrompt(instructionOf(agent), step, stepIndex, total);
+            String prompt = stepPrompt(instructionOf(agent, run.getUserId()), step, stepIndex, total);
             String stepInput = stepInput(step, stepIndex, userInput);
             List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                     ? toolRegistry.specs(allowedTools) : List.of();
@@ -617,9 +622,17 @@ public class RunExecutor {
         return agent == null ? null : AgentToolCodec.decode(agent.getToolsJson());
     }
 
-    private String instructionOf(AgentConfigEntity agent) {
-        return agent != null && agent.getInstruction() != null && !agent.getInstruction().isBlank()
+    /**
+     * 装配 system prompt：Agent 人格（缺省用平台提示词）+ 该用户的长期记忆。
+     *
+     * @param agent  入参：挂载的 Agent（可空）
+     * @param userId 入参：用户（长期记忆按用户隔离）
+     * @return 出参：最终 system prompt
+     */
+    private String instructionOf(AgentConfigEntity agent, Long userId) {
+        String base = agent != null && agent.getInstruction() != null && !agent.getInstruction().isBlank()
                 ? agent.getInstruction() : systemPrompt;
+        return memoryService.augment(userId, base);
     }
 
     /** 会话历史上下文（不含最后一条用户输入；最近 HISTORY_WINDOW 条）。会话为空返回 null。 */
@@ -849,7 +862,7 @@ public class RunExecutor {
             List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
             List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                     ? toolRegistry.specs(allowed) : List.of();
-            TurnResult turn = streamTurn(runId, conn, nodeSystemPrompt(instructionOf(agent), node),
+            TurnResult turn = streamTurn(runId, conn, nodeSystemPrompt(instructionOf(agent, run.getUserId()), node),
                     context, nodeInput(node, userInput), tools, stepIndex, true);
             if (turn.toolCalls() != null) {
                 handleToolCalls(run, turn.toolCalls(), notes, depth, allowed);
@@ -953,7 +966,7 @@ public class RunExecutor {
                         ? toolRegistry.specs(allowed) : List.of();
                 futures.add(executor.submit(() -> {
                     TurnResult turn = streamTurn(runId, conn,
-                            nodeSystemPrompt(instructionOf(agent), node), ctx,
+                            nodeSystemPrompt(instructionOf(agent, run.getUserId()), node), ctx,
                             nodeInput(node, userInput), tools, stepIndex, true);
                     return new NodeOutcome(node, stepIndex, turn.text(), turn.inputTokens(),
                             turn.outputTokens(), turn.toolCalls(), turn.completed(),
