@@ -108,11 +108,14 @@ public class RunExecutor {
     /** 长期记忆：拼进 system prompt。 */
     private final MemoryService memoryService;
 
+    private final com.lemon.lemonagent.servicecore.safety.SensitiveWordService sensitiveWords;
+
     public RunExecutor(AgentRunRepository runRepository,
                        AgentMessageRepository messageRepository,
                        ModelConnectionRepository modelConnectionRepository,
                        AgentConfigRepository agentConfigRepository,
                        MemoryService memoryService,
+                       com.lemon.lemonagent.servicecore.safety.SensitiveWordService sensitiveWords,
                        ModelPort modelPort,
                        EventPublisher eventPublisher,
                        ToolRegistry toolRegistry,
@@ -124,6 +127,7 @@ public class RunExecutor {
         this.modelConnectionRepository = modelConnectionRepository;
         this.agentConfigRepository = agentConfigRepository;
         this.memoryService = memoryService;
+        this.sensitiveWords = sensitiveWords;
         this.modelPort = modelPort;
         this.eventPublisher = eventPublisher;
         this.toolRegistry = toolRegistry;
@@ -257,7 +261,7 @@ public class RunExecutor {
         if (isTerminal(run)) {
             return;
         }
-        String outputText = turn.text();
+        String outputText = maskOutput(turn.text());
         if (fixed && outputText.isEmpty() && turn.toolCalls() != null) {
             outputText = "（fixed 模式不装配工具，模型请求的工具调用已被忽略）";
         }
@@ -401,7 +405,7 @@ public class RunExecutor {
             sb.append("### 第").append(i + 1).append("步：").append(step.getTitle()).append("\n")
                     .append(step.getOutput() == null ? "" : step.getOutput()).append("\n\n");
         }
-        String outputText = sb.toString().trim();
+        String outputText = maskOutput(sb.toString().trim());
         int rows = runRepository.finish(runId, RunStatus.COMPLETED.name(),
                 outputText, null, null, (int) totalIn, (int) totalOut);
         if (rows > 0) {
@@ -577,6 +581,10 @@ public class RunExecutor {
 
         StringBuilder fullOutput = new StringBuilder();
         StringBuilder tokenBuf = new StringBuilder();
+        // 流式脱敏缓冲：敏感词可能被切在两个 delta 之间（v3.9.2）
+        boolean maskOn = sensitiveWords.enabled();
+        int maskKeep = maskOn ? sensitiveWords.words().stream().mapToInt(String::length).max().orElse(1) - 1 : 0;
+        StringBuilder maskRaw = new StringBuilder();
         long[] lastFlushAt = {System.currentTimeMillis()};
         long[] usage = new long[2];
         boolean[] completed = {false};
@@ -593,7 +601,16 @@ public class RunExecutor {
                 if (!emitTokens) {
                     return;
                 }
-                tokenBuf.append(delta);
+                if (maskOn) {
+                    maskRaw.append(delta);
+                    String[] parts = sensitiveWords.maskStreaming(maskRaw.toString(), maskKeep);
+                    tokenBuf.setLength(0);
+                    tokenBuf.append(parts[0]);
+                    maskRaw.setLength(0);
+                    maskRaw.append(parts[1]);
+                } else {
+                    tokenBuf.append(delta);
+                }
                 boolean byChars = tokenBuf.length() >= FLUSH_EVERY_CHARS;
                 boolean byTime = System.currentTimeMillis() - lastFlushAt[0] >= FLUSH_EVERY_MILLIS;
                 if (byChars || byTime) {
@@ -624,6 +641,10 @@ public class RunExecutor {
             }
         });
         if (emitTokens) {
+            if (maskOn && maskRaw.length() > 0) {
+                tokenBuf.append(sensitiveWords.mask(maskRaw.toString()));
+                maskRaw.setLength(0);
+            }
             flushToken(runId, tokenBuf, stepIndex);
         }
         return new TurnResult(fullOutput.toString(), toolCallsHolder[0], usage[0], usage[1], completed[0]);
@@ -920,7 +941,7 @@ public class RunExecutor {
             }
             sb.append("### ").append(nodeLabel(node)).append("\n").append(output).append("\n\n");
         }
-        String outputText = sb.toString().trim();
+        String outputText = maskOutput(sb.toString().trim());
         int rows = runRepository.finish(runId, RunStatus.COMPLETED.name(), outputText, null, null,
                 (int) state.getInputTokens(), (int) state.getOutputTokens());
         if (rows > 0) {
@@ -1103,7 +1124,13 @@ public class RunExecutor {
 
 
     /** 节点完成：写 done/outputs + 覆盖进度（一次 UPDATE，进度与产出同源）。 */
+    /** 输出脱敏：命中敏感词替换为【已屏蔽】（词库空时零开销直通）。 */
+    private String maskOutput(String text) {
+        return sensitiveWords.enabled() ? sensitiveWords.mask(text) : text;
+    }
+
     private void markNodeDone(AgentRunEntity run, GraphStateData state, GraphNode node, String output, int stepIndex) {
+        output = maskOutput(output);
         // 节点产出打点：路由类工作流（意图分类等）在后端日志里可直接看到判定结果
         String brief = output == null ? "" : output.replaceAll("\\s+", " ").trim();
         log.info("run {} 节点 {}[{}] 完成: {}", run.getId(), node.getId(), nodeLabel(node),

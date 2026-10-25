@@ -76,6 +76,8 @@ public class AgentRuntimeService {
 
     private final WorkflowService workflowService;
 
+    private final com.lemon.lemonagent.servicecore.safety.SensitiveWordService sensitiveWords;
+
     private final ToolRegistry toolRegistry;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -91,6 +93,7 @@ public class AgentRuntimeService {
                                AgentConfigService agentConfigService,
                                com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository,
                                WorkflowService workflowService,
+                               com.lemon.lemonagent.servicecore.safety.SensitiveWordService sensitiveWords,
                                ToolRegistry toolRegistry) {
         this.sessionRepository = sessionRepository;
         this.runRepository = runRepository;
@@ -101,6 +104,7 @@ public class AgentRuntimeService {
         this.agentConfigService = agentConfigService;
         this.agentGraphRepository = agentGraphRepository;
         this.workflowService = workflowService;
+        this.sensitiveWords = sensitiveWords;
         this.toolRegistry = toolRegistry;
     }
 
@@ -215,6 +219,12 @@ public class AgentRuntimeService {
                              String clientRequestId, Boolean thinking) {
         if (input == null || input.isBlank() || input.length() > MAX_INPUT_LENGTH) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "输入不能为空且不超过 4000 字符");
+        }
+        // 敏感词输入拦截（v3.9.2）：命中即拒绝，不做替换——输入是用户的意图，改写有风险
+        java.util.List<String> sensitiveHits = sensitiveWords.hits(input);
+        if (!sensitiveHits.isEmpty()) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                    "输入包含敏感词：" + String.join("、", sensitiveHits) + "，请修改后重试");
         }
         if (clientRequestId == null || clientRequestId.isBlank() || clientRequestId.length() > 64) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "clientRequestId 必须为不超过 64 位的幂等键");
