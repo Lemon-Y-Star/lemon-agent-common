@@ -186,10 +186,11 @@ public class AgentRunController {
                                         @RequestParam(required = false) Long sessionId,
                                         @RequestParam(required = false) String status,
                                         @RequestParam(required = false) String traceId,
+                                        @RequestParam(required = false) Long agentId,
                                         @RequestParam(defaultValue = "1") int page,
                                         @RequestParam(defaultValue = "20") int size) {
         return BaseResult.success(agentRuntimeService.listRuns(userId, sessionId, status, traceId,
-                page, Math.min(size, 100)));
+                agentId, page, Math.min(size, 100)));
     }
 
 }

@@ -46,9 +46,9 @@ public class ArtifactService {
      */
     public ArtifactsData list(Long userId, int page, int size) {
         ArtifactsData data = new ArtifactsData();
-        data.setTotal(runRepository.countByUser(userId, "COMPLETED", null, null));
+        data.setTotal(runRepository.countByUser(userId, "COMPLETED", null, null, null));
         List<ArtifactData> items = new ArrayList<>();
-        for (AgentRunEntity run : runRepository.findByUser(userId, "COMPLETED", null, null,
+        for (AgentRunEntity run : runRepository.findByUser(userId, "COMPLETED", null, null, null,
                 (page - 1) * size, size)) {
             ArtifactData item = new ArtifactData();
             item.setRunId(run.getId());

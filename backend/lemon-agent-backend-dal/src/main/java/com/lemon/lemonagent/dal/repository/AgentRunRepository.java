@@ -84,11 +84,12 @@ public interface AgentRunRepository {
      * @param status   入参：状态过滤（可空）
      * @param sessionId 入参：会话过滤（可空）
      * @param traceId  入参：全链路 ID 精确匹配（可空；运行历史按 traceId 反查）
+     * @param agentId  入参：Agent 过滤（可空；运行历史按 Agent 筛选）
      * @param offset   入参：分页偏移
      * @param limit    入参：页大小
      * @return 出参：运行列表
      */
-    List<AgentRunEntity> findByUser(Long userId, String status, Long sessionId, String traceId, int offset, int limit);
+    List<AgentRunEntity> findByUser(Long userId, String status, Long sessionId, String traceId, Long agentId, int offset, int limit);
 
     /**
      * 用户运行总数。
@@ -97,9 +98,10 @@ public interface AgentRunRepository {
      * @param status   入参：状态过滤（可空）
      * @param sessionId 入参：会话过滤（可空）
      * @param traceId  入参：全链路 ID 精确匹配（可空）
+     * @param agentId  入参：Agent 过滤（可空）
      * @return 出参：总数
      */
-    long countByUser(Long userId, String status, Long sessionId, String traceId);
+    long countByUser(Long userId, String status, Long sessionId, String traceId, Long agentId);
 
     /**
      * 回填实际使用的模型（执行器解析连接后调用，幂等）。

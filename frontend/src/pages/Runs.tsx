@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchRunSnapshot, fetchSessions, retryRun, type RunSnapshot, type SessionItem } from '../api/runtime'
+import { fetchAgents, type AgentConfig } from '../api/agents'
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
 import RunGraphView from '../components/RunGraphView'
@@ -48,14 +49,17 @@ export default function Runs() {
   const [selected, setSelected] = useState<RunSnapshot | null>(null)
   const [error, setError] = useState('')
   const [traceId, setTraceId] = useState('')
+  const [agents, setAgents] = useState<AgentConfig[]>([])
+  const [agentId, setAgentId] = useState('')
   const [thinkOpen, setThinkOpen] = useState(false)
 
-  const reload = useCallback(async (filterStatus: string, filterSession: string, filterTrace: string) => {
+  const reload = useCallback(async (filterStatus: string, filterSession: string, filterTrace: string, filterAgent: string) => {
     try {
       const qs = new URLSearchParams()
       if (filterStatus) qs.set('status', filterStatus)
       if (filterSession) qs.set('sessionId', filterSession)
       if (filterTrace.trim()) qs.set('traceId', filterTrace.trim())
+      if (filterAgent) qs.set('agentId', filterAgent)
       qs.set('page', '1')
       qs.set('size', '50')
       const { request } = await import('../api/client')
@@ -70,7 +74,8 @@ export default function Runs() {
 
   useEffect(() => {
     void fetchSessions().then((list) => setSessions(list.items)).catch(() => undefined)
-    void reload('', '', '')
+    void fetchAgents().then((p) => setAgents([...p.platform, ...p.mine])).catch(() => undefined)
+    void reload('', '', '', '')
   }, [reload])
 
   async function openDetail(runId: number) {
@@ -89,7 +94,7 @@ export default function Runs() {
     try {
       const nr = await retryRun(rid)
       toast(`已发起重试 #${nr.runId}`)
-      await reload(status, sessionId, traceId)
+      await reload(status, sessionId, traceId, agentId)
       void openDetail(nr.runId)
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '重试失败')
@@ -111,7 +116,7 @@ export default function Runs() {
         <div className="row">
           <div className="field" style={{ margin: 0 }}>
             <label>状态</label>
-            <select value={status} onChange={(e) => { setStatus(e.target.value); void reload(e.target.value, sessionId, traceId) }}>
+            <select value={status} onChange={(e) => { setStatus(e.target.value); void reload(e.target.value, sessionId, traceId, agentId) }}>
               <option value="">全部</option>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>{statusTag(s).text}（{s}）</option>
@@ -119,8 +124,17 @@ export default function Runs() {
             </select>
           </div>
           <div className="field" style={{ margin: 0 }}>
+            <label>Agent</label>
+            <select value={agentId} onChange={(e) => { setAgentId(e.target.value); void reload(e.target.value === '' ? '' : status, sessionId, traceId, e.target.value) }}>
+              <option value="">全部 Agent</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}{a.platformPublic ? '（平台）' : ''}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field" style={{ margin: 0 }}>
             <label>会话</label>
-            <select value={sessionId} onChange={(e) => { setSessionId(e.target.value); void reload(status, e.target.value, traceId) }}>
+            <select value={sessionId} onChange={(e) => { setSessionId(e.target.value); void reload(status, e.target.value, traceId, agentId) }}>
               <option value="">全部会话</option>
               {sessions.map((s) => (
                 <option key={s.sessionId} value={s.sessionId}>{s.title}</option>
@@ -132,14 +146,14 @@ export default function Runs() {
             <input
               value={traceId}
               onChange={(e) => setTraceId(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void reload(status, sessionId, traceId) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void reload(status, sessionId, traceId, agentId) }}
               placeholder="粘贴 traceId 反查日志，如 25e08b9eac9ec7aa152c60001aedb503"
               style={{ fontFamily: 'monospace' }}
             />
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
-            <button className="btn sm" onClick={() => void reload(status, sessionId, traceId)}>查询</button>
-            <button className="btn sm" onClick={() => { setTraceId(''); void reload(status, sessionId, '') }}>清除</button>
+            <button className="btn sm" onClick={() => void reload(status, sessionId, traceId, agentId)}>查询</button>
+            <button className="btn sm" onClick={() => { setTraceId(''); void reload(status, sessionId, '', '') }}>清除</button>
           </div>
         </div>
       </div>

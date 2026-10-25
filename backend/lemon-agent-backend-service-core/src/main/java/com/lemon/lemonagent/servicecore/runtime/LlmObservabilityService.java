@@ -53,7 +53,7 @@ public class LlmObservabilityService {
         data.setByModel(byModel);
 
         List<RunListItem> recent = new ArrayList<>();
-        for (AgentRunEntity run : runRepository.findByUser(userId, null, null, null, 0, 15)) {
+        for (AgentRunEntity run : runRepository.findByUser(userId, null, null, null, null, 0, 15)) {
             recent.add(toItem(run));
         }
         data.setRecent(recent);

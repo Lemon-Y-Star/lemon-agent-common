@@ -529,7 +529,7 @@ public class AgentRuntimeService {
             }
         }
         // 近 7 天失败
-        runRepository.findByUser(userId, RunStatus.FAILED.name(), null, null, 0, 50).forEach(run -> {
+        runRepository.findByUser(userId, RunStatus.FAILED.name(), null, null, null, 0, 50).forEach(run -> {
             if (run.getStartedAt() != null && run.getStartedAt().isAfter(Instant.now().minusSeconds(7 * 86400L))) {
                 com.lemon.lemonagent.model.runtime.InboxData.Item item = new com.lemon.lemonagent.model.runtime.InboxData.Item();
                 item.setKind("RUN_FAILED");
@@ -660,11 +660,11 @@ public class AgentRuntimeService {
     /**
      * 运行列表（契约 4.10，必须 user_id 过滤；traceId 精确匹配用于链路反查）。
      */
-    public RunListData listRuns(Long userId, Long sessionId, String status, String traceId, int page, int size) {
+    public RunListData listRuns(Long userId, Long sessionId, String status, String traceId, Long agentId, int page, int size) {
         Map<Long, String> agentNames = agentNamesFor(userId);
         RunListData data = new RunListData();
-        data.setTotal(runRepository.countByUser(userId, blankToNull(status), sessionId, blankToNull(traceId)));
-        data.setItems(runRepository.findByUser(userId, blankToNull(status), sessionId, blankToNull(traceId),
+        data.setTotal(runRepository.countByUser(userId, blankToNull(status), sessionId, blankToNull(traceId), agentId));
+        data.setItems(runRepository.findByUser(userId, blankToNull(status), sessionId, blankToNull(traceId), agentId,
                         (page - 1) * size, size).stream()
                 .map(r -> {
                     RunListItem item = new RunListItem();
