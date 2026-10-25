@@ -666,31 +666,94 @@ public class RunExecutor {
             return;
         }
 
-        List<GraphNode> order = GraphValidator.topoOrder(graph);
+        List<GraphNode> all = graph.getNodes();
+        Map<String, GraphNode> byId = new java.util.HashMap<>();
+        for (GraphNode node : all) {
+            byId.put(node.getId(), node);
+        }
         GraphStateData state = GraphCodec.decodeState(run.getGraphStateJson());
-        int total = order.size();
+        java.util.Set<String> done = new java.util.LinkedHashSet<>(state.getDone());
+        java.util.Set<String> skipped = new java.util.LinkedHashSet<>(state.getSkipped());
+        int total = all.size();
 
-        if (state.getDone().isEmpty() && state.getCurrent() == null) {
+        if (done.isEmpty() && skipped.isEmpty() && state.getCurrent() == null) {
             List<Map<String, Object>> brief = new ArrayList<>();
-            for (GraphNode node : order) {
+            for (GraphNode node : all) {
                 brief.add(Map.of("id", node.getId(), "type", node.getType(), "title", nodeLabel(node)));
             }
             appendEvent(runId, RuntimeEventType.GRAPH_STARTED, objectMapper.writeValueAsString(Map.of(
                     "nodes", brief,
                     "total", total,
                     "ts", System.currentTimeMillis())));
-            log.info("run {} 执行图开始，共 {} 个节点（拓扑序：{}）", runId, total,
-                    order.stream().map(GraphNode::getId).toList());
+            log.info("run {} 执行图开始，共 {} 个节点", runId, total);
         }
 
-        for (int i = 0; i < total; i++) {
-            GraphNode node = order.get(i);
-            if (state.getDone().contains(node.getId())) {
-                continue;
-            }
+        // 就绪队列调度（v3.3）：每轮重新计算「可执行 / 可跳过」，
+        // 边的命中结果由上游产出实时重算（谓词是纯函数），因此恢复时无需持久化"走没走"。
+        while (true) {
             if (isTerminal(run)) {
                 return;
             }
+            List<GraphNode> ready = new ArrayList<>();
+            List<GraphNode> toSkip = new ArrayList<>();
+            for (GraphNode node : all) {
+                if (done.contains(node.getId()) || skipped.contains(node.getId())) {
+                    continue;
+                }
+                List<GraphEdge> incoming = incomingEdges(graph, node.getId());
+                if (incoming.isEmpty()) {
+                    ready.add(node);
+                    continue;
+                }
+                boolean resolved = true;
+                boolean anyTaken = false;
+                for (GraphEdge edge : incoming) {
+                    Boolean taken = edgeTaken(graph, state, edge, done, skipped);
+                    if (taken == null) {
+                        resolved = false;
+                        break;
+                    }
+                    if (taken) {
+                        anyTaken = true;
+                    }
+                }
+                if (!resolved) {
+                    continue;
+                }
+                if (anyTaken) {
+                    ready.add(node);
+                } else {
+                    toSkip.add(node);
+                }
+            }
+
+            // 先处理跳过（一次落库、一次事件循环），再取就绪节点——保证状态收敛
+            if (!toSkip.isEmpty()) {
+                for (GraphNode node : toSkip) {
+                    skipped.add(node.getId());
+                    state.getSkipped().add(node.getId());
+                }
+                String skipJson = GraphCodec.encodeState(state);
+                runRepository.saveGraphState(runId, skipJson);
+                run.setGraphStateJson(skipJson);
+                for (GraphNode node : toSkip) {
+                    log.info("run {} 节点 {} 条件路由未命中，跳过", runId, node.getId());
+                    appendEvent(runId, RuntimeEventType.STEP_COMPLETED, objectMapper.writeValueAsString(Map.of(
+                            "stepIndex", all.indexOf(node),
+                            "nodeId", node.getId(),
+                            "title", nodeLabel(node),
+                            "skipped", true,
+                            "outputText", "",
+                            "ts", System.currentTimeMillis())));
+                }
+                continue;
+            }
+            if (ready.isEmpty()) {
+                break;
+            }
+
+            GraphNode node = ready.get(0);
+            int stepIndex = all.indexOf(node);
 
             // 审批门：挂起等人批（run 与节点同时 BLOCKED，kind=NODE）
             if ("APPROVAL".equals(node.getType())) {
@@ -707,7 +770,7 @@ public class RunExecutor {
             run.setGraphStateJson(currentJson);
             if (!reentry) {
                 appendEvent(runId, RuntimeEventType.STEP_STARTED, objectMapper.writeValueAsString(Map.of(
-                        "stepIndex", i,
+                        "stepIndex", stepIndex,
                         "nodeId", node.getId(),
                         "nodeType", node.getType(),
                         "title", nodeLabel(node),
@@ -716,7 +779,8 @@ public class RunExecutor {
             }
 
             if ("START".equals(node.getType()) || "END".equals(node.getType())) {
-                markNodeDone(run, state, node, "", i);
+                done.add(node.getId());
+                markNodeDone(run, state, node, "", stepIndex);
                 continue;
             }
 
@@ -736,13 +800,14 @@ public class RunExecutor {
                         "toolName", node.getTool(),
                         "args", node.getArgs() == null ? Map.of() : node.getArgs(),
                         "riskLevel", handler.needsApproval ? "HIGH" : "LOW",
-                        "stepIndex", i,
+                        "stepIndex", stepIndex,
                         "ts", System.currentTimeMillis())));
                 // 作者显式配置的工具节点 = 已授权，直接执行（审批只拦"模型自主发起的写操作"）
                 List<String> noteBuf = new ArrayList<>();
                 executeAndEmitToolResult(run, node.getTool(), handler, args, noteBuf);
                 String output = noteBuf.isEmpty() ? "" : noteBuf.get(noteBuf.size() - 1);
-                markNodeDone(run, state, node, output, i);
+                done.add(node.getId());
+                markNodeDone(run, state, node, output, stepIndex);
                 continue;
             }
 
@@ -758,7 +823,7 @@ public class RunExecutor {
             List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                     ? toolRegistry.specs(allowed) : List.of();
             TurnResult turn = streamTurn(runId, conn, nodeSystemPrompt(instructionOf(agent), node),
-                    context, nodeInput(node, userInput), tools, i, true);
+                    context, nodeInput(node, userInput), tools, stepIndex, true);
             if (turn.toolCalls() != null) {
                 handleToolCalls(run, turn.toolCalls(), notes, depth, allowed);
                 return;
@@ -770,13 +835,19 @@ public class RunExecutor {
             notes.clear();
             state.setInputTokens(state.getInputTokens() + turn.inputTokens());
             state.setOutputTokens(state.getOutputTokens() + turn.outputTokens());
-            markNodeDone(run, state, node, turn.text(), i);
+            done.add(node.getId());
+            markNodeDone(run, state, node, turn.text(), stepIndex);
         }
 
-        // 收口：正文 = 各节点产出按拓扑序拼装
+        // 收口：正文 = 已执行节点的产出（按图内声明顺序拼装，跳过/审批门不进正文）
+        if (done.size() + skipped.size() < total) {
+            failIfStillRunning(runId, "GRAPH_STALLED", "执行图未能推进（存在无法判定的节点），请检查连线");
+            return;
+        }
         StringBuilder sb = new StringBuilder();
-        for (GraphNode node : order) {
-            if ("START".equals(node.getType()) || "APPROVAL".equals(node.getType())) {
+        for (GraphNode node : all) {
+            if ("START".equals(node.getType()) || "APPROVAL".equals(node.getType())
+                    || skipped.contains(node.getId())) {
                 continue;
             }
             String output = state.getOutputs().get(node.getId());
@@ -791,6 +862,7 @@ public class RunExecutor {
         if (rows > 0) {
             appendEvent(runId, RuntimeEventType.GRAPH_COMPLETED, objectMapper.writeValueAsString(Map.of(
                     "completed", state.getDone(),
+                    "skipped", state.getSkipped(),
                     "total", total,
                     "ts", System.currentTimeMillis())));
             appendEvent(runId, RuntimeEventType.RUN_COMPLETED, objectMapper.writeValueAsString(Map.of(
@@ -801,6 +873,34 @@ public class RunExecutor {
             insertAssistantMessage(run, outputText, runId);
         }
     }
+
+    /** 入边列表。 */
+    private List<GraphEdge> incomingEdges(AgentGraphData graph, String nodeId) {
+        List<GraphEdge> result = new ArrayList<>();
+        for (GraphEdge edge : graph.getEdges() == null ? List.<GraphEdge>of() : graph.getEdges()) {
+            if (nodeId.equals(edge.getTo())) {
+                result.add(edge);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 边是否命中：上游未完成返回 null（未解析）；上游被跳过返回 false；
+     * 上游已完成则按上游产出实时求值（纯函数，恢复时可重算）。
+     */
+    private Boolean edgeTaken(AgentGraphData graph, GraphStateData state, GraphEdge edge,
+                              java.util.Set<String> done, java.util.Set<String> skipped) {
+        String from = edge.getFrom();
+        if (skipped.contains(from)) {
+            return false;
+        }
+        if (!done.contains(from)) {
+            return null;
+        }
+        return RoutePredicates.evaluate(edge.getRoute(), state.getOutputs().get(from));
+    }
+
 
     /** 节点完成：写 done/outputs + 覆盖进度（一次 UPDATE，进度与产出同源）。 */
     private void markNodeDone(AgentRunEntity run, GraphStateData state, GraphNode node, String output, int stepIndex) {

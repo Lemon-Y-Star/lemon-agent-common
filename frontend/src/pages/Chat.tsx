@@ -259,9 +259,15 @@ export default function Chat() {
           )))
         } else if (ev.type === 'step_completed') {
           const idx = Number(ev.payload.stepIndex ?? 0)
+          const skipped = !!ev.payload.skipped
           setBubbles((prev) => prev.map((b) => (
             b.kind === 'plan' && b.runId === runId && b.planSteps
-              ? { ...b, planSteps: b.planSteps.map((st, i) => (i === idx ? { ...st, status: 'DONE' } : st)) }
+              ? {
+                  ...b,
+                  planSteps: b.planSteps.map((st, i) => (
+                    i === idx ? { ...st, status: skipped ? 'SKIPPED' : 'DONE' } : st
+                  )),
+                }
               : b
           )))
         } else if (ev.type === 'tool_call') {
@@ -499,8 +505,16 @@ export default function Chat() {
           </div>
           <ol className="plan-steps">
             {(b.planSteps ?? []).map((st, idx) => (
-              <li key={idx} className={`plan-step ${st.status === 'DONE' ? 'done' : st.status === 'RUNNING' ? 'run' : ''}`}>
-                <span className="plan-idx">{st.status === 'DONE' ? '✓' : st.status === 'RUNNING' ? '▶' : idx + 1}</span>
+              <li
+                key={idx}
+                className={`plan-step ${st.status === 'DONE' ? 'done'
+                  : st.status === 'SKIPPED' ? 'skip'
+                    : st.status === 'RUNNING' ? 'run' : ''}`}
+                title={st.status === 'SKIPPED' ? '条件路由未命中，已跳过' : undefined}
+              >
+                <span className="plan-idx">
+                  {st.status === 'DONE' ? '✓' : st.status === 'SKIPPED' ? '—' : st.status === 'RUNNING' ? '▶' : idx + 1}
+                </span>
                 <span>{st.title}</span>
               </li>
             ))}

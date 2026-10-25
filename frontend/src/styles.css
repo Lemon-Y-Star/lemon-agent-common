@@ -209,3 +209,12 @@ tr:hover td{background:#fafbfe}
 .ge-edges{display:grid;gap:4px;margin-top:4px}
 .ge-edge-row{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;
   background:#f8fafc;border:1px solid var(--border);border-radius:6px;padding:3px 8px}
+
+/* ---------- v3.3 条件路由 ---------- */
+.ge-edge-col{display:grid;gap:4px;padding:4px 0;border-bottom:1px dashed var(--border)}
+.ge-edge-col:last-child{border-bottom:none}
+.ge-edge-route{display:flex;gap:6px}
+.ge-edge-route select{flex:1;font-size:11.5px;padding:3px 6px;border:1px solid #d5d9e2;border-radius:6px}
+.ge-edge-route input{flex:1;font-size:11.5px;padding:3px 6px;border:1px solid #d5d9e2;border-radius:6px}
+.plan-step.skip{color:#9ca3af;text-decoration:line-through}
+.plan-step.skip .plan-idx{background:#f1f2f6;color:#9ca3af}

@@ -38,6 +38,30 @@ const TYPE_COLOR: Record<GraphNodeType, string> = {
   END: '#475569',
 }
 
+/** 边的条件路由 → 编辑器的四选一（always / nonEmpty / empty / contains）。 */
+type RouteKind = 'always' | 'nonEmpty' | 'empty' | 'startsWith' | 'contains'
+
+function routeKind(route?: string | null): RouteKind {
+  if (!route) return 'always'
+  if (route === 'nonEmpty' || route === 'empty') return route
+  if (route.startsWith('startsWith:')) return 'startsWith'
+  if (route.startsWith('contains:')) return 'contains'
+  return 'always'
+}
+
+function routeKeyword(route?: string | null): string {
+  if (!route) return ''
+  if (route.startsWith('startsWith:')) return route.slice('startsWith:'.length)
+  if (route.startsWith('contains:')) return route.slice('contains:'.length)
+  return ''
+}
+
+function buildRoute(kind: RouteKind, keyword: string): string | null {
+  if (kind === 'always') return null
+  if (kind === 'startsWith' || kind === 'contains') return `${kind}:${keyword.trim() || '关键词'}`
+  return kind
+}
+
 function defaultPos(index: number): { x: number; y: number } {
   return { x: 40 + (index % 4) * 230, y: 40 + Math.floor(index / 4) * 140 }
 }
@@ -128,6 +152,17 @@ export default function GraphEditor() {
     }
     setGraph({ ...graph, edges: [...graph.edges, { from: connectingFrom, to: targetId }] })
     setConnectingFrom(null)
+    setDirty(true)
+  }
+
+  function updateEdgeRoute(edge: GraphEdge, route: string | null) {
+    if (!graph) return
+    setGraph({
+      ...graph,
+      edges: graph.edges.map((e) => (
+        e.from === edge.from && e.to === edge.to ? { ...e, route } : e
+      )),
+    })
     setDirty(true)
   }
 
@@ -243,6 +278,8 @@ export default function GraphEditor() {
             <b>拖拽</b>：直接拖动节点卡片调整位置（位置随图保存）。
             <br />
             <b>审批门</b>：运行到这里会挂起，等你批准后继续。
+            <br />
+            <b>条件分支</b>：给出边设「非空 / 为空 / 包含关键词」，没命中的下游节点会被跳过（不会报错）。
           </div>
           {connectingFrom && (
             <div className="ge-connecting">
@@ -276,14 +313,19 @@ export default function GraphEditor() {
               const y2 = (to.y ?? 0) + NODE_H / 2
               const mid = (x1 + x2) / 2
               return (
-                <path
-                  key={i}
-                  d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`}
-                  fill="none"
-                  stroke="#94a3b8"
-                  strokeWidth="1.6"
-                  markerEnd="url(#arrow)"
-                />
+                <g key={i}>
+                  <path
+                    d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`}
+                    fill="none"
+                    stroke={e.route ? '#d97706' : '#94a3b8'}
+                    strokeWidth="1.6"
+                    strokeDasharray={e.route ? '5 3' : undefined}
+                    markerEnd="url(#arrow)"
+                  />
+                  {e.route && (
+                    <text x={mid - 6} y={(y1 + y2) / 2 - 6} fontSize="10" fill="#b45309">{e.route}</text>
+                  )}
+                </g>
               )
             })}
           </svg>
@@ -450,11 +492,38 @@ export default function GraphEditor() {
                 <label>出边（{graph?.edges.filter((e) => e.from === selectedNode.id).length ?? 0}）</label>
                 <div className="ge-edges">
                   {(graph?.edges ?? []).filter((e) => e.from === selectedNode.id).map((e) => (
-                    <div key={`${e.from}-${e.to}`} className="ge-edge-row">
-                      <span>{e.from} → {e.to}</span>
-                      {editable && (
-                        <button className="btn sm danger" onClick={() => removeEdge(e)}>删除</button>
-                      )}
+                    <div key={`${e.from}-${e.to}`} className="ge-edge-col">
+                      <div className="ge-edge-row">
+                        <span>{e.from} → {e.to}</span>
+                        {editable && (
+                          <button className="btn sm danger" onClick={() => removeEdge(e)}>删除</button>
+                        )}
+                      </div>
+                      <div className="ge-edge-route">
+                        <select
+                          disabled={!editable || selectedNode.type === 'START'}
+                          value={routeKind(e.route)}
+                          onChange={(ev) => updateEdgeRoute(
+                            e, buildRoute(ev.target.value as RouteKind, routeKeyword(e.route)),
+                          )}
+                        >
+                          <option value="always">恒走</option>
+                          <option value="nonEmpty">上游产出非空</option>
+                          <option value="empty">上游产出为空</option>
+                          <option value="startsWith">上游产出以关键词开头（推荐）</option>
+                          <option value="contains">上游产出包含关键词</option>
+                        </select>
+                        {(routeKind(e.route) === 'startsWith' || routeKind(e.route) === 'contains') && (
+                          <input
+                            disabled={!editable}
+                            defaultValue={routeKeyword(e.route)}
+                            placeholder="关键词（≤20 字）"
+                            onBlur={(ev) => updateEdgeRoute(
+                              e, buildRoute(routeKind(e.route), ev.target.value),
+                            )}
+                          />
+                        )}
+                      </div>
                     </div>
                   ))}
                   {(graph?.edges ?? []).filter((e) => e.from === selectedNode.id).length === 0 && (

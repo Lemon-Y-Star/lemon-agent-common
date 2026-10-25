@@ -560,6 +560,7 @@ public class AgentRuntimeService {
         List<Map<String, Object>> nodes = new ArrayList<>();
         for (com.lemon.lemonagent.model.runtime.GraphNode node : graph.getNodes()) {
             String status = state.getDone().contains(node.getId()) ? "DONE"
+                    : state.getSkipped().contains(node.getId()) ? "SKIPPED"
                     : node.getId().equals(state.getCurrent()) ? "RUNNING" : "PENDING";
             String title = node.getTitle() == null || node.getTitle().isBlank() ? node.getId() : node.getTitle();
             nodes.add(Map.of("id", node.getId(), "type", node.getType(), "title", title, "status", status));

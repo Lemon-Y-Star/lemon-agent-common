@@ -104,9 +104,13 @@ final class GraphValidator {
                 throw new BusinessException(ResultCodes.VALIDATION_ERROR,
                         "边引用了不存在的节点：" + edge.getFrom() + " → " + edge.getTo());
             }
-            if (edge.getRoute() != null && !edge.getRoute().isBlank()) {
+            // 条件路由只认预注册谓词（v3.3）：校验不过直接拒绝，运行期不会再解释表达式
+            String normalizedRoute = RoutePredicates.validate(edge.getRoute());
+            edge.setRoute(RoutePredicates.ALWAYS.equals(normalizedRoute) ? null : normalizedRoute);
+            if ("START".equals(byId.get(edge.getFrom()).getType())
+                    && edge.getRoute() != null) {
                 throw new BusinessException(ResultCodes.VALIDATION_ERROR,
-                        "条件路由（route）尚未开放，请删除边上的 route 配置");
+                        "START 没有产出，出边不支持条件路由");
             }
             next.get(edge.getFrom()).add(edge.getTo());
             inDegree.merge(edge.getTo(), 1, Integer::sum);

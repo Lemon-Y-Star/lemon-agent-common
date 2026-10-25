@@ -18,6 +18,9 @@ public class GraphStateData {
     /** 已完成节点 ID（按完成顺序） */
     private List<String> done = new ArrayList<>();
 
+    /** 被跳过（条件路由未命中）的节点 ID */
+    private List<String> skipped = new ArrayList<>();
+
     /** 节点产出（LLM 文本 / TOOL 结果摘要），供下游节点拼接上下文 */
     private Map<String, String> outputs = new LinkedHashMap<>();
 
