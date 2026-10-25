@@ -92,6 +92,22 @@ export async function cancelRun(runId: number): Promise<{ runId: number; status:
   return post<{ runId: number; status: string; lastSeq: number }>(`/agent/runs/${runId}/cancel`)
 }
 
+/** 执行图运行视图（快照里的 graph 字段；仅 custom 策略非 null）。 */
+export interface RunGraphView {
+  version: number
+  nodes: {
+    id: string
+    type: 'START' | 'LLM' | 'TOOL' | 'APPROVAL' | 'END'
+    title: string
+    status: 'DONE' | 'RUNNING' | 'PENDING' | 'SKIPPED'
+    x?: number | null
+    y?: number | null
+    input?: string | null
+    output?: string | null
+  }[]
+  edges: { from: string; to: string; route?: string | null }[]
+}
+
 export interface RunSnapshot {
   runId: number
   sessionId: number
@@ -110,6 +126,7 @@ export interface RunSnapshot {
     expiresAt?: string
   } | null
   usage?: { inputTokens: number; outputTokens: number } | null
+  graph?: RunGraphView | null
   startedAt?: string | null
   endedAt?: string | null
 }

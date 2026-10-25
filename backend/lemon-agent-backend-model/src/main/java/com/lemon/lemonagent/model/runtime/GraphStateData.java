@@ -24,6 +24,9 @@ public class GraphStateData {
     /** 节点产出（LLM 文本 / TOOL 结果摘要），供下游节点拼接上下文 */
     private Map<String, String> outputs = new LinkedHashMap<>();
 
+    /** 节点输入摘要（LLM 节点任务+上游产出 / TOOL 节点参数），供运行历史图例查看；限长防 state 膨胀 */
+    private Map<String, String> inputs = new LinkedHashMap<>();
+
     /** 当前正在执行的节点 ID（空 = 无） */
     private String current;
 

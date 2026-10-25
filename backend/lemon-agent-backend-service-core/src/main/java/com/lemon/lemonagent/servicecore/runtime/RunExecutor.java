@@ -840,6 +840,7 @@ public class RunExecutor {
                 args.put("__runId", runId);
                 args.put("__userId", run.getUserId());
                 args.put("__callId", "node_" + node.getId());
+                recordNodeInput(state, node, toolNodeInput(node));
                 appendEvent(runId, RuntimeEventType.TOOL_CALL, objectMapper.writeValueAsString(Map.of(
                         "callId", "node_" + node.getId(),
                         "toolName", node.getTool(),
@@ -863,6 +864,7 @@ public class RunExecutor {
                 context.add(new ModelPort.Msg("ASSISTANT", upstream));
             }
             notes.forEach(note -> context.add(new ModelPort.Msg("USER", "[系统] " + note)));
+            recordNodeInput(state, node, llmNodeInput(graph, state, node, userInput));
 
             List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
             List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
@@ -965,6 +967,8 @@ public class RunExecutor {
                 for (String upstream : upstreamOutputs(graph, state, node.getId())) {
                     ctx.add(new ModelPort.Msg("ASSISTANT", upstream));
                 }
+                // 输入摘要在主线程记（state 只在主线程改），并发线程只做模型调用
+                recordNodeInput(state, node, llmNodeInput(graph, state, node, userInput));
                 final int stepIndex = all.indexOf(node);
                 final List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
                 final List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
@@ -1033,6 +1037,7 @@ public class RunExecutor {
         args.put("__runId", run.getId());
         args.put("__userId", run.getUserId());
         args.put("__callId", "node_" + node.getId());
+        recordNodeInput(state, node, toolNodeInput(node));
         appendEvent(run.getId(), RuntimeEventType.TOOL_CALL, objectMapper.writeValueAsString(Map.of(
                 "callId", "node_" + node.getId(),
                 "toolName", node.getTool(),
@@ -1112,6 +1117,32 @@ public class RunExecutor {
             }
         }
         return result;
+    }
+
+    /**
+     * 记录节点输入摘要（限 4000 字防 graph_state_json 膨胀），供运行历史的图例视图查看。
+     * 只在主线程调用——与 done/outputs 一样落 {@code graph_state_json}，审批恢复/重启后仍在。
+     */
+    private void recordNodeInput(GraphStateData state, GraphNode node, String input) {
+        String text = input == null ? "" : input;
+        state.getInputs().put(node.getId(),
+                text.length() > 4000 ? text.substring(0, 4000) + "…（已截断）" : text);
+    }
+
+    /** TOOL 节点的输入摘要：调了什么工具、带了什么参数。 */
+    private String toolNodeInput(GraphNode node) {
+        return "调用工具 " + node.getTool() + "，参数：" + objectMapper.writeValueAsString(
+                node.getArgs() == null ? Map.of() : node.getArgs());
+    }
+
+    /** LLM 节点的输入摘要：节点任务 + 用户原始请求 + 上游产出（与发给模型的输入同源）。 */
+    private String llmNodeInput(AgentGraphData graph, GraphStateData state, GraphNode node, String userInput) {
+        StringBuilder sb = new StringBuilder(nodeInput(node, userInput));
+        List<String> ups = upstreamOutputs(graph, state, node.getId());
+        if (!ups.isEmpty()) {
+            sb.append("\n【上游产出】\n").append(String.join("\n---\n", ups));
+        }
+        return sb.toString();
     }
 
     /** 节点展示名：title 优先，否则用 id。 */

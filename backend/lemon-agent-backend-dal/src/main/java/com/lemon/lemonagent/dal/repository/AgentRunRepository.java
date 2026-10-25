@@ -83,11 +83,12 @@ public interface AgentRunRepository {
      * @param userId   入参：归属用户
      * @param status   入参：状态过滤（可空）
      * @param sessionId 入参：会话过滤（可空）
+     * @param traceId  入参：全链路 ID 精确匹配（可空；运行历史按 traceId 反查）
      * @param offset   入参：分页偏移
      * @param limit    入参：页大小
      * @return 出参：运行列表
      */
-    List<AgentRunEntity> findByUser(Long userId, String status, Long sessionId, int offset, int limit);
+    List<AgentRunEntity> findByUser(Long userId, String status, Long sessionId, String traceId, int offset, int limit);
 
     /**
      * 用户运行总数。
@@ -95,9 +96,10 @@ public interface AgentRunRepository {
      * @param userId   入参：归属用户
      * @param status   入参：状态过滤（可空）
      * @param sessionId 入参：会话过滤（可空）
+     * @param traceId  入参：全链路 ID 精确匹配（可空）
      * @return 出参：总数
      */
-    long countByUser(Long userId, String status, Long sessionId);
+    long countByUser(Long userId, String status, Long sessionId, String traceId);
 
     /**
      * 回写事件序号游标（append 事务内调用；快照 / 续流起点以此为准）。

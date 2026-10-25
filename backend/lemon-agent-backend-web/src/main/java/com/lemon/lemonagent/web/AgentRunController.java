@@ -154,6 +154,7 @@ public class AgentRunController {
      * @param userId    归属用户
      * @param sessionId 会话过滤（可空）
      * @param status    状态过滤（可空）
+     * @param traceId   全链路 ID 精确匹配（可空；运行历史页的 traceId 反查）
      * @param page      页码
      * @param size      页大小
      * @return 列表数据
@@ -162,9 +163,11 @@ public class AgentRunController {
     public BaseResult<RunListData> list(@RequestAttribute("lemon.userId") Long userId,
                                         @RequestParam(required = false) Long sessionId,
                                         @RequestParam(required = false) String status,
+                                        @RequestParam(required = false) String traceId,
                                         @RequestParam(defaultValue = "1") int page,
                                         @RequestParam(defaultValue = "20") int size) {
-        return BaseResult.success(agentRuntimeService.listRuns(userId, sessionId, status, page, Math.min(size, 100)));
+        return BaseResult.success(agentRuntimeService.listRuns(userId, sessionId, status, traceId,
+                page, Math.min(size, 100)));
     }
 
 }

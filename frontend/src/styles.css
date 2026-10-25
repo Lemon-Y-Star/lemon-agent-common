@@ -438,3 +438,34 @@ tr:hover td{background:#fafbfe}
   .auth-card{padding:26px 20px 20px;border-radius:14px}
   .auth-card h2{font-size:20px}
 }
+
+/* ---------- 运行历史 · 执行图图例（v3.8） ---------- */
+.run-graph{border:1px solid #eef0f6;border-radius:10px;overflow:hidden}
+.run-graph-legend{display:flex;align-items:center;gap:12px;padding:7px 12px;background:#f8f9fc;border-bottom:1px solid #eef0f6;flex-wrap:wrap}
+.run-legend-item{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#4b5563}
+.run-legend-item i{display:inline-block;width:9px;height:9px;border-radius:50%}
+.run-graph-canvas{position:relative;overflow:auto;background:
+  linear-gradient(#f4f6fa 1px,transparent 1px),linear-gradient(90deg,#f4f6fa 1px,transparent 1px);
+  background-size:24px 24px}
+.run-node{position:absolute;background:#fff;border:1px solid #d5d9e2;border-radius:9px;
+  padding:8px 10px;cursor:pointer;box-shadow:0 1px 2px rgba(15,23,42,.06);user-select:none}
+.run-node:hover{border-color:var(--primary)}
+.run-node.sel{outline:2px solid var(--primary);outline-offset:1px}
+.run-node-head{display:flex;align-items:center;gap:6px;font-size:12.5px;overflow:hidden;white-space:nowrap}
+.run-node-head i{flex:0 0 8px;width:8px;height:8px;border-radius:50%}
+.run-node-head b{overflow:hidden;text-overflow:ellipsis}
+.run-node-sub{margin-top:4px;font-size:11px;color:#8a93a6}
+.run-node.st-done{border-left:3px solid #16a34a}
+.run-node.st-running{border-left:3px solid #2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.run-node.st-pending{border-left:3px solid #cbd2de;opacity:.82}
+.run-node.st-skipped{border-left:3px solid #d97706;opacity:.66;border-style:dashed}
+.run-node-inspect{border-top:1px solid #eef0f6;padding:10px 12px;background:#fcfcfe}
+.run-node-inspect h4{margin:0 0 8px;display:flex;align-items:center;font-size:13px}
+.run-node-inspect h4 .x{margin-left:auto;cursor:pointer;color:#94a3b8;font-weight:400}
+.run-io{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.run-io label{display:block;font-size:11.5px;color:#8a93a6;margin-bottom:4px}
+.run-io pre{margin:0;background:#fff;border:1px solid #eef0f6;border-radius:8px;padding:8px 10px;
+  font-size:11.8px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;font-family:inherit}
+.run-io .md{font-size:12.2px;line-height:1.65;background:#fff;border:1px solid #eef0f6;border-radius:8px;
+  padding:8px 10px;max-height:240px;overflow:auto}
+@media(max-width:900px){.run-io{grid-template-columns:1fr}}

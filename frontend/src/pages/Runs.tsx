@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchRunSnapshot, fetchSessions, type RunSnapshot, type SessionItem } from '../api/runtime'
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
+import RunGraphView from '../components/RunGraphView'
 
 /**
- * 运行历史（PRD FR-18.5）：左列表（按创建倒序 + 状态过滤）+ 右详情（快照接口）。
- * 数据源：GET /agent/runs（服务端强制 user_id 过滤）+ GET /agent/runs/{id}。
+ * 运行历史（PRD FR-18.5）：左列表（状态 / 会话 / traceId 过滤）+ 右详情（快照接口）。
+ * 数据源：GET /agent/runs（服务端强制 user_id 过滤，traceId 精确匹配）+ GET /agent/runs/{id}。
+ * custom 运行的详情带执行图图例：节点状态着色，点节点看该节点的输入 / 输出。
  */
 
 const STATUS_TAGS: Record<string, { cls: string; text: string }> = {
@@ -41,12 +43,14 @@ export default function Runs() {
   const [total, setTotal] = useState(0)
   const [selected, setSelected] = useState<RunSnapshot | null>(null)
   const [error, setError] = useState('')
+  const [traceId, setTraceId] = useState('')
 
-  const reload = useCallback(async (filterStatus: string, filterSession: string) => {
+  const reload = useCallback(async (filterStatus: string, filterSession: string, filterTrace: string) => {
     try {
       const qs = new URLSearchParams()
       if (filterStatus) qs.set('status', filterStatus)
       if (filterSession) qs.set('sessionId', filterSession)
+      if (filterTrace.trim()) qs.set('traceId', filterTrace.trim())
       qs.set('page', '1')
       qs.set('size', '50')
       const { request } = await import('../api/client')
@@ -61,7 +65,7 @@ export default function Runs() {
 
   useEffect(() => {
     void fetchSessions().then((list) => setSessions(list.items)).catch(() => undefined)
-    void reload('', '')
+    void reload('', '', '')
   }, [reload])
 
   async function openDetail(runId: number) {
@@ -89,7 +93,7 @@ export default function Runs() {
         <div className="row">
           <div className="field" style={{ margin: 0 }}>
             <label>状态</label>
-            <select value={status} onChange={(e) => { setStatus(e.target.value); void reload(e.target.value, sessionId) }}>
+            <select value={status} onChange={(e) => { setStatus(e.target.value); void reload(e.target.value, sessionId, traceId) }}>
               <option value="">全部</option>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>{statusTag(s).text}（{s}）</option>
@@ -98,15 +102,26 @@ export default function Runs() {
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>会话</label>
-            <select value={sessionId} onChange={(e) => { setSessionId(e.target.value); void reload(status, e.target.value) }}>
+            <select value={sessionId} onChange={(e) => { setSessionId(e.target.value); void reload(status, e.target.value, traceId) }}>
               <option value="">全部会话</option>
               {sessions.map((s) => (
                 <option key={s.sessionId} value={s.sessionId}>{s.title}</option>
               ))}
             </select>
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <button className="btn sm" onClick={() => void reload(status, sessionId)}>刷新</button>
+          <div className="field" style={{ margin: 0, flex: 1, minWidth: 200 }}>
+            <label>traceId（精确匹配，回车查询）</label>
+            <input
+              value={traceId}
+              onChange={(e) => setTraceId(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void reload(status, sessionId, traceId) }}
+              placeholder="粘贴 traceId 反查日志，如 25e08b9eac9ec7aa152c60001aedb503"
+              style={{ fontFamily: 'monospace' }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+            <button className="btn sm" onClick={() => void reload(status, sessionId, traceId)}>查询</button>
+            <button className="btn sm" onClick={() => { setTraceId(''); void reload(status, sessionId, '') }}>清除</button>
           </div>
         </div>
       </div>
@@ -123,6 +138,7 @@ export default function Runs() {
                 <th>状态</th>
                 <th>策略</th>
                 <th>开始时间</th>
+                <th>traceId</th>
               </tr>
             </thead>
             <tbody>
@@ -138,11 +154,21 @@ export default function Runs() {
                     <td><span className={`tag ${tag.cls}`}>{tag.text}</span></td>
                     <td>{r.strategy}</td>
                     <td style={{ color: 'var(--muted)' }}>{fmt(r.startedAt)}</td>
+                    <td
+                      style={{ fontFamily: 'monospace', fontSize: 11.5 }}
+                      title={`点击复制 ${r.traceId}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void navigator.clipboard?.writeText(r.traceId).then(() => toast('traceId 已复制'))
+                      }}
+                    >
+                      {r.traceId?.slice(0, 10)}…
+                    </td>
                   </tr>
                 )
               })}
               {items.length === 0 && (
-                <tr><td colSpan={4}><div className="note gray">暂无运行记录</div></td></tr>
+                <tr><td colSpan={5}><div className="note gray">暂无运行记录</div></td></tr>
               )}
             </tbody>
           </table>
@@ -179,6 +205,17 @@ export default function Runs() {
               </table>
               {selected.errorMsg && (
                 <div className="note">{selected.errorMsg}</div>
+              )}
+              {selected.strategy === 'custom' && selected.graph && (
+                <div style={{ marginTop: 12 }}>
+                  <h3 style={{ marginTop: 0 }}>节点输入 / 输出</h3>
+                  <RunGraphView graph={selected.graph} />
+                </div>
+              )}
+              {selected.strategy === 'custom' && !selected.graph && (
+                <div className="note gray" style={{ marginTop: 10 }}>
+                  这个运行没有图快照（可能是旧版本数据）。
+                </div>
               )}
             </>
           )}

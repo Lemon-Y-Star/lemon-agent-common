@@ -476,7 +476,7 @@ public class AgentRuntimeService {
             }
         }
         // 近 7 天失败
-        runRepository.findByUser(userId, RunStatus.FAILED.name(), null, 0, 50).forEach(run -> {
+        runRepository.findByUser(userId, RunStatus.FAILED.name(), null, null, 0, 50).forEach(run -> {
             if (run.getStartedAt() != null && run.getStartedAt().isAfter(Instant.now().minusSeconds(7 * 86400L))) {
                 com.lemon.lemonagent.model.runtime.InboxData.Item item = new com.lemon.lemonagent.model.runtime.InboxData.Item();
                 item.setKind("RUN_FAILED");
@@ -582,7 +582,17 @@ public class AgentRuntimeService {
                     : state.getSkipped().contains(node.getId()) ? "SKIPPED"
                     : node.getId().equals(state.getCurrent()) ? "RUNNING" : "PENDING";
             String title = node.getTitle() == null || node.getTitle().isBlank() ? node.getId() : node.getTitle();
-            nodes.add(Map.of("id", node.getId(), "type", node.getType(), "title", title, "status", status));
+            // 用 HashMap：x/y 与输入/输出可能为 null，Map.of 不允许 null 值
+            Map<String, Object> item = new java.util.HashMap<>();
+            item.put("id", node.getId());
+            item.put("type", node.getType());
+            item.put("title", title);
+            item.put("status", status);
+            item.put("x", node.getX());
+            item.put("y", node.getY());
+            item.put("input", state.getInputs() == null ? null : state.getInputs().get(node.getId()));
+            item.put("output", state.getOutputs() == null ? null : state.getOutputs().get(node.getId()));
+            nodes.add(item);
         }
         return Map.of(
                 "version", graph.getVersion() == null ? 1 : graph.getVersion(),
@@ -595,12 +605,12 @@ public class AgentRuntimeService {
     }
 
     /**
-     * 运行列表（契约 4.10，必须 user_id 过滤）。
+     * 运行列表（契约 4.10，必须 user_id 过滤；traceId 精确匹配用于链路反查）。
      */
-    public RunListData listRuns(Long userId, Long sessionId, String status, int page, int size) {
+    public RunListData listRuns(Long userId, Long sessionId, String status, String traceId, int page, int size) {
         RunListData data = new RunListData();
-        data.setTotal(runRepository.countByUser(userId, blankToNull(status), sessionId));
-        data.setItems(runRepository.findByUser(userId, blankToNull(status), sessionId,
+        data.setTotal(runRepository.countByUser(userId, blankToNull(status), sessionId, blankToNull(traceId)));
+        data.setItems(runRepository.findByUser(userId, blankToNull(status), sessionId, blankToNull(traceId),
                         (page - 1) * size, size).stream()
                 .map(r -> {
                     RunListItem item = new RunListItem();

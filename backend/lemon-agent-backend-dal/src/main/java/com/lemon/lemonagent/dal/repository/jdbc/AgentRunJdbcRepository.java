@@ -147,7 +147,8 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     }
 
     @Override
-    public List<AgentRunEntity> findByUser(Long userId, String status, Long sessionId, int offset, int limit) {
+    public List<AgentRunEntity> findByUser(Long userId, String status, Long sessionId, String traceId,
+                                           int offset, int limit) {
         StringBuilder sql = new StringBuilder(
                 "SELECT " + COLUMNS + " FROM agent_run WHERE user_id = ?");
         List<Object> args = new ArrayList<>();
@@ -160,6 +161,10 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
             sql.append(" AND session_id = ?");
             args.add(sessionId);
         }
+        if (traceId != null && !traceId.isBlank()) {
+            sql.append(" AND trace_id = ?");
+            args.add(traceId.trim());
+        }
         sql.append(" ORDER BY id DESC LIMIT ? OFFSET ?");
         args.add(limit);
         args.add(offset);
@@ -167,7 +172,7 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     }
 
     @Override
-    public long countByUser(Long userId, String status, Long sessionId) {
+    public long countByUser(Long userId, String status, Long sessionId, String traceId) {
         StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM agent_run WHERE user_id = ?");
         List<Object> args = new ArrayList<>();
         args.add(userId);
@@ -178,6 +183,10 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
         if (sessionId != null) {
             sql.append(" AND session_id = ?");
             args.add(sessionId);
+        }
+        if (traceId != null && !traceId.isBlank()) {
+            sql.append(" AND trace_id = ?");
+            args.add(traceId.trim());
         }
         Long n = jdbcTemplate.queryForObject(sql.toString(), Long.class, args.toArray());
         return n == null ? 0 : n;
