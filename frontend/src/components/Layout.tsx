@@ -33,6 +33,7 @@ export default function Layout() {
 
   const crumb =
     location.pathname.startsWith('/chat') ? '对话'
+      : /^\/agents\/\d+\/graph/.test(location.pathname) ? '执行图'
       : location.pathname.startsWith('/agents')
       ? '我的 Agent'
       : location.pathname.startsWith('/models')

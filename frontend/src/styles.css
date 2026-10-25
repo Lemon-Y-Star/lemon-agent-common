@@ -178,3 +178,34 @@ tr:hover td{background:#fafbfe}
 .plan-step.run .plan-idx{background:var(--primary);color:#fff}
 .plan-step.done{color:#4b5563}
 .plan-step.done .plan-idx{background:#dcfce7;color:#15803d}
+
+/* ---------- v3.2.1 执行图画布 ---------- */
+.ge-wrap{display:grid;grid-template-columns:170px 1fr 300px;gap:12px;align-items:start}
+.ge-palette h3,.ge-inspector h3{margin:0 0 8px}
+.ge-palette-btns{display:grid;gap:6px}
+.ge-tips{margin-top:12px;font-size:11.5px;line-height:1.9;color:var(--muted)}
+.ge-connecting{margin-top:10px;font-size:12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 8px}
+.ge-canvas{position:relative;min-height:520px;background:
+  radial-gradient(#e2e8f0 1px, transparent 1px) 0 0/16px 16px, #fbfcfe;
+  border:1px solid var(--border);border-radius:10px;overflow:auto}
+.ge-links{position:absolute;inset:0;pointer-events:none}
+.ge-node{position:absolute;background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 8px;
+  box-shadow:0 1px 3px rgba(15,23,42,.06);cursor:grab;user-select:none;display:flex;flex-direction:column;gap:2px}
+.ge-node:hover{box-shadow:0 4px 12px rgba(15,23,42,.10)}
+.ge-node.selected{border-color:var(--primary);box-shadow:0 0 0 2px rgba(79,70,229,.18)}
+.ge-node.connecting{border-style:dashed;border-color:#f59e0b}
+.ge-node-head{display:flex;align-items:center;gap:6px;font-size:10.5px}
+.ge-node-type{color:#fff;border-radius:5px;padding:0 5px;line-height:15px}
+.ge-node-id{color:var(--muted);font-family:monospace}
+.ge-node-title{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ge-node-actions{display:flex;gap:4px;margin-top:auto}
+.ge-node-actions .btn{padding:0 6px;font-size:11px;line-height:18px}
+.ge-form .field{margin-bottom:8px}
+.ge-form textarea,.ge-form input,.ge-form select{width:100%;font-size:12.5px;padding:6px 8px;
+  border:1px solid #d5d9e2;border-radius:7px;font-family:inherit}
+.ge-form label{font-size:12px;color:#4b5563}
+.ge-toolchecks{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:12px}
+.ge-toolchecks label{display:inline-flex;gap:4px;align-items:center;color:var(--muted)}
+.ge-edges{display:grid;gap:4px;margin-top:4px}
+.ge-edge-row{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;
+  background:#f8fafc;border:1px solid var(--border);border-radius:6px;padding:3px 8px}

@@ -12,6 +12,7 @@ import {
 } from '../api/agents'
 import { fetchModelConnections, type ModelConnection } from '../api/modelConnections'
 import Switch from '../components/Switch'
+import { useNavigate } from 'react-router-dom'
 import { ToastHost, toast } from '../components/Toast'
 
 /**
@@ -32,6 +33,7 @@ interface FormState {
 const ALL_TOOLS_HINT = '全部工具'
 
 export default function Agents() {
+  const navigate = useNavigate()
   const [page, setPage] = useState<AgentPage | null>(null)
   const [tools, setTools] = useState<ToolInfo[]>([])
   const [connections, setConnections] = useState<ModelConnection[]>([])
@@ -157,6 +159,15 @@ export default function Agents() {
                 <td>
                   {a.name}
                   {!owned && <span className="tag gray" style={{ marginLeft: 6 }}>平台公共</span>}
+                  {!owned && (
+                    <button
+                      className="btn sm"
+                      style={{ marginLeft: 6 }}
+                      onClick={() => navigate(`/agents/${a.id}/graph`)}
+                    >
+                      执行图
+                    </button>
+                  )}
                 </td>
                 <td style={{ color: 'var(--muted)' }}>{a.description || '—'}</td>
                 <td style={{ color: 'var(--muted)', fontSize: 12 }}>{toolsLabel(a)}</td>
@@ -194,6 +205,7 @@ export default function Agents() {
                       编辑
                     </button>{' '}
                     <button className="btn sm danger" onClick={() => setDeleting(a)}>删除</button>
+                    <button className="btn sm" onClick={() => navigate(`/agents/${a.id}/graph`)}>执行图</button>
                   </td>
                 )}
               </tr>

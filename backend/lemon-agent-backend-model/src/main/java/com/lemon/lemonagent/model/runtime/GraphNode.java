@@ -37,4 +37,10 @@ public class GraphNode {
     /** 节点级工具白名单（PRD FR-6.5 三态）：null = 继承 Agent；[] = 不装配；数组 = 精确授权 */
     private List<String> tools;
 
+    /** 画布坐标 X（仅前端排版用，调度不读；null = 由前端自动布局） */
+    private Integer x;
+
+    /** 画布坐标 Y */
+    private Integer y;
+
 }
