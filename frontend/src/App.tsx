@@ -15,6 +15,10 @@ import Login from './pages/Login'
 import Mcps from './pages/Mcps'
 import ModelConnections from './pages/ModelConnections'
 import Workflows from './pages/Workflows'
+import Artifacts from './pages/Artifacts'
+import Evals from './pages/Evals'
+import LlmObs from './pages/LlmObs'
+import ApiKeysPage from './pages/ApiKeys'
 
 /**
  * 路由表：登录页独立；业务页共用 Layout（侧栏 + 顶栏）。
@@ -40,6 +44,10 @@ export default function App() {
         <Route path="/knowledge" element={<Knowledge />} />
         <Route path="/memory" element={<MemoryPage />} />
         <Route path="/workflows" element={<Workflows />} />
+        <Route path="/artifacts" element={<Artifacts />} />
+        <Route path="/evals" element={<Evals />} />
+        <Route path="/llm" element={<LlmObs />} />
+        <Route path="/open-api" element={<ApiKeysPage />} />
         <Route path="/models" element={<ModelConnections />} />
         <Route path="/mcps" element={<Mcps />} />
       </Route>

@@ -32,6 +32,12 @@ public class AgentRunEntity {
     /** 32 位 hex 全链路 ID */
     private String traceId;
 
+    /** 实际使用的模型名（执行器解析连接后回填；LLM 观测聚合用） */
+    private String modelName;
+
+    /** 模型连接 ID */
+    private Long modelConnId;
+
     /** 事件序号游标 */
     private long lastSeq;
 

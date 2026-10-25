@@ -21,7 +21,7 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/**")
                 // 登录与健康检查不需要令牌；登出 / 改密 / me 都需要已认证身份
-                .excludePathPatterns("/api/v1/auth/login", "/actuator/health");
+                .excludePathPatterns("/api/v1/auth/login", "/api/v1/open/**", "/actuator/health");
     }
 
 }

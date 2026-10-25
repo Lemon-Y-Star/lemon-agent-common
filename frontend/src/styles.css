@@ -473,3 +473,12 @@ tr:hover td{background:#fafbfe}
 /* ---------- v3.8 网站统计：6 张 KPI（3 列 × 2 行） ---------- */
 .kpi-row.k6{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:1100px){.kpi-row.k6{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ---------- v3.8 产物与反馈 / API 分发 ---------- */
+.artifact-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.artifact-feedback{display:flex;gap:8px;align-items:center;margin-top:10px}
+.apikey-created{margin-top:12px;border:1px solid #bfd8c6;background:#f2fbf5;border-radius:10px;padding:10px 12px}
+.apikey-created b{font-size:13px}
+.apikey-key{display:flex;gap:8px;align-items:center;margin:8px 0 6px}
+.apikey-key code{flex:1;font-family:monospace;font-size:13px;background:#fff;border:1px solid #d5d9e2;border-radius:7px;padding:7px 10px;word-break:break-all}
+.apikey-curl{margin:0;background:#0f172a;color:#e2e8f0;border-radius:9px;padding:12px 14px;font-size:12px;line-height:1.7;overflow:auto;white-space:pre}

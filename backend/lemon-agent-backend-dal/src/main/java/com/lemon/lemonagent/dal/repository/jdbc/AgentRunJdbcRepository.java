@@ -25,7 +25,7 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     private static final String COLUMNS =
             "id, session_id, agent_id, user_id, client_request_id, status, strategy, trace_id, last_seq, "
                     + "output_text, error_code, error_msg, pending_approval_json, plan_json, plan_step, "
-                    + "graph_json, graph_state_json, "
+                    + "graph_json, graph_state_json, model_name, model_conn_id, "
                     + "input_tokens, output_tokens, started_at, ended_at, created_at, updated_at";
 
     private final JdbcTemplate jdbcTemplate;
@@ -52,6 +52,9 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
             e.setPlanStep(rs.getInt("plan_step"));
             e.setGraphJson(rs.getString("graph_json"));
             e.setGraphStateJson(rs.getString("graph_state_json"));
+            e.setModelName(rs.getString("model_name"));
+            long modelConnId = rs.getLong("model_conn_id");
+            e.setModelConnId(rs.wasNull() ? null : modelConnId);
             e.setInputTokens((Integer) rs.getObject("input_tokens"));
             e.setOutputTokens((Integer) rs.getObject("output_tokens"));
             e.setStartedAt(toInstant(rs.getTimestamp("started_at")));
@@ -190,6 +193,54 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
         }
         Long n = jdbcTemplate.queryForObject(sql.toString(), Long.class, args.toArray());
         return n == null ? 0 : n;
+    }
+
+    @Override
+    public int saveModelInfo(Long id, String modelName, Long connId) {
+        return jdbcTemplate.update(
+                "UPDATE agent_run SET model_name = ?, model_conn_id = ? WHERE id = ?",
+                modelName, connId, id);
+    }
+
+    /** 时间窗条件拼接（started_at >= since）。 */
+    private void appendSince(StringBuilder sql, List<Object> args, java.time.Instant since) {
+        if (since != null) {
+            sql.append(" AND started_at >= ?");
+            args.add(Timestamp.from(since));
+        }
+    }
+
+    @Override
+    public java.util.Map<String, Object> summarizeByUser(Long userId, java.time.Instant since) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT COUNT(*) AS calls, "
+                        + "SUM(CASE WHEN status IN ('FAILED','TIMEOUT') THEN 1 ELSE 0 END) AS failed, "
+                        + "COALESCE(SUM(input_tokens),0) AS input_tokens, "
+                        + "COALESCE(SUM(output_tokens),0) AS output_tokens, "
+                        + "COALESCE(AVG(CASE WHEN ended_at IS NOT NULL AND started_at IS NOT NULL "
+                        + "THEN TIMESTAMPDIFF(MICROSECOND, started_at, ended_at) / 1000 END),0) AS avg_latency_ms "
+                        + "FROM agent_run WHERE user_id = ?");
+        List<Object> args = new ArrayList<>();
+        args.add(userId);
+        appendSince(sql, args, since);
+        return jdbcTemplate.queryForMap(sql.toString(), args.toArray());
+    }
+
+    @Override
+    public java.util.List<java.util.Map<String, Object>> sumByModel(Long userId, java.time.Instant since) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT COALESCE(model_name, '（未记录）') AS model_name, COUNT(*) AS calls, "
+                        + "SUM(CASE WHEN status IN ('FAILED','TIMEOUT') THEN 1 ELSE 0 END) AS failed, "
+                        + "COALESCE(SUM(input_tokens),0) AS input_tokens, "
+                        + "COALESCE(SUM(output_tokens),0) AS output_tokens, "
+                        + "COALESCE(AVG(CASE WHEN ended_at IS NOT NULL AND started_at IS NOT NULL "
+                        + "THEN TIMESTAMPDIFF(MICROSECOND, started_at, ended_at) / 1000 END),0) AS avg_latency_ms "
+                        + "FROM agent_run WHERE user_id = ?");
+        List<Object> args = new ArrayList<>();
+        args.add(userId);
+        appendSince(sql, args, since);
+        sql.append(" GROUP BY model_name ORDER BY calls DESC");
+        return jdbcTemplate.queryForList(sql.toString(), args.toArray());
     }
 
     @Override

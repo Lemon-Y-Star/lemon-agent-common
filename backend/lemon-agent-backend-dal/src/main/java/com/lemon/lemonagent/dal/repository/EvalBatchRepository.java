@@ -34,4 +34,13 @@ public interface EvalBatchRepository {
      */
     List<EvalBatchEntity> listByAgent(Long agentId, Long userId, int limit);
 
+    /**
+     * 用户的全部批次（跨 Agent，倒序；「我的评测」页数据源）。
+     *
+     * @param userId 入参：用户
+     * @param limit  入参：条数上限
+     * @return 出参：批次列表
+     */
+    List<EvalBatchEntity> listByUser(Long userId, int limit);
+
 }

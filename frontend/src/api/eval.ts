@@ -32,3 +32,12 @@ export async function fetchEvalBatches(agentId: number): Promise<EvalBatch[]> {
   const data = await get<{ batches: EvalBatch[] }>(`/workspace/agents/${agentId}/eval/batches`)
   return data.batches
 }
+
+/** 跨 Agent 的批次总览（「我的评测」页）。 */
+export interface EvalBatchOverview extends EvalBatch {
+  agentName: string | null
+}
+
+export async function fetchEvalOverview(): Promise<{ batches: EvalBatchOverview[] }> {
+  return get<{ batches: EvalBatchOverview[] }>('/workspace/evals')
+}

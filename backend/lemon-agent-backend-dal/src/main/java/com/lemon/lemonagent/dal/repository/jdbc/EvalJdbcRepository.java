@@ -94,6 +94,14 @@ public class EvalJdbcRepository implements EvalBatchRepository, EvalItemReposito
     }
 
     @Override
+    public List<EvalBatchEntity> listByUser(Long userId, int limit) {
+        return jdbcTemplate.query(
+                "SELECT id, user_id, agent_id, graph_version, note, created_at FROM eval_batch "
+                        + "WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+                batchMapper, userId, limit);
+    }
+
+    @Override
     public int insert(EvalItemEntity e) {
         return jdbcTemplate.update(
                 "INSERT INTO eval_item (batch_id, seq, run_id, input) VALUES (?,?,?,?)",

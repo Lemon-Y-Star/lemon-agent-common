@@ -162,6 +162,25 @@ public class EvalService {
         return data;
     }
 
+    /**
+     * 跨 Agent 的批次总览（「我的评测」页数据源）：最近 20 批，附 Agent 名称。
+     *
+     * @param userId 入参：用户
+     * @return 出参：批次列表
+     */
+    public EvalBatchesData listAll(Long userId) {
+        List<EvalBatchData> list = new ArrayList<>();
+        for (EvalBatchEntity batch : batchRepository.listByUser(userId, 20)) {
+            EvalBatchData data = toData(batch, itemRepository.listByBatch(batch.getId()), userId);
+            AgentConfigEntity agent = agentConfigRepository.findById(batch.getAgentId());
+            data.setAgentName(agent == null ? "Agent #" + batch.getAgentId() : agent.getName());
+            list.add(data);
+        }
+        EvalBatchesData data = new EvalBatchesData();
+        data.setBatches(list);
+        return data;
+    }
+
     private EvalBatchData toData(EvalBatchEntity batch, List<EvalItemEntity> items, Long userId) {
         EvalBatchData data = new EvalBatchData();
         data.setId(batch.getId());

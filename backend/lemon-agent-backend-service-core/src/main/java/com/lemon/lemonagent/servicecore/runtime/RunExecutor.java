@@ -1356,17 +1356,39 @@ public class RunExecutor {
 
     /** 连接解析：Agent 绑定连接优先（须启用），否则用户最新启用连接。 */
     private ModelConnectionEntity resolveConnection(AgentRunEntity run, AgentConfigEntity agent) {
+        ModelConnectionEntity conn;
         if (agent != null && agent.getModelConnectionId() != null) {
-            return modelConnectionRepository.findByUser(run.getUserId()).stream()
+            conn = modelConnectionRepository.findByUser(run.getUserId()).stream()
                     .filter(c -> c.getId().equals(agent.getModelConnectionId())
                             && c.getStatus() != null && c.getStatus() == 1)
                     .findFirst()
                     .orElse(null);
+        } else {
+            conn = modelConnectionRepository.findByUser(run.getUserId()).stream()
+                    .filter(c -> c.getStatus() != null && c.getStatus() == 1)
+                    .reduce((first, second) -> second)
+                    .orElse(null);
         }
-        return modelConnectionRepository.findByUser(run.getUserId()).stream()
-                .filter(c -> c.getStatus() != null && c.getStatus() == 1)
-                .reduce((first, second) -> second)
-                .orElse(null);
+        // 回填「实际用的模型」到 run（LLM 观测聚合用）；幂等：同连接不重复写
+        if (conn != null && !conn.getId().equals(run.getModelConnId())) {
+            run.setModelConnId(conn.getId());
+            run.setModelName(firstModel(conn));
+            runRepository.saveModelInfo(run.getId(), run.getModelName(), conn.getId());
+        }
+        return conn;
+    }
+
+    /** 连接的首选模型名：modelsJson 数组第一个，解析失败回退 provider。 */
+    private String firstModel(ModelConnectionEntity conn) {
+        try {
+            List<?> models = objectMapper.readValue(conn.getModelsJson(), List.class);
+            if (models != null && !models.isEmpty()) {
+                return String.valueOf(models.get(0));
+            }
+        } catch (Exception ignored) {
+            // modelsJson 为空/非法时回退 provider
+        }
+        return conn.getProvider();
     }
 
     private boolean isTerminal(AgentRunEntity run) {

@@ -622,6 +622,12 @@ public class AgentRuntimeService {
                     item.setLastSeq(r.getLastSeq());
                     item.setStartedAt(format(r.getStartedAt()));
                     item.setEndedAt(format(r.getEndedAt()));
+                    item.setModelName(r.getModelName());
+                    item.setInputTokens(r.getInputTokens());
+                    item.setOutputTokens(r.getOutputTokens());
+                    if (r.getStartedAt() != null && r.getEndedAt() != null) {
+                        item.setLatencyMs(java.time.Duration.between(r.getStartedAt(), r.getEndedAt()).toMillis());
+                    }
                     return item;
                 })
                 .toList());

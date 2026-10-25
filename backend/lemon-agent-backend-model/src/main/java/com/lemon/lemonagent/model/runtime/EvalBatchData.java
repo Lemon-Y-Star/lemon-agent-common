@@ -14,6 +14,9 @@ public class EvalBatchData {
     /** 被测 Agent */
     private Long agentId;
 
+    /** 被测 Agent 名称（跨 Agent 的「我的评测」列表直接显示用） */
+    private String agentName;
+
     /** 发起时的图版本 */
     private Integer graphVersion;
 

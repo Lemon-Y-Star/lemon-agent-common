@@ -82,6 +82,14 @@ public final class Operations {
 
     public static final String WORKFLOW_VERSION_SAVE = "WORKFLOW_VERSION_SAVE";
 
+    /** 运行反馈（产物与反馈，v3.8） */
+    public static final String RUN_FEEDBACK = "RUN_FEEDBACK";
+
+    /** API 分发密钥创建 / 吊销（v3.8） */
+    public static final String APIKEY_CREATE = "APIKEY_CREATE";
+
+    public static final String APIKEY_REVOKE = "APIKEY_REVOKE";
+
     private Operations() {
     }
 

@@ -9,23 +9,6 @@ import { ToastHost, toast } from './Toast'
  * v1 未开放的页面按原型文案保留导航项，点击 toast 提示（原型交互习惯）。
  */
 
-const PENDING_TOAST = '该功能将在后续版本开放（v2 对话运行时 / v3 Agent 搭建）'
-
-function NavPending(props: { children: string }) {
-  return (
-    <a
-      className="nav-item"
-      onClick={(e) => {
-        e.preventDefault()
-        toast(PENDING_TOAST)
-      }}
-      href="#"
-    >
-      {props.children}
-    </a>
-  )
-}
-
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -47,6 +30,14 @@ export default function Layout() {
       ? '长期记忆'
       : location.pathname.startsWith('/workflows')
       ? '工作流'
+      : location.pathname.startsWith('/artifacts')
+      ? '产物与反馈'
+      : location.pathname.startsWith('/evals')
+      ? '我的评测'
+      : location.pathname.startsWith('/llm')
+      ? 'LLM 观测'
+      : location.pathname.startsWith('/open-api')
+      ? 'API 分发'
       : location.pathname.startsWith('/runs')
       ? '运行历史'
       : location.pathname.startsWith('/usage')
@@ -91,19 +82,19 @@ export default function Layout() {
           <NavLink className="nav-item" to="/runs">
             🕘 运行历史
           </NavLink>
-          <NavPending>📦 产物与反馈</NavPending>
-          <NavPending>🧪 我的评测</NavPending>
+          <NavLink className="nav-item" to="/artifacts">📦 产物与反馈</NavLink>
+          <NavLink className="nav-item" to="/evals">🧪 我的评测</NavLink>
         </div>
         <div className="nav-group">
           <div className="gt">观测</div>
           <NavLink className="nav-item" to="/usage">
             📈 用量与观测
           </NavLink>
-          <NavPending>🔭 LLM 观测</NavPending>
+          <NavLink className="nav-item" to="/llm">🔭 LLM 观测</NavLink>
           <NavLink className="nav-item" to="/mcps">
             🔧 MCP 连接与工具
           </NavLink>
-          <NavPending>🚪 API 分发</NavPending>
+          <NavLink className="nav-item" to="/open-api">🚪 API 分发</NavLink>
         </div>
         <div className="nav-group">
           <div className="gt">账户</div>

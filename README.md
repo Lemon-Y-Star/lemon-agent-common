@@ -22,8 +22,9 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 | v3.4（本版） | 执行图并行调度：同层就绪节点按 `lemon.graph.parallelism`（默认 2）并发跑，状态只在主线程落库；对话页按节点分气泡 | ✅ |
 | v3.5 | 图运行接评测回归：一批用例按当前图版本跑成一组运行，两批并排看输出/分支差异（输出实时读运行，不另存） | ✅ |
 | v3.6 | 我的知识库（文档入库 + 检索测试，关键词/向量双路降级）+ 长期记忆（用户级事实，运行时注入 system prompt，最多 8 条） | ✅ |
-| v3.7（本版） | 工作流（PRD FR-25 最小闭环）：`workflow` + `workflow_version` 版本化独立实体 + 从执行图「另存为工作流」+ Agent 挂载（可 pin 版本）/ 取消挂载回落自有图；custom 运行优先跑挂载的工作流快照 | ✅ |
-| 待排期 | 工作流发布为工具（`workflow://`）、工作流停用/删除、工作流独立画布 | 规划中 |
+| v3.7 | 工作流（PRD FR-25 最小闭环）：`workflow` + `workflow_version` 版本化独立实体 + 从执行图「另存为工作流」+ Agent 挂载（可 pin 版本）/ 取消挂载回落自有图；custom 运行优先跑挂载的工作流快照 | ✅ |
+| v3.8（本版） | 收尾四件套（侧边栏占位清零）：产物与反馈（运行级点赞点踩+评论，upsert）· 我的评测（跨 Agent 批次总览）· LLM 观测（执行器回填实际模型名，按模型聚合调用量/token/时长/失败率）· API 分发（sk- 密钥只存哈希、明文仅创建时返回一次 + 开放端点 `/open/**` 同步调用，越权口径不变） | ✅ |
+| 待排期 | 工作流发布为工具（`workflow://`）、工作流独立画布、管理端 MCP 管理页 | 规划中 |
 
 ## 结构
 
@@ -226,6 +227,32 @@ lemon-agent-common/
 - 负例：无图且未挂载 → `VALIDATION_ERROR 该 Agent 还没有执行图，无法做图评测`；挂不存在工作流 → `NOT_FOUND`。
 - 优先级：Agent 12 挂 W 并 pin v1 → 批次 `graphVersion=1`（自有图是 v2，说明工作流优先且 pin 生效）；
   取消挂载 → `workflow_id/version` 回落 NULL，批次回到 `graphVersion=2`。
+
+## v3.8 收尾四件套实现要点
+
+**产物与反馈（FR-17 最小版）**
+
+- 产物 = 有最终产出的运行（COMPLETED），列表实时读 `agent_run`——产物不另存事实；反馈一人一运行一条
+  （`run_feedback` upsert），挂在 run 上而不是复制输出，这是后续「按反馈回归」的数据底座。
+
+**我的评测**
+
+- 跨 Agent 的批次总览（`eval_batch.listByUser`）：每批在哪个 Agent、哪版图、跑完没有；
+  深看并排对比跳回该 Agent 的评测页——批次只存绑定，输出仍实时读运行。
+
+**LLM 观测**
+
+- 执行器 `resolveConnection` 时把**实际使用的模型名**回填到 run（`model_name / model_conn_id`，幂等）；
+  观测页按模型 SQL 聚合调用量 / 失败数 / token / 平均时长（`TIMESTAMPDIFF`），不另建事实表。
+- 旧数据模型名为空 → 显示「（未记录）」，新调用自动归类。
+
+**API 分发（FR-24 最小版）**
+
+- `api_key` 只存 **SHA-256 哈希**，明文（`sk-` + 16 字节随机 hex）仅在创建响应出现一次；列表给前缀，吊销即时失效。
+- 开放端点 `/api/v1/open/**` 不走 lemon 认证拦截器（WebConfig 放行），`Authorization: Bearer sk-…` 或
+  `X-Api-Key`——哈希查库 + 启用校验后**以密钥归属用户的身份**走 `createRun`（幂等/互斥/越权口径全部复用）。
+- `invoke` 同步等待终态（默认 60s、上限 120s，超时返回 runId 用 `GET /open/runs/{runId}` 续查）；
+  鉴权失败返回平台统一包络（`code=UNAUTHORIZED/FORBIDDEN`），与站内接口语义一致。
 
 ## 启动
 

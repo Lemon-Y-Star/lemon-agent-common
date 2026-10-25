@@ -102,6 +102,34 @@ public interface AgentRunRepository {
     long countByUser(Long userId, String status, Long sessionId, String traceId);
 
     /**
+     * 回填实际使用的模型（执行器解析连接后调用，幂等）。
+     *
+     * @param id        入参：运行 ID
+     * @param modelName 入参：模型名
+     * @param connId    入参：连接 ID
+     * @return 出参：影响行数
+     */
+    int saveModelInfo(Long id, String modelName, Long connId);
+
+    /**
+     * LLM 观测汇总（时间窗内）：调用数 / 失败数 / token 合计 / 平均时长(ms)。
+     *
+     * @param userId 入参：用户
+     * @param since  入参：起始时间（可空 = 全部）
+     * @return 出参：单行汇总（calls / failed / input_tokens / output_tokens / avg_latency_ms）
+     */
+    java.util.Map<String, Object> summarizeByUser(Long userId, java.time.Instant since);
+
+    /**
+     * LLM 观测按模型聚合（时间窗内）。
+     *
+     * @param userId 入参：用户
+     * @param since  入参：起始时间（可空 = 全部）
+     * @return 出参：model_name / calls / failed / input_tokens / output_tokens / avg_latency_ms
+     */
+    java.util.List<java.util.Map<String, Object>> sumByModel(Long userId, java.time.Instant since);
+
+    /**
      * 回写事件序号游标（append 事务内调用；快照 / 续流起点以此为准）。
      *
      * @param id  入参：运行 ID

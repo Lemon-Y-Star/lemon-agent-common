@@ -21,6 +21,18 @@ public class RunListItem {
     /** 全链路 ID */
     private String traceId;
 
+    /** 实际使用的模型名（LLM 观测；可能为 null = 旧数据/未执行到模型） */
+    private String modelName;
+
+    /** 输入 tokens */
+    private Integer inputTokens;
+
+    /** 输出 tokens */
+    private Integer outputTokens;
+
+    /** 端到端时长毫秒（ended - started；未结束为 null） */
+    private Long latencyMs;
+
     /** 事件序号游标 */
     private long lastSeq;
 
