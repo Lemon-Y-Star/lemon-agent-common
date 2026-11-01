@@ -1,0 +1,4 @@
+# 保持 COPY . . 层缓存稳定：构建产物与 Dockerfile 本身不进上下文
+target/
+Dockerfile
+*.log
