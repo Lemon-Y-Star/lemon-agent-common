@@ -4,7 +4,7 @@
 ARG BUILD_IMAGE=docker.1ms.run/library/maven:3.9-eclipse-temurin-21
 ARG RUN_IMAGE=docker.1ms.run/library/eclipse-temurin:21-jre
 # Debian 版 node（glibc），与 temurin 的 Ubuntu 运行时兼容——stdio 型 MCP 连接靠 npx 拉起子进程
-ARG NODE_IMAGE=docker.1ms.run/library/node:24
+FROM docker.1ms.run/library/node:24 AS node-provider
 
 FROM ${BUILD_IMAGE} AS build
 WORKDIR /app
@@ -14,11 +14,9 @@ RUN mvn -B -DskipTests -s deploy/mirror-settings.xml package
 
 FROM ${RUN_IMAGE} AS runtime
 WORKDIR /app
-# ARG 在首个 FROM 后出作用域，须重新声明才能在 COPY --from 里展开
-ARG NODE_IMAGE=docker.1ms.run/library/node:24
 # stdio 型 MCP 连接需要 node/npx 运行时可用
-COPY --from=${NODE_IMAGE} /usr/local/bin/node /usr/local/bin/node
-COPY --from=${NODE_IMAGE} /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=node-provider /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-provider /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 # 预装平台 stdio 连接的三个包：运行时 npx 直接命中全局安装，冷启动不再去外网拉包
