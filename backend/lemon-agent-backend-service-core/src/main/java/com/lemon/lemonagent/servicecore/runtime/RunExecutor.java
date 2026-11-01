@@ -53,8 +53,10 @@ public class RunExecutor {
     private static final Logger log = LoggerFactory.getLogger(RunExecutor.class);
 
     private static final int FLUSH_EVERY_CHARS = 40;
-    private static final long FLUSH_EVERY_MILLIS = 200;
-    private static final int HISTORY_WINDOW = 20;
+    private static final long FLUSH_EVERY_MILLIS = 200;    /** 短期记忆默认窗口：10 轮（1 轮 = 用户 + 助手各 1 条），Agent 未配置时的兜底。 */
+    private static final int DEFAULT_HISTORY_TURNS = 10;
+    /** 短期记忆轮数上限：与 AgentConfigService 同口径，防 prompt 无界膨胀。 */
+    private static final int MAX_HISTORY_TURNS = 50;
     private static final int MAX_TOOL_ROUNDS = 5;
 
     /** 计划步骤上限（plan 策略）：再多就不是「计划」而是流水账，且每次运行的成本线性增长。 */
@@ -223,7 +225,7 @@ public class RunExecutor {
             failIfStillRunning(runId, "MODEL_ERROR", "尚未配置启用的模型连接，请先在「模型连接」页添加并启用。");
             return;
         }
-        List<ModelPort.Msg> context = historyContext(run);
+        List<ModelPort.Msg> context = historyContext(run, agent);
         String userInput = lastUserInput(run);
         if (context == null || userInput == null) {
             failIfStillRunning(runId, "MODEL_ERROR", "会话内没有用户消息，无法发起运行。");
@@ -245,7 +247,7 @@ public class RunExecutor {
         String modelInput = thinkingOn
                 ? "[系统指令]" + THINKING_INSTRUCTION + "\n\n用户问题：" + userInput
                 : userInput;
-        TurnResult turn = streamTurn(runId, conn, systemPrompt, context, modelInput, tools, 0, true);
+        TurnResult turn = streamTurnResilient(run, agent, systemPrompt, context, modelInput, tools, 0, true);
 
         // ④ 分支：工具调用（挂起或直执行） vs 文本完成；fixed 模式没有装配工具，模型报 tool_calls 属异常，按文本收口
         if (turn.toolCalls() != null && !fixed) {
@@ -273,6 +275,8 @@ public class RunExecutor {
                         "runId", runId,
                         "outputText", outputText,
                         "usage", Map.of("inputTokens", turn.inputTokens(), "outputTokens", turn.outputTokens()),
+                        "traceId", run.getTraceId() == null ? "" : run.getTraceId(),
+                        "durationMs", durationMs(run),
                         "ts", System.currentTimeMillis())));
                 insertAssistantMessage(run, outputText, runId);
             }
@@ -347,7 +351,7 @@ public class RunExecutor {
             }
             step.setStatus("RUNNING");
 
-            List<ModelPort.Msg> context = historyContext(run);
+            List<ModelPort.Msg> context = historyContext(run, agent);
             if (context == null) {
                 failIfStillRunning(runId, "MODEL_ERROR", "会话内没有用户消息，无法发起运行。");
                 return;
@@ -364,7 +368,7 @@ public class RunExecutor {
             String stepInput = stepInput(step, stepIndex, userInput);
             List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                     ? toolRegistry.specs(allowedTools) : List.of();
-            TurnResult turn = streamTurn(runId, conn, prompt, context, stepInput, tools, stepIndex, true);
+            TurnResult turn = streamTurnResilient(run, agent, prompt, context, stepInput, tools, stepIndex, true);
 
             if (turn.toolCalls() != null) {
                 // 工具调用：挂起（BLOCKED）或直接执行后重新进入（runLoop 会回到 planLoop 同一 step）
@@ -413,6 +417,8 @@ public class RunExecutor {
                     "runId", runId,
                     "outputText", outputText,
                     "usage", Map.of("inputTokens", totalIn, "outputTokens", totalOut),
+                    "traceId", run.getTraceId() == null ? "" : run.getTraceId(),
+                    "durationMs", durationMs(run),
                     "ts", System.currentTimeMillis())));
             insertAssistantMessage(run, outputText, runId);
         }
@@ -425,12 +431,12 @@ public class RunExecutor {
      */
     private List<PlanStepData> createPlan(AgentRunEntity run, ModelConnectionEntity conn,
                                           AgentConfigEntity agent, String userInput) {
-        List<ModelPort.Msg> context = historyContext(run);
+        List<ModelPort.Msg> context = historyContext(run, agent);
         if (context == null) {
             context = new ArrayList<>();
         }
         String toolsNote = allowedToolsOf(agent) == null ? "全部工具" : String.valueOf(allowedToolsOf(agent));
-        TurnResult turn = streamTurn(run.getId(), conn, PLANNER_PROMPT, context,
+        TurnResult turn = streamTurnResilient(run, agent, PLANNER_PROMPT, context,
                 "用户任务：" + userInput + "\n可用工具：" + toolsNote + "\n请给出执行计划。",
                 List.of(), -1, false);
         if (!turn.completed() || turn.toolCalls() != null) {
@@ -650,6 +656,50 @@ public class RunExecutor {
         return new TurnResult(fullOutput.toString(), toolCallsHolder[0], usage[0], usage[1], completed[0]);
     }
 
+    /**
+     * 带连接 fallback 的流式调用（v4.1）：主连接失败（completed=false 且无工具调用且未吐出正文）
+     * 时按用户其余启用连接顺位回落重试；一旦有正文流出就不再重试（避免气泡内容重复）。
+     * 回落的连接同步回填 run 的 model_name / model_conn_id（LLM 观测口径不变）。
+     */
+    private TurnResult streamTurnResilient(AgentRunEntity run, AgentConfigEntity agent,
+                                           String systemPrompt, List<ModelPort.Msg> context,
+                                           String userInput, List<ModelPort.ToolSpec> tools,
+                                           int stepIndex, boolean emitTokens) {
+        ModelConnectionEntity primary = resolveConnection(run, agent);
+        List<ModelConnectionEntity> candidates = new ArrayList<>();
+        if (primary != null) {
+            candidates.add(primary);
+        }
+        for (ModelConnectionEntity c : modelConnectionRepository.findByUser(run.getUserId())) {
+            boolean dup = candidates.stream().anyMatch(x -> x.getId().equals(c.getId()));
+            if (!dup && c.getStatus() != null && c.getStatus() == 1) {
+                candidates.add(c);
+            }
+        }
+        if (candidates.isEmpty()) {
+            return new TurnResult("", null, 0, 0, false);
+        }
+        TurnResult turn = null;
+        for (int i = 0; i < candidates.size(); i++) {
+            ModelConnectionEntity attempt = candidates.get(i);
+            if (i > 0) {
+                log.warn("run {} 模型连接 {}({}) 调用失败，回落连接 {}({})",
+                        run.getId(), candidates.get(i - 1).getName(), candidates.get(i - 1).getId(),
+                        attempt.getName(), attempt.getId());
+                if (!attempt.getId().equals(run.getModelConnId())) {
+                    run.setModelConnId(attempt.getId());
+                    run.setModelName(firstModel(attempt));
+                    runRepository.saveModelInfo(run.getId(), run.getModelName(), attempt.getId());
+                }
+            }
+            turn = streamTurn(run.getId(), attempt, systemPrompt, context, userInput, tools, stepIndex, emitTokens);
+            if (turn.completed() || turn.toolCalls() != null || (turn.text() != null && !turn.text().isEmpty())) {
+                return turn;
+            }
+        }
+        return turn;
+    }
+
     /** 挂载 Agent（按 run.agent_id 回查；日志留一条，排障入口）。 */
     private AgentConfigEntity agentOf(AgentRunEntity run) {
         AgentConfigEntity agent = run.getAgentId() == null
@@ -678,24 +728,46 @@ public class RunExecutor {
         return memoryService.augment(userId, base);
     }
 
-    /** 会话历史上下文（不含最后一条用户输入；最近 HISTORY_WINDOW 条）。会话为空返回 null。 */
-    private List<ModelPort.Msg> historyContext(AgentRunEntity run) {
+    /**
+     * 会话历史上下文（不含最后一条用户输入）。会话为空返回 null。
+     *
+     * <p>窗口按 Agent 配置的短期记忆轮数（{@code historyTurns}）计算：1 轮 = 用户 + 助手各 1 条；
+     * 未配置回落 {@link #DEFAULT_HISTORY_TURNS}，与 v4.1 之前的固定 20 条行为等价。</p>
+     */
+    private List<ModelPort.Msg> historyContext(AgentRunEntity run, AgentConfigEntity agent) {
         List<AgentMessageEntity> history = messageRepository.findBySession(run.getSessionId(), run.getUserId());
         if (history.isEmpty()) {
             return null;
         }
+        int window = historyWindow(agent);
         List<ModelPort.Msg> context = new ArrayList<>();
         history.stream()
                 .limit(Math.max(0, history.size() - 1))
-                .skip(Math.max(0, history.size() - 1 - HISTORY_WINDOW))
+                .skip(Math.max(0, history.size() - 1 - window))
                 .forEach(m -> context.add(new ModelPort.Msg(m.getRole(), m.getContent())));
         return context;
+    }
+
+    /** 短期记忆窗口（条）：Agent 配置轮数 × 2；未配置/越界回落默认，0 = 只看本轮输入。 */
+    private int historyWindow(AgentConfigEntity agent) {
+        Integer turns = agent == null ? null : agent.getHistoryTurns();
+        int effective = (turns == null || turns < 0) ? DEFAULT_HISTORY_TURNS : Math.min(turns, MAX_HISTORY_TURNS);
+        return effective * 2;
     }
 
     /** 本轮最后一条用户输入。会话为空返回 null。 */
     private String lastUserInput(AgentRunEntity run) {
         List<AgentMessageEntity> history = messageRepository.findBySession(run.getSessionId(), run.getUserId());
         return history.isEmpty() ? null : history.get(history.size() - 1).getContent();
+    }
+
+    /**
+     * 运行耗时（毫秒）：收口事件（run_completed）与快照共用口径，startedAt → 当前时刻。
+     * 对话页回答尾注展示「耗时 x.xs」用（v4.1.3）。
+     */
+    private long durationMs(AgentRunEntity run) {
+        return run.getStartedAt() == null ? 0
+                : System.currentTimeMillis() - run.getStartedAt().toEpochMilli();
     }
 
     // ---------- 执行图（v3.2.0） ----------
@@ -742,8 +814,15 @@ public class RunExecutor {
             for (GraphNode node : all) {
                 brief.add(Map.of("id", node.getId(), "type", node.getType(), "title", nodeLabel(node)));
             }
+            // 出边信息一并下发：前端据此识别「条件路由判定节点」（多条条件出边的 LLM 节点），
+            // 这类节点的产出是路由信号（如意图单词），对话页不作为回答气泡展示
+            List<Map<String, Object>> edgeBrief = new ArrayList<>();
+            for (GraphEdge edge : graph.getEdges() == null ? List.<GraphEdge>of() : graph.getEdges()) {
+                edgeBrief.add(Map.of("from", edge.getFrom(), "to", edge.getTo(), "route", edge.getRoute() == null ? "" : edge.getRoute()));
+            }
             appendEvent(runId, RuntimeEventType.GRAPH_STARTED, objectMapper.writeValueAsString(Map.of(
                     "nodes", brief,
+                    "edges", edgeBrief,
                     "total", total,
                     "ts", System.currentTimeMillis())));
             log.info("run {} 执行图开始，共 {} 个节点", runId, total);
@@ -810,6 +889,16 @@ public class RunExecutor {
                 continue;
             }
             if (ready.isEmpty()) {
+                // 条件路由死路守卫（v4.3.3）：还有节点既未完成也未跳过 = 上游的条件出边全部失配。
+                // 此前静默 break → 图带着中间节点产出（如分类词）当最终答案「成功」收场，极难排查；
+                // 改为显式报错，提示检查分支条件与上游节点的输出约定。
+                boolean stuck = all.stream().anyMatch(n -> !done.contains(n.getId()) && !skipped.contains(n.getId()));
+                if (stuck) {
+                    failIfStillRunning(runId, "ROUTE_ERROR",
+                            "执行图条件路由死路：某节点的产出没有命中任何出边条件（startsWith/contains），图无法继续。"
+                                    + "请检查分支条件关键词与上游节点提示词约定的输出格式是否一致。");
+                    return;
+                }
                 break;
             }
 
@@ -896,7 +985,7 @@ public class RunExecutor {
             }
 
             // LLM 节点（context 要在 lambda 里用，必须是 effectively final）
-            List<ModelPort.Msg> history = historyContext(run);
+            List<ModelPort.Msg> history = historyContext(run, agent);
             final List<ModelPort.Msg> context = history == null ? new ArrayList<>() : history;
             for (String upstream : upstreamOutputs(graph, state, node.getId())) {
                 context.add(new ModelPort.Msg("ASSISTANT", upstream));
@@ -907,7 +996,8 @@ public class RunExecutor {
             List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
             List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                     ? graphTools(allowed) : List.of();
-            TurnResult turn = streamTurn(runId, conn, nodeSystemPrompt(instructionOf(agent, run.getUserId()), node),
+            TurnResult turn = streamTurnResilient(run, agent,
+                    nodeSystemPrompt(instructionOf(agent, run.getUserId()), node),
                     context, nodeInput(node, userInput), tools, stepIndex, true);
             if (turn.toolCalls() != null) {
                 handleToolCalls(run, turn.toolCalls(), notes, depth, allowed);
@@ -954,6 +1044,8 @@ public class RunExecutor {
                     "runId", runId,
                     "outputText", outputText,
                     "usage", Map.of("inputTokens", state.getInputTokens(), "outputTokens", state.getOutputTokens()),
+                    "traceId", run.getTraceId() == null ? "" : run.getTraceId(),
+                    "durationMs", durationMs(run),
                     "ts", System.currentTimeMillis())));
             insertAssistantMessage(run, outputText, runId);
         }
@@ -1000,7 +1092,7 @@ public class RunExecutor {
                     outcomes.add(runToolNode(run, graph, state, all, node, notesCopy));
                     continue;
                 }
-                List<ModelPort.Msg> context = historyContext(run);
+                List<ModelPort.Msg> context = historyContext(run, agent);
                 final List<ModelPort.Msg> ctx = context == null ? new ArrayList<>() : context;
                 for (String upstream : upstreamOutputs(graph, state, node.getId())) {
                     ctx.add(new ModelPort.Msg("ASSISTANT", upstream));
@@ -1012,7 +1104,7 @@ public class RunExecutor {
                 final List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                         ? graphTools(allowed) : List.of();
                 futures.add(executor.submit(() -> {
-                    TurnResult turn = streamTurn(runId, conn,
+                    TurnResult turn = streamTurnResilient(run, agent,
                             nodeSystemPrompt(instructionOf(agent, run.getUserId()), node), ctx,
                             nodeInput(node, userInput), tools, stepIndex, true);
                     return new NodeOutcome(node, stepIndex, turn.text(), turn.inputTokens(),
@@ -1119,7 +1211,17 @@ public class RunExecutor {
         if (!done.contains(from)) {
             return null;
         }
-        return RoutePredicates.evaluate(edge.getRoute(), state.getOutputs().get(from));
+        // 条件路由匹配用净文：思考开着的节点输出以 <think>…</think> 开头，
+        // 直接 startsWith/contains 会全部失配 → 无出边命中 → 图提前收场（v4.3.3 实测缺陷）
+        return RoutePredicates.evaluate(edge.getRoute(), stripThink(state.getOutputs().get(from)));
+    }
+
+    /** 剥掉思考包装标签，取正文净文（无 <think> 时原样返回）。 */
+    private static String stripThink(String text) {
+        if (text == null) {
+            return null;
+        }
+        return text.replaceAll("(?s)<think>.*?</think>", "").trim();
     }
 
 
@@ -1359,6 +1461,7 @@ public class RunExecutor {
         long start = System.currentTimeMillis();
         String resultBrief;
         boolean ok;
+        List<String> refs = List.of();
         try {
             Map<String, Object> result = handler.execute(args);
             ok = true;
@@ -1366,18 +1469,29 @@ public class RunExecutor {
                     .reduce((a, b) -> a + " / " + b).orElse("done");
             notes.add("工具 " + toolName + " 已执行成功，结果：" + objectMapper.writeValueAsString(result)
                     + "。请基于该结果继续完成用户的任务。");
+            // 引用溯源（v4.1）：search_docs 的命中文档标题随 tool_result 透出，前端渲染「依据」chip
+            if ("search_docs".equals(toolName) && result.get("hits") instanceof List<?> hitList) {
+                refs = hitList.stream()
+                        .filter(h -> h instanceof Map<?, ?> m && m.get("title") != null)
+                        .map(h -> String.valueOf(((Map<?, ?>) h).get("title")))
+                        .limit(5).toList();
+            }
         } catch (Exception e) {
             ok = false;
             resultBrief = "执行失败：" + e.getMessage();
             notes.add("工具 " + toolName + " 执行失败：" + e.getMessage() + "。请告知用户并尝试其他方式。");
         }
-        appendEvent(run.getId(), RuntimeEventType.TOOL_RESULT, objectMapper.writeValueAsString(Map.of(
-                "callId", String.valueOf(args.getOrDefault("__callId", "")),
-                "ok", ok,
-                "durationMs", System.currentTimeMillis() - start,
-                "resultBrief", resultBrief,
-                "resultChars", resultBrief.length(),
-                "ts", System.currentTimeMillis())));
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("callId", String.valueOf(args.getOrDefault("__callId", "")));
+        payload.put("ok", ok);
+        payload.put("durationMs", System.currentTimeMillis() - start);
+        payload.put("resultBrief", resultBrief);
+        payload.put("resultChars", resultBrief.length());
+        payload.put("ts", System.currentTimeMillis());
+        if (!refs.isEmpty()) {
+            payload.put("refs", refs);
+        }
+        appendEvent(run.getId(), RuntimeEventType.TOOL_RESULT, objectMapper.writeValueAsString(payload));
     }
 
     private void insertAssistantMessage(AgentRunEntity run, String content, Long runId) {

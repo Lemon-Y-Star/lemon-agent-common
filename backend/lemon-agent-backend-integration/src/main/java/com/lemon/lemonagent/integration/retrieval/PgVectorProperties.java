@@ -30,6 +30,39 @@ public class PgVectorProperties {
     /** PgVector 密码 */
     private String pgvectorPassword;
 
+    /** OpenAI 兼容 /rerank 精排端点（Jina/Cohere/硅基流动风格；可空 = 不启用重排） */
+    private String rerankBaseUrl;
+
+    /** rerank 凭据 */
+    private String rerankApiKey;
+
+    /** rerank 模型名 */
+    private String rerankModel;
+
+    public String getRerankBaseUrl() {
+        return rerankBaseUrl;
+    }
+
+    public void setRerankBaseUrl(String rerankBaseUrl) {
+        this.rerankBaseUrl = rerankBaseUrl;
+    }
+
+    public String getRerankApiKey() {
+        return rerankApiKey;
+    }
+
+    public void setRerankApiKey(String rerankApiKey) {
+        this.rerankApiKey = rerankApiKey;
+    }
+
+    public String getRerankModel() {
+        return rerankModel;
+    }
+
+    public void setRerankModel(String rerankModel) {
+        this.rerankModel = rerankModel;
+    }
+
     public String getEmbeddingBaseUrl() {
         return embeddingBaseUrl;
     }

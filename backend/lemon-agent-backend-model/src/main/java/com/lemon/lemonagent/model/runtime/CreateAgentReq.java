@@ -26,6 +26,12 @@ public class CreateAgentReq extends BaseReq {
     /** 可用工具白名单（null = 全部工具；空数组 = 不装配工具） */
     private java.util.List<String> tools;
 
+    /** 默认运行策略：auto/plan/custom/fixed（可空 = auto） */
+    private String strategy;
+
+    /** 短期记忆窗口轮数（1 轮=用户+助手各 1 条；可空 = 默认 10 轮；0 = 不带历史；上限 50） */
+    private Integer historyTurns;
+
     /** 绑定模型连接（可空） */
     private Long modelConnectionId;
 

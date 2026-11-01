@@ -6,6 +6,7 @@ import com.lemon.lemonagent.model.enums.ConnectionStatus;
 import com.lemon.lemonagent.model.enums.TransportType;
 import com.lemon.lemonagent.model.mcpconn.McpConnectionData;
 import com.lemon.lemonagent.servicecore.conn.McpConnectionService;
+import com.lemon.lemonagent.servicecore.runtime.ToolRegistry;
 import com.lemon.lemonagent.util.crypto.CryptoUtil;
 import com.lemon.architecture.model.BusinessException;
 import com.lemon.architecture.model.ResultCodes;
@@ -31,8 +32,12 @@ public class McpConnectionServiceImpl implements McpConnectionService {
 
     private final McpConnectionRepository repository;
 
-    public McpConnectionServiceImpl(McpConnectionRepository repository) {
+    /** 工具注册表：连接增删改后同步增解绑 MCP 桥接工具。 */
+    private final ToolRegistry toolRegistry;
+
+    public McpConnectionServiceImpl(McpConnectionRepository repository, ToolRegistry toolRegistry) {
         this.repository = repository;
+        this.toolRegistry = toolRegistry;
     }
 
     @Override
@@ -60,6 +65,7 @@ public class McpConnectionServiceImpl implements McpConnectionService {
         entity.setUnavailableReason(null);
         entity.setVersion(1);
         repository.insert(entity);
+        toolRegistry.bindMcp(entity);
         return toData(entity);
     }
 
@@ -80,6 +86,12 @@ public class McpConnectionServiceImpl implements McpConnectionService {
         }
         entity.setUnavailableReason(null);
         repository.update(entity);
+        // 停用的连接立即解绑；启用的重新探测注册
+        if (entity.getStatus() == null || entity.getStatus() != 1) {
+            toolRegistry.unbindMcp(entity.getId());
+        } else {
+            toolRegistry.bindMcp(entity);
+        }
         return toData(entity);
     }
 
@@ -87,6 +99,7 @@ public class McpConnectionServiceImpl implements McpConnectionService {
     public void delete(Long userId, Long id) {
         requireOwned(userId, id);
         repository.delete(id, userId);
+        toolRegistry.unbindMcp(id);
     }
 
     private McpConnectionEntity requireOwned(Long userId, Long id) {

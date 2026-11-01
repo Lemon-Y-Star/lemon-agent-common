@@ -21,4 +21,7 @@ public class RunBrief {
     /** 策略 */
     private String strategy;
 
+    /** 运行耗时（毫秒，startedAt → endedAt）；未结束为 null。对话页回答尾注展示用 */
+    private Long durationMs;
+
 }

@@ -1,6 +1,8 @@
 package com.lemon.lemonagent.dal.repository;
 
 import com.lemon.lemonagent.dal.entity.AgentMemoryEntity;
+import com.lemon.lemonagent.dal.entity.KbImageEntity;
+import com.lemon.lemonagent.dal.entity.KbMissEntity;
 import com.lemon.lemonagent.dal.entity.KbDocumentEntity;
 
 import java.util.List;
@@ -17,8 +19,26 @@ public interface KnowledgeRepository {
     /** 删除本人文档。 */
     int deleteDoc(Long id, Long userId);
 
-    /** 关键词检索（标题或正文包含）。 */
+    /** 关键词检索（全文索引优先 + LIKE 兜底）。 */
     List<KbDocumentEntity> searchDocs(Long userId, String keyword, int limit);
+
+    /** 未命中记录（v4.1）：0 命中 query 按 (user_id, query) 去重计数。 */
+    void recordMiss(Long userId, String query);
+
+    /** 未命中队列 Top N（按次数降序）。 */
+    List<KbMissEntity> listMisses(Long userId, int limit);
+
+    /** 未命中总数。 */
+    int countMisses(Long userId);
+
+    /** 重置文档图片（先删后插，随文档创建写入）。 */
+    void replaceImages(Long userId, Long docId, List<KbImageEntity> images);
+
+    /** 按文档 ID 批量取图片。 */
+    List<KbImageEntity> findImagesByDocs(List<Long> docIds);
+
+    /** 按标题找文档 ID（向量召回只回传标题，图片经标题关联回带）。 */
+    List<KbDocumentEntity> findByTitles(Long userId, List<String> titles);
 
     /** 记忆列表（倒序）。 */
     List<AgentMemoryEntity> listMemories(Long userId);

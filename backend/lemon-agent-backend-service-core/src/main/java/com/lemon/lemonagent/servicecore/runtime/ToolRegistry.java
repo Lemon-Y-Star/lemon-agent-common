@@ -1,14 +1,22 @@
 package com.lemon.lemonagent.servicecore.runtime;
 
 import com.lemon.lemonagent.dal.entity.AgentRunEntity;
+import com.lemon.lemonagent.dal.entity.McpConnectionEntity;
 import com.lemon.lemonagent.dal.entity.WorkflowEntity;
 import com.lemon.lemonagent.dal.repository.AgentRunRepository;
+import com.lemon.lemonagent.dal.repository.McpConnectionRepository;
 import com.lemon.lemonagent.dal.repository.WorkflowRepository;
+import com.lemon.lemonagent.model.mcp.McpToolPort;
 import com.lemon.lemonagent.model.runtime.ModelPort;
 import com.lemon.lemonagent.model.runtime.RetrievalPort;
 import com.lemon.lemonagent.model.runtime.RunStatus;
+import com.lemon.lemonagent.util.crypto.CryptoUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -20,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
@@ -39,6 +48,8 @@ import java.util.function.Function;
  */
 @Component
 public class ToolRegistry {
+
+    private static final Logger log = LoggerFactory.getLogger(ToolRegistry.class);
 
     /** 工具句柄：定义 + 审批标记 + 执行体。 */
     public static class ToolHandler {
@@ -75,6 +86,18 @@ public class ToolRegistry {
     /** 工具名 → 发布者（工具目录按用户过滤）。 */
     private final Map<String, Long> workflowOwners = new java.util.concurrent.ConcurrentHashMap<>();
 
+    /** MCP 桥接工具（mcp<connId>_<tool>）：连接启用时注册，停用/删除/探测失败时解除。 */
+    private final Map<String, ToolHandler> mcpTools = new ConcurrentHashMap<>();
+
+    /** MCP 工具名 → 归属用户（0 = 平台公共；ConcurrentHashMap 不收 null 值用 0 代替）。 */
+    private final Map<String, Long> mcpOwners = new ConcurrentHashMap<>();
+
+    /** MCP 工具名 → 连接描述（执行时重新发起远端调用用）。 */
+    private final Map<String, McpToolPort.ConnSpec> mcpConns = new ConcurrentHashMap<>();
+
+    /** 工具名 → 展示标签（目录下拉中文显示用；内置工具在 catalog 里硬编码）。 */
+    private final Map<String, String> toolLabels = new ConcurrentHashMap<>();
+
     private final JdbcTemplate jdbcTemplate;
 
     private final WorkflowRepository workflowRepository;
@@ -87,12 +110,19 @@ public class ToolRegistry {
     /** 审批名单（yml `agent.tools.approval-required`）：目录接口要回传 needsApproval，故留字段。 */
     private final List<String> approvalList;
 
+    /** MCP 工具端口（可空：integration 未装配时不桥接，主流程不受影响）。 */
+    private final McpToolPort mcpToolPort;
+
+    private final McpConnectionRepository mcpConnectionRepository;
+
     public ToolRegistry(JdbcTemplate jdbcTemplate,
                         RetrievalPort retrievalPort,
                         KnowledgeService knowledgeService,
                         WorkflowRepository workflowRepository,
                         AgentRunRepository agentRunRepository,
                         ObjectProvider<AgentRuntimeService> agentRuntimeProvider,
+                        ObjectProvider<McpToolPort> mcpToolPortProvider,
+                        McpConnectionRepository mcpConnectionRepository,
                         @Value("${agent.tools.approval-required:create_ticket}") String approvalList) {
         this.jdbcTemplate = jdbcTemplate;
         this.workflowRepository = workflowRepository;
@@ -101,6 +131,8 @@ public class ToolRegistry {
         List<String> needsApproval = List.of(approvalList.split(",")).stream()
                 .map(String::trim).toList();
         this.approvalList = needsApproval;
+        this.mcpToolPort = mcpToolPortProvider.getIfAvailable();
+        this.mcpConnectionRepository = mcpConnectionRepository;
         // search_docs 常驻：没配 embedding 时走关键词检索（v3.6 双路降级），配了再叠加向量
         this.searchDocsTool = new ToolHandler(new ModelPort.ToolSpec(
                 "search_docs",
@@ -124,6 +156,10 @@ public class ToolRegistry {
                                 m.put("title", h.title());
                                 m.put("snippet", h.snippet());
                                 m.put("source", h.source());
+                                if (h.images() != null && !h.images().isEmpty()) {
+                                    // 多模态随文带出（v4.1）：模型可引用图片链接回答
+                                    m.put("images", h.images());
+                                }
                                 return m;
                             })
                             .collect(java.util.stream.Collectors.toList());
@@ -170,6 +206,7 @@ public class ToolRegistry {
                 false,
                 args -> runWorkflowTool(wf.getId(), args)));
         workflowOwners.put(toolName, wf.getUserId());
+        toolLabels.put(toolName, "工作流：" + wf.getName());
     }
 
     /** 工作流删除时解绑（run_wf_<id> 立即从目录与装配中消失）。 */
@@ -177,6 +214,117 @@ public class ToolRegistry {
         String toolName = "run_wf_" + workflowId;
         workflowTools.remove(toolName);
         workflowOwners.remove(toolName);
+        toolLabels.remove(toolName);
+    }
+
+    // ==================================================================
+    // MCP 桥接（PRD FR-12）：连接 = 工具源，启动回放 + CRUD 联动
+    // ==================================================================
+
+    /** 启动回放：全部启用中的 MCP 连接异步探测并注册为工具（不阻塞启动）。 */
+    @EventListener(ApplicationReadyEvent.class)
+    public void bindAllMcp() {
+        if (mcpToolPort == null) {
+            return;
+        }
+        Thread.ofVirtual().name("mcp-bind").start(() -> {
+            for (McpConnectionEntity c : mcpConnectionRepository.findAll()) {
+                if (c.getStatus() != null && c.getStatus() == 1) {
+                    bindMcp(c);
+                }
+            }
+        });
+    }
+
+    /**
+     * 把一条 MCP 连接注册为工具：tools/list 探测成功 → 逐个注册
+     * {@code mcp<connId>_<tool>}；失败 → 写 unavailable_reason（连接页可见，不抛异常）。
+     *
+     * @param entity 入参：连接实体（须已有 ID）
+     */
+    public void bindMcp(McpConnectionEntity entity) {
+        if (mcpToolPort == null) {
+            return;
+        }
+        unbindMcp(entity.getId());
+        McpToolPort.ConnSpec conn = toConnSpec(entity);
+        try {
+            List<McpToolPort.ToolDef> defs = mcpToolPort.listTools(conn);
+            if (defs.isEmpty()) {
+                markUnavailable(entity.getId(), "连接可用但未提供任何工具");
+                return;
+            }
+            for (McpToolPort.ToolDef def : defs) {
+                String toolName = mcpToolName(entity.getId(), def.name());
+                String desc = "MCP「" + entity.getName() + "」提供。" + def.description();
+                mcpTools.put(toolName, new ToolHandler(new ModelPort.ToolSpec(
+                                toolName, desc, def.inputSchemaJson()),
+                        approvalList.contains(toolName) || approvalList.contains(def.name()),
+                        args -> callMcpTool(toolName, def.name(), args)));
+                // 0 = 平台公共（userId NULL）；自建连接记归属用户
+                mcpOwners.put(toolName, entity.getUserId() == null ? 0L : entity.getUserId());
+                mcpConns.put(toolName, conn);
+                toolLabels.put(toolName, "MCP·" + entity.getName() + " / " + def.name());
+            }
+            mcpConnectionRepository.updateUnavailable(entity.getId(), null);
+            log.info("MCP 工具桥：连接 {}({}) 注册 {} 个工具", entity.getName(), entity.getId(), defs.size());
+        } catch (Exception e) {
+            String reason = "工具探测失败：" + rootMessage(e);
+            markUnavailable(entity.getId(), reason);
+            log.warn("MCP 工具桥：连接 {}({}) 不可用 - {}", entity.getName(), entity.getId(), reason);
+        }
+    }
+
+    /** 连接停用/删除/改配置时解绑：该连接的全部工具立即从目录与装配中消失。 */
+    public void unbindMcp(Long connId) {
+        String prefix = "mcp" + connId + "_";
+        mcpTools.keySet().removeIf(n -> n.startsWith(prefix));
+        mcpOwners.keySet().removeIf(n -> n.startsWith(prefix));
+        mcpConns.keySet().removeIf(n -> n.startsWith(prefix));
+        toolLabels.keySet().removeIf(n -> n.startsWith(prefix));
+    }
+
+    /** MCP 工具执行体：调远端 tools/call，异常折算为 error 键（让模型能看到失败原因自行重试/改道）。 */
+    private Map<String, Object> callMcpTool(String toolName, String remoteName, Map<String, Object> args) {
+        McpToolPort.ConnSpec conn = mcpConns.get(toolName);
+        if (conn == null) {
+            return Map.of("error", "工具已下线（连接被停用或删除）");
+        }
+        try {
+            return mcpToolPort.callTool(conn, remoteName, args);
+        } catch (Exception e) {
+            return Map.of("error", "MCP 调用失败：" + rootMessage(e));
+        }
+    }
+
+    private McpToolPort.ConnSpec toConnSpec(McpConnectionEntity e) {
+        String secret = e.getSecretCipher() == null || e.getSecretCipher().isBlank()
+                ? null : CryptoUtil.decrypt(e.getSecretCipher());
+        return new McpToolPort.ConnSpec(e.getId(), e.getName(), e.getTransportType(),
+                e.getUrl(), e.getCommand(), secret);
+    }
+
+    /** 工具名 = mcp<connId>_<远端名>（非 [a-zA-Z0-9_] 字符折叠为下划线，保证模型可合法调用）。 */
+    private static String mcpToolName(long connId, String remoteName) {
+        String safe = remoteName.replaceAll("[^a-zA-Z0-9_]", "_");
+        return "mcp" + connId + "_" + safe;
+    }
+
+    private void markUnavailable(Long connId, String reason) {
+        try {
+            mcpConnectionRepository.updateUnavailable(connId, reason);
+        } catch (Exception ignored) {
+            // 标注失败不影响主流程
+        }
+    }
+
+    private static String rootMessage(Throwable e) {
+        Throwable cur = e;
+        while (cur.getCause() != null && cur.getCause() != cur) {
+            cur = cur.getCause();
+        }
+        String msg = cur.getMessage();
+        return msg == null || msg.isBlank() ? cur.getClass().getSimpleName() : msg;
     }
 
     /**
@@ -252,6 +400,7 @@ public class ToolRegistry {
         }
         result.add(fixedTools.get("create_ticket").spec);
         workflowTools.values().forEach(h -> result.add(h.spec));
+        mcpTools.values().forEach(h -> result.add(h.spec));
         return result;
     }
 
@@ -288,12 +437,19 @@ public class ToolRegistry {
      */
     public List<com.lemon.lemonagent.model.runtime.ToolInfoData> catalog(Long userId) {
         List<com.lemon.lemonagent.model.runtime.ToolInfoData> list = new java.util.ArrayList<>();
-        list.add(toInfo(fixedTools.get("current_time"), true));
-        list.add(toInfo(searchDocsTool, true));
-        list.add(toInfo(fixedTools.get("create_ticket"), true));
+        list.add(withLabel(toInfo(fixedTools.get("current_time"), true), "当前时间"));
+        list.add(withLabel(toInfo(searchDocsTool, true), "知识库检索"));
+        list.add(withLabel(toInfo(fixedTools.get("create_ticket"), true), "创建工单（演示写操作）"));
         workflowTools.forEach((name, handler) -> {
             Long owner = workflowOwners.get(name);
             if (owner != null && owner.equals(userId)) {
+                list.add(toInfo(handler, true));
+            }
+        });
+        mcpTools.forEach((name, handler) -> {
+            Long owner = mcpOwners.get(name);
+            // 0 = 平台公共连接：所有用户可见；自建连接只对归属者可见
+            if (owner == null || owner == 0L || owner.equals(userId)) {
                 list.add(toInfo(handler, true));
             }
         });
@@ -318,6 +474,14 @@ public class ToolRegistry {
         info.setDescription(handler.spec.description());
         info.setNeedsApproval(handler.needsApproval);
         info.setAvailable(available);
+        info.setLabel(toolLabels.get(handler.spec.name()));
+        return info;
+    }
+
+    /** 覆写展示标签（内置工具中文名）。 */
+    private com.lemon.lemonagent.model.runtime.ToolInfoData withLabel(
+            com.lemon.lemonagent.model.runtime.ToolInfoData info, String label) {
+        info.setLabel(label);
         return info;
     }
 
@@ -331,6 +495,10 @@ public class ToolRegistry {
         ToolHandler workflowTool = workflowTools.get(name);
         if (workflowTool != null) {
             return workflowTool;
+        }
+        ToolHandler mcpTool = mcpTools.get(name);
+        if (mcpTool != null) {
+            return mcpTool;
         }
         return fixedTools.get(name);
     }

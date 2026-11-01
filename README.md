@@ -25,6 +25,9 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 | v3.7 | 工作流（PRD FR-25 最小闭环）：`workflow` + `workflow_version` 版本化独立实体 + 从执行图「另存为工作流」+ Agent 挂载（可 pin 版本）/ 取消挂载回落自有图；custom 运行优先跑挂载的工作流快照 | ✅ |
 | v3.8 | 收尾四件套（侧边栏占位清零）：产物与反馈（运行级点赞点踩+评论，upsert）· 我的评测（跨 Agent 批次总览）· LLM 观测（执行器回填实际模型名，按模型聚合调用量/token/时长/失败率）· API 分发（sk- 密钥只存哈希、明文仅创建时返回一次 + 开放端点 `/open/**` 同步调用，越权口径不变） | ✅ |
 | v3.9（本版） | 待排期清零：工作流发布为工具（`run_wf_<id>` 动态注册，执行=子运行跑当前生效版本，图内过滤防嵌套递归，目录按用户过滤）· 工作流独立画布（复用执行图画布，保存=新版本「画布编辑」）· 管理端 MCP 管理（admin 编辑平台连接 name/url/启停 + 新增/删除，密文不出库） | ✅ |
+| v4.0（本版） | 运行策略前置到 Agent（`agent_config.strategy`，对话页不再手选；请求显式指定 > Agent 配置 > auto）· 知识库关键词检索分词降级（整串 LIKE 落空后拆词 OR 匹配 + 命中数排序，snippet 取命中词附近窗口） | ✅ |
+| v4.0.1（本版） | 等待可感知：流式气泡显示「等待模型响应 · Ns / ⏳ 生成中 · Ns」运行秒数（替代黑盒等待）；thinking 开着但运行结束没等到 `<think>` 时气泡尾注提示「渠道未返回思考内容」（带 tools 中转丢 system 的已知问题有了页面级可见信号） | ✅ |
+| v4.1（本版） | 市面对比优化包（对标 Dify v1.15 / FastGPT 4.17）：**P0** 原生 reasoning_content 透出（integration 识别 delta 扩展字段，无原生回落 CoT 指令）· 回答引用溯源（tool_result.refs → 气泡「📚 依据」）· 知识库未命中队列（kb_miss 去重计数 + 页面 Top N）· 气泡 token 用量直出。**P1** 重排序（/rerank 精排 + 检索测试页重排前后对比，未配置跳过）· 模型连接 fallback 链（连接级失败按顺位回落，model_name 回填）。**P2** ngram 全文索引（BOOLEAN MODE 短语替代 LIKE 全表扫）· 版本 diff/回滚（工作流 + 执行图，非破坏式另存）· 模型健康定时探测（GET /models 探活 + 时延落库 + 页面健康列/立即检测）· 多模态知识库（markdown 图链入 kb_image，检索命中随文带出） | ✅ |
 | 待排期 | （无——PRD 明确「不做」的除外：插件市场 / 多租户 / A2A / 触发器 / 7 类节点中的 branch+http 等规格项） | — |
 
 ## 结构
@@ -254,6 +257,51 @@ lemon-agent-common/
   `X-Api-Key`——哈希查库 + 启用校验后**以密钥归属用户的身份**走 `createRun`（幂等/互斥/越权口径全部复用）。
 - `invoke` 同步等待终态（默认 60s、上限 120s，超时返回 runId 用 `GET /open/runs/{runId}` 续查）；
   鉴权失败返回平台统一包络（`code=UNAUTHORIZED/FORBIDDEN`），与站内接口语义一致。
+
+## v4.1 市面对比优化包实现要点
+
+**检索链路（O3/O4/P2-BM25/多模态）**
+
+- 关键词路升级：`kb_document` 加 ngram FULLTEXT 索引，`searchDocs` = MATCH AGAINST(BOOLEAN MODE 短语) OR LIKE 兜底（单字 query 全文分词器命不中，LIKE 补位）。
+- 重排：`lemon.retrieval.rerank-*` 平台级配置（Jina/Cohere/硅基流动兼容 /rerank），合并候选（关键词+分词+向量，按 title 去重）→ 精排 topK；失败降级原序截断——精排是增强，不能把检索搞挂。检索测试页展示「重排前候选」对比（FastGPT 4.17 同款能力），source 标注 keyword/vector/rerank 三级。
+- 未命中队列：`kb_miss` 按 (user_id, query) 唯一键去重计数（ON DUPLICATE KEY UPDATE），三级降级全空才记；页面 Top N + 次数——检索准确率的提升靠「知道用户问了什么而库答不了什么」。
+- 多模态：入库时提取 markdown 图链（`![]()`，去重保序 ≤20 张）入 `kb_image`；关键词路按 doc_id、向量路按 title 关联回带（doc_chunk 只 denormalize 了标题）；检索命中随文带出图片缩略，search_docs 结果也带 images 供模型引用。真跨模态向量检索（图文统一语义空间）需要多模态 embedding 渠道，留作 ImageEmbeddingPort 的后续缝——当前是「文本命中带出图片」的务实版。
+
+**运行时（O1/O5）**
+
+- 原生思考：SpringAiModelPort 识别消息 metadata 里的 `reasoningContent`/`reasoning_content`（不同网关两种键名），有就直接包 `<think>` 进 token 流（ThinkingPanel 无感复用），流终止仍在思考态时补闭合；没有原生字段再靠 CoT 指令——两条路都可见，渠道差异不再静默。
+- 连接 fallback：`streamTurnResilient` 封装——主连接失败（completed=false 且无工具调用且**未吐出正文**）时按用户其余启用连接顺位回落；一旦有正文流出就不重试（防气泡重复）；回落连接同步回填 run 的 model_name/model_conn_id（LLM 观测口径不变）。auto / plan / planner / 执行图（串行+并行）五条调用路径全部覆盖。
+- 版本号修复：save/rollback 的新版本号改为「全部版本最大值 +1」而非「生效版本 +1」——无生效版本但历史存在的中间态（异常中断）从 1 重算会撞 uk_agent_version 唯一键（实测踩坑）。
+
+**工程面（O2/O6/健康探测/diff）**
+
+- 引用溯源：`tool_result` 事件新增 `refs`（search_docs 命中文档标题），前端工具卡与回答气泡渲染「📚 依据」；usage 从 run_completed 直出气泡尾注。
+- 健康探测：`@Scheduled`（默认 5 分钟 + 启动 30s 首跑）对启用连接 GET {base}/models 探活，health_status/latency/时间三列落库；模型连接页健康列（● ok+时延 / ● 不可达 / ● 未检测）+「立即检测」按钮（POST /health-check 按用户触发）。
+- 版本 diff/回滚：`GraphDiffer` 结构化对比（节点按语义字段、坐标不参与；边 from→to+route），工作流与执行图双端点齐备；回滚 = 历史版本校验后另存为新的生效版本（非破坏式，回滚本身也是可追溯的版本记录）；工作流版本弹窗与执行图均有「对比 / 回滚到此」。
+
+## v4.0.1 等待可感知实现要点
+
+- 运行秒数：`runStartAt`/`elapsed` 状态 + 每秒 tick；等待期「等待模型响应 · Ns」、正文期「⏳ 生成中 · Ns」；断线恢复从本机时刻起算。
+- 思考未透出提示：run_completed 收口时 `lastMetaRef.thinking && 全程无 <think>` → 气泡打 noThink，尾注提示渠道未返回思考内容。
+
+## v4.0 策略前置 + 检索分词降级实现要点
+
+**运行策略前置到 Agent（FR-6 四要素）**
+
+- Agent 三要素变四要素：`strategy`（默认运行策略）落 `agent_config`，NULL = auto（兼容存量行与平台公共 Agent）。
+- 解析优先级：**请求显式指定 > Agent 配置 > auto**——对话页不再传策略（跟随 Agent）；`/open/**` API 分发显式传参口径不变。
+- update 语义对齐 `modelConnectionId`：`null = 保持不变`；非法值保存时 VALIDATION_ERROR（合法集与 model 层 Strategy 枚举同源：auto/plan/custom/fixed）。
+- 对话页把下拉换成只读标签（策略随 Agent 走），custom 前置校验与工作流提示逻辑不变，只是判定值来自 Agent 配置。
+
+**知识库检索分词降级（v3.6 双路降级的关键词路升级）**
+
+- 原实现整串 LIKE：模型拼的多词 query（「线上 CPU 飙升 排查」）不是原文连续子串时必然 0 命中，
+  Agent 只能答「知识库检索结果为空」——文档在库里但查不出来，比检索不准更伤。
+- 两级降级：**整串命中优先（最相关）→ 落空后按空白拆词 OR 匹配**（词长 2..20、最多 6 个，
+  标题命中 ×2 / 正文 ×1，按命中词数排序，同分新文档优先）→ 向量可用时再叠加去重（口径不变）。
+- 文档表是用户私有小集合（列表 LIMIT 200），分词检索直接内存打分，不引入新 SQL；
+  全部词走参数化 LIKE，无注入面。
+- snippet 从「永远取开头 200 字」升级为**首个命中词附近的 200 字窗口**——「检索测试」页一眼能看到为什么命中。
 
 ## v3.9 待排期清零实现要点
 

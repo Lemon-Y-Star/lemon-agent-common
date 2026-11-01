@@ -9,6 +9,7 @@ import {
   ModelConnectionsPage,
   ModelConnectionPayload,
 } from '../api/modelConnections'
+import { runHealthCheck } from '../api/modelConnections'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Switch from '../components/Switch'
 import { ToastHost, toast } from '../components/Toast'
@@ -42,6 +43,7 @@ const EMPTY_FORM: FormState = {
 
 export default function ModelConnections() {
   const [page, setPage] = useState<ModelConnectionsPage | null>(null)
+  const [checking, setChecking] = useState(false)
   const [form, setForm] = useState<FormState | null>(null)
   const [deleting, setDeleting] = useState<ModelConnection | null>(null)
   const [error, setError] = useState('')
@@ -59,6 +61,21 @@ export default function ModelConnections() {
   useEffect(() => {
     void reload()
   }, [reload])
+
+  /** 立即健康检测（v4.1）：对全部启用连接发一次 /models 探活。 */
+  async function onHealthCheck() {
+    setChecking(true)
+    try {
+      const results = await runHealthCheck()
+      const okCount = results.filter((r) => r.healthStatus === 'ok').length
+      toast(`检测完成：${okCount}/${results.length} 条连接健康`)
+      await reload()
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '检测失败')
+    } finally {
+      setChecking(false)
+    }
+  }
 
   function openCreate() {
     setForm({ ...EMPTY_FORM })
@@ -182,6 +199,9 @@ export default function ModelConnections() {
             <button className="btn sm primary" onClick={openCreate}>
               ＋ 添加连接
             </button>
+            <button className="btn sm" disabled={checking} onClick={() => void onHealthCheck()}>
+              {checking ? '检测中…' : '⚡ 立即检测'}
+            </button>
           </span>
         </h3>
         <p className="status-line" role="status">
@@ -197,6 +217,7 @@ export default function ModelConnections() {
               <th>密钥</th>
               <th>辅助</th>
               <th>状态</th>
+              <th>健康</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -222,6 +243,13 @@ export default function ModelConnections() {
                 <td>
                   {conn.enabled ? <span className="tag ok">启用</span> : <span className="tag err">停用</span>}
                 </td>
+                <td title={conn.healthCheckedAt ? `检测于 ${conn.healthCheckedAt}` : '尚未检测'}>
+                  {conn.healthStatus === 'ok'
+                    ? <span className="tag ok">● {conn.healthLatencyMs != null ? `${conn.healthLatencyMs}ms` : 'ok'}</span>
+                    : conn.healthStatus === 'fail'
+                      ? <span className="tag err">● 不可达</span>
+                      : <span className="tag gray">● 未检测</span>}
+                </td>
                 <td style={{ whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => openEdit(conn)}>
                     编辑
@@ -234,7 +262,7 @@ export default function ModelConnections() {
             ))}
             {page && page.connections.length === 0 && (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <div className="note gray">暂无个人连接。试用阶段可以直接使用平台模型，按需再添加。</div>
                 </td>
               </tr>

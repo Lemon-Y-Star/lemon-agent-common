@@ -26,8 +26,14 @@ public interface RetrievalPort {
      * @param title   源文档标题（引用溯源要显示给用户）
      * @param snippet 片段正文（截断）
      * @param score   相似度（1 - 余弦距离，越大越相似）
+     * @param images  文档关联图片（多模态随文带出，可空）
      */
-    record Hit(String title, String snippet, double score) {
+    record Hit(String title, String snippet, double score, List<String> images) {
+
+        /** 兼容旧三参构造（无图片）。 */
+        public Hit(String title, String snippet, double score) {
+            this(title, snippet, score, null);
+        }
     }
 
     /**
@@ -37,6 +43,28 @@ public interface RetrievalPort {
      */
     default boolean available() {
         return true;
+    }
+
+    /**
+     * 重排能力是否已配置（lemon.retrieval.rerank-*）；未配置时检索不做精排（降级不报错）。
+     *
+     * @return 出参：true 表示可用
+     */
+    default boolean rerankAvailable() {
+        return false;
+    }
+
+    /**
+     * 重排序（v4.1）：对召回候选按与 query 的相关度精排，取前 topK。
+     * 未配置重排时默认原样截断（保持降级语义）。
+     *
+     * @param query      入参：原始查询
+     * @param candidates 入参：召回候选（关键词+向量合并去重后）
+     * @param topK       入参：精排后保留条数
+     * @return 出参：精排后的命中
+     */
+    default List<Hit> rerank(String query, List<Hit> candidates, int topK) {
+        return candidates.stream().limit(Math.max(1, topK)).toList();
     }
 
 }

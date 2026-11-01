@@ -4,3 +4,6 @@ dist/
 .idea/
 *.iml
 .DS_Store
+.vscode/
+*.log
+backend/lemon-agent-backend-bootstrap/logs/

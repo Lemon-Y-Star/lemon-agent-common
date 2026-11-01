@@ -9,6 +9,10 @@ export interface AgentConfig {
   instruction: string | null
   /** 可用工具白名单；null = 全部已注册工具 */
   tools: string[] | null
+  /** 默认运行策略：auto/plan/custom/fixed（对话页跟随此策略发起运行） */
+  strategy: string
+  /** 短期记忆窗口轮数（1 轮=一问一答）；null = 默认 10 轮；0 = 不带历史 */
+  historyTurns: number | null
   /** 当前执行图版本；0 = 还没有图 */
   graphVersion: number
   /** 挂载的工作流；null = 用 Agent 自己的执行图 */
@@ -29,6 +33,8 @@ export interface AgentConfig {
 /** 可授权工具项（工具注册表的对外投影）。 */
 export interface ToolInfo {
   name: string
+  /** 展示标签（中文优先：内置中文名 / MCP·连接名 / 工作流：名；为空回退 name） */
+  label?: string
   description: string
   needsApproval: boolean
   available: boolean
@@ -54,6 +60,10 @@ export function createAgent(payload: {
   description: string
   instruction: string
   tools: string[] | null
+  /** 默认运行策略（可空 = auto） */
+  strategy?: string
+  /** 短期记忆窗口轮数（可空 = 默认 10；0 = 不带历史；上限 50） */
+  historyTurns?: number | null
   modelConnectionId: number | null
   /** 挂载工作流（可空） */
   workflowId?: number | null
@@ -70,6 +80,10 @@ export function updateAgent(
     description: string
     instruction: string
     tools: string[] | null
+    /** 默认运行策略（空 = auto） */
+    strategy?: string
+    /** 短期记忆窗口轮数：null = 保持不变；0 = 不带历史；上限 50 */
+    historyTurns?: number | null
     /** null = 保持不变；0 = 清除绑定 */
     modelConnectionId?: number | null
     enabled?: boolean

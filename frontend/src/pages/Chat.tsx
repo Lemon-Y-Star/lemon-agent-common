@@ -49,7 +49,11 @@ interface Bubble {
   approvalId?: string
   decided?: 'APPROVE' | 'REJECT'
   // 计划卡（plan 策略）/ 执行图卡（custom 策略）
-  planSteps?: { title: string; status: string }[]
+  planSteps?: { title: string; status: string; startedAt?: number; durationMs?: number }[]
+  /** 执行图/计划首节点开始时间（ms 时间戳，step_started 事件携带） */
+  graphStartedAt?: number
+  /** 执行图/计划总耗时（run_completed 时用 ts 差值回填） */
+  graphDurationMs?: number
   graphMode?: boolean
   // 并行执行时按节点区分气泡
   stepIndex?: number
@@ -57,18 +61,27 @@ interface Bubble {
   // 深度思考（v3.9）：thinkOpen = 面板展开；thinkTouched = 用户手动开合过（自动行为让位）
   thinkOpen?: boolean
   thinkTouched?: boolean
+  // 等待可感知（v4.0.1）：thinking 开着但运行结束都没等到 <think> —— 渠道/模型未透出思考
+  noThink?: boolean
+  // 引用溯源 + token 用量（v4.1）
+  refs?: string[]
+  usage?: { input: number; output: number }
+  // 耗时 + traceId 溯源（v4.1.3）：回答尾注展示，traceId 支持一键复制
+  durationMs?: number
+  traceId?: string
   // 失败重试（v3.9.1）
   retryable?: boolean
   failedInput?: string
   failedThinking?: boolean
 }
 
-const STRATEGIES = [
-  { value: 'auto', label: 'auto（自主迭代）' },
-  { value: 'plan', label: 'plan（先规划再执行）' },
-  { value: 'custom', label: 'custom（按执行图调度）' },
-  { value: 'fixed', label: 'fixed（直接问答）' },
-]
+/** 策略展示标签（策略已在 Agent 编辑页配置，对话页只读展示）。 */
+const STRATEGY_LABELS: Record<string, string> = {
+  auto: 'auto（自主迭代）',
+  plan: 'plan（先规划再执行）',
+  custom: 'custom（按执行图调度）',
+  fixed: 'fixed（直接问答）',
+}
 
 export default function Chat() {
   const params = useParams()
@@ -79,11 +92,13 @@ export default function Chat() {
 
   const [bubbles, setBubbles] = useState<Bubble[]>([])
   const [input, setInput] = useState('')
-  const [strategy, setStrategy] = useState('auto')
   const [thinkingOn, setThinkingOn] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [connected, setConnected] = useState(true)
   const [activeRunId, setActiveRunId] = useState<number | null>(null)
+  // 等待可感知（v4.0.1）：运行起始时间 + 已运行秒数，替代无反馈的黑盒等待
+  const [runStartAt, setRunStartAt] = useState<number | null>(null)
+  const [elapsed, setElapsed] = useState(0)
   const [agents, setAgents] = useState<AgentConfig[]>([])
   const [agentId, setAgentId] = useState<number | null>(null)
   const [renaming, setRenaming] = useState<{ sessionId: number; title: string } | null>(null)
@@ -93,11 +108,15 @@ export default function Chat() {
   const abortRef = useRef<{ abort: () => void } | null>(null)
   const lastSeqRef = useRef(0)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /** 图运行元信息（runId → 条件路由判定节点的 stepIndex 集合）：这类节点的输出是路由信号，不生成气泡。 */
+  const graphMetaRef = useRef<Record<number, { branch: Set<number> }>>({})
   /** 最近一次发送的元信息（失败重试时重放输入 / 思考开关）。 */
   const lastMetaRef = useRef<{ input: string; thinking: boolean }>({ input: '', thinking: false })
 
   // custom 策略的前置校验：选中的 Agent 既没有执行图也没挂工作流时，直接提示而不是发一个必败的请求
   const selectedAgent = agents.find((a) => a.id === agentId) ?? null
+  // 策略跟随 Agent 配置（v4.0 前置到 Agent 编辑页）；Agent 未加载到时按 auto 兜底
+  const strategy = selectedAgent?.strategy ?? 'auto'
   const customNotReady = strategy === 'custom' && selectedAgent !== null
     && (selectedAgent.graphVersion ?? 0) === 0 && !selectedAgent.workflowId
   // 反向提示：挂载了工作流但策略不是 custom——工作流不会被执行（auto / plan 不走图路由）
@@ -150,18 +169,27 @@ export default function Chat() {
       if (String(sessionId) !== params.sessionId) {
         navigate(`/chat/${sessionId}`, { replace: true })
       }
-      setBubbles(detail.messages.map((m: MessageItem) => ({
-        kind: 'msg' as const,
-        role: m.role,
-        content: m.content,
-        runId: m.runId ?? undefined,
-      })))
+      setBubbles(detail.messages.map((m: MessageItem) => {
+        // 历史回答的耗时/traceId：按 runId 从会话详情的运行摘要回填（v4.1.3）
+        const run = m.runId != null ? detail.runs.find((r) => r.runId === m.runId) : undefined
+        return {
+          kind: 'msg' as const,
+          role: m.role,
+          content: m.content,
+          runId: m.runId ?? undefined,
+          traceId: run?.traceId,
+          durationMs: run?.durationMs ?? undefined,
+        }
+      }))
       // 刷新恢复：会话里有 RUNNING run → 立即以 lastSeq 续流（动线 D）
       const running = detail.runs.find((r) => r.status === 'RUNNING' || r.status === 'BLOCKED')
       if (running) {
         setActiveRunId(running.runId)
         lastSeqRef.current = running.lastSeq
         setStreaming(true)
+        // 快照没有 startedAt：断线恢复从本机时刻起算，秒数偏小但不误导
+        setRunStartAt(Date.now())
+        setElapsed(0)
         subscribe(running.runId)
       } else {
         setActiveRunId(null)
@@ -191,7 +219,15 @@ export default function Chat() {
     }
     setStreaming(false)
     setActiveRunId(null)
+    setRunStartAt(null)
   }
+
+  // 等待可感知：每秒跳一次运行秒数（streaming 期间才计时）
+  useEffect(() => {
+    if (!streaming || runStartAt === null) return
+    const t = setInterval(() => setElapsed(Math.max(0, Math.floor((Date.now() - runStartAt) / 1000))), 1000)
+    return () => clearInterval(t)
+  }, [streaming, runStartAt])
 
   /** BLOCKED 期间轮询运行快照：感知审批超时（→ FAILED）或审批完成（→ RUNNING 续流）。 */
   const startBlockedPolling = useCallback((runId: number) => {
@@ -256,6 +292,10 @@ export default function Chat() {
                 return next
               }
             }
+            const meta = graphMetaRef.current[runId]
+            if (meta && meta.branch.has(stepIndex)) {
+              return next  // 路由判定节点的输出（如意图单词）不作为回答气泡展示
+            }
             const plan = next.find((x) => x.kind === 'plan' && x.runId === runId)
             const title = plan?.planSteps?.[stepIndex]?.title
             next.push({
@@ -266,6 +306,17 @@ export default function Chat() {
           })
         } else if (ev.type === 'graph_started') {
           const raw = (ev.payload.nodes ?? []) as { id: string; type: string; title: string }[]
+          // 条件路由判定节点（多条条件出边的节点）产出的「意图单词」是路由信号，不生成回答气泡
+          const edges = (ev.payload.edges ?? []) as { from: string; route?: string | null }[]
+          const ids = raw.map((x) => x.id)
+          const branch = new Set<number>()
+          edges.forEach((e) => {
+            if (e.route) {
+              const idx = ids.indexOf(e.from)
+              if (idx >= 0) branch.add(idx)
+            }
+          })
+          graphMetaRef.current[runId] = { branch }
           setBubbles((prev) => [...prev, {
             kind: 'plan',
             runId,
@@ -284,12 +335,14 @@ export default function Chat() {
           }])
         } else if (ev.type === 'step_started') {
           const idx = Number(ev.payload.stepIndex ?? 0)
+          const startedTs = Number(ev.payload.ts ?? Date.now())
           setBubbles((prev) => prev.map((b) => (
             b.kind === 'plan' && b.runId === runId && b.planSteps
               ? {
                   ...b,
+                  graphStartedAt: b.graphStartedAt ?? startedTs,
                   planSteps: b.planSteps.map((st, i) => (
-                    i === idx ? { ...st, status: 'RUNNING' }
+                    i === idx ? { ...st, status: 'RUNNING', startedAt: startedTs }
                       : i < idx && st.status !== 'DONE' ? { ...st, status: 'DONE' } : st
                   )),
                 }
@@ -298,12 +351,13 @@ export default function Chat() {
         } else if (ev.type === 'step_completed') {
           const idx = Number(ev.payload.stepIndex ?? 0)
           const skipped = !!ev.payload.skipped
+          const doneTs = Number(ev.payload.ts ?? Date.now())
           setBubbles((prev) => prev.map((b) => (
             b.kind === 'plan' && b.runId === runId && b.planSteps
               ? {
                   ...b,
                   planSteps: b.planSteps.map((st, i) => (
-                    i === idx ? { ...st, status: skipped ? 'SKIPPED' : 'DONE' } : st
+                    i === idx ? { ...st, status: skipped ? 'SKIPPED' : 'DONE', durationMs: skipped ? undefined : Math.max(0, doneTs - (st.startedAt ?? doneTs)) } : st
                   )),
                 }
               : b
@@ -330,9 +384,11 @@ export default function Chat() {
           startBlockedPolling(runId)
         } else if (ev.type === 'tool_result') {
           const callId = String(ev.payload.callId ?? '')
+          const refs = Array.isArray(ev.payload.refs) ? (ev.payload.refs as string[]) : undefined
           setBubbles((prev) => prev.map((b) => (
             b.kind === 'tool' && b.callId === callId
-              ? { ...b, resultBrief: String(ev.payload.resultBrief ?? ''), resultOk: !!ev.payload.ok, resultDone: true }
+              ? { ...b, resultBrief: String(ev.payload.resultBrief ?? ''), resultOk: !!ev.payload.ok,
+                  resultDone: true, refs: refs && refs.length > 0 ? refs : undefined }
               : b
           )))
         } else if (ev.type === 'approval_resolved') {
@@ -346,21 +402,42 @@ export default function Chat() {
         } else if (ev.type === 'run_completed') {
           // 权威正文覆盖（§5.7）：只覆盖最后一条 ASSISTANT 文本气泡
           const outputText = String(ev.payload.outputText ?? '')
+          const usagePayload = ev.payload.usage as { inputTokens?: number; outputTokens?: number } | undefined
           setBubbles((prev) => {
-            const texts = prev.filter((b) => b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId)
+            const completedTs = Number(ev.payload.ts ?? Date.now())
+            // 执行图/计划卡总耗时：run_completed ts 与首节点开始 ts 的差值回填
+            const base = prev.map((b) => (
+              b.kind === 'plan' && b.runId === runId && b.graphStartedAt
+                ? { ...b, graphDurationMs: Math.max(0, completedTs - b.graphStartedAt) }
+                : b
+            ))
+            const texts = base.filter((b) => b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId)
+            // 引用溯源（v4.1）：收集本 run 的 search_docs 命中文档标题，去重后挂到回答气泡
+            const runRefs = Array.from(new Set(prev
+              .filter((b) => b.kind === 'tool' && b.runId === runId && b.refs)
+              .flatMap((b) => b.refs ?? [])))
             // 单气泡（auto/plan）以权威正文覆盖；多气泡（并行图）保留各节点文本，避免重复一遍
             if (texts.length > 1) {
-              return prev
+              return base
             }
-            const next = [...prev]
+            const next = [...base]
             for (let i = next.length - 1; i >= 0; i--) {
               const b = next[i]
               if (b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId) {
-                // 深度思考：结论输出完自动收起思考面板（用户手动开合过则尊重其选择）
+                // 深度思考：结论输出完自动收起思考面板（用户手动开合过则尊重其选择）；
+                // thinking 开着但全程没等到 <think> → 打 noThink 标记，收口后提示（等待可感知 v4.0.1）
                 next[i] = {
                   ...b,
                   content: outputText,
                   thinkOpen: b.thinkTouched ? b.thinkOpen : false,
+                  noThink: !!lastMetaRef.current.thinking && !outputText.includes('<think>') || undefined,
+                  refs: runRefs.length > 0 ? runRefs : undefined,
+                  usage: usagePayload
+                    ? { input: Number(usagePayload.inputTokens ?? 0), output: Number(usagePayload.outputTokens ?? 0) }
+                    : undefined,
+                  // 耗时与 traceId（v4.1.3）：run_completed 直出，回答尾注展示
+                  durationMs: Number(ev.payload.durationMs ?? 0) > 0 ? Number(ev.payload.durationMs) : undefined,
+                  traceId: String(ev.payload.traceId ?? '') || undefined,
                 }
                 break
               }
@@ -528,8 +605,13 @@ export default function Chat() {
       }
       setActiveRunId(run.runId)
       lastSeqRef.current = run.lastSeq
-      // 占位气泡立即出现：取消/失败时用户能看到这条运行的痕迹
-      setBubbles((prev) => [...prev, { kind: 'msg', role: 'ASSISTANT', content: '', runId: run.runId }])
+      setRunStartAt(Date.now())
+      setElapsed(0)
+      // 占位气泡：普通策略立即出现（取消/失败时可见痕迹）；
+      // custom 图运行按节点分气泡，空占位只会留一个白条，不创建
+      if (strategy !== 'custom') {
+        setBubbles((prev) => [...prev, { kind: 'msg', role: 'ASSISTANT', content: '', runId: run.runId }])
+      }
       subscribe(run.runId)
       void reloadSessions()
     } catch (err) {
@@ -568,6 +650,12 @@ export default function Chat() {
           <div className="plan-head">
             {b.graphMode ? '🧩 执行图' : '🗺️ 执行计划'}
             <span className="tag info">{done}/{b.planSteps?.length ?? 0} 节点完成</span>
+            {/* 等待可感知（v4.3.1）：运行中实时跳秒（复用全局 elapsed tick）；完成后显示总耗时 */}
+            {streaming && b.planSteps?.some((x) => x.status === 'RUNNING')
+              ? <span className="tag info">⏱ 已运行 {elapsed}s</span>
+              : b.graphDurationMs != null
+                ? <span className="tag gray">⏱ 总耗时 {(b.graphDurationMs / 1000).toFixed(1)}s</span>
+                : null}
           </div>
           <ol className="plan-steps">
             {(b.planSteps ?? []).map((st, idx) => (
@@ -582,6 +670,10 @@ export default function Chat() {
                   {st.status === 'DONE' ? '✓' : st.status === 'SKIPPED' ? '—' : st.status === 'RUNNING' ? '▶' : idx + 1}
                 </span>
                 <span>{st.title}</span>
+                {/* 单节点耗时（v4.3.1）：step_started/completed 的 ts 差值 */}
+                {st.durationMs != null && (
+                  <span className="note gray" style={{ marginLeft: 6 }}>{(st.durationMs / 1000).toFixed(1)}s</span>
+                )}
               </li>
             ))}
           </ol>
@@ -597,6 +689,7 @@ export default function Chat() {
           </div>
           <div className="tcc-args">{JSON.stringify(b.args)}</div>
           {b.resultDone && <div className="tcc-res">{b.resultOk ? '✅ ' : '❌ '}{b.resultBrief}</div>}
+          {b.refs && b.refs.length > 0 && <div className="tcc-res">📚 命中：{b.refs.join('｜')}</div>}
         </div>
       )
     }
@@ -659,7 +752,52 @@ export default function Chat() {
               )
             })()}
             {b.role === 'USER' && (b.content || (streaming ? '…' : ''))}
-            {b.role === 'ASSISTANT' && !b.content && (streaming ? '…' : '')}
+            {b.role === 'ASSISTANT' && !b.content
+              && (streaming
+                ? (b.runId === activeRunId
+                  ? <span className="note gray">等待模型响应 · {elapsed}s</span>
+                  : '…')
+                : '')}
+            {/* 等待可感知（v4.0.1）：正文流式期间的计时尾注 */}
+            {b.role === 'ASSISTANT' && b.content && streaming && b.runId === activeRunId && (
+              <div className="note gray" style={{ marginTop: 4 }}>⏳ 生成中 · {elapsed}s</div>
+            )}
+            {/* 等待可感知（v4.0.1）：thinking 开着但渠道没透出思考内容 */}
+            {b.role === 'ASSISTANT' && b.noThink && (
+              <div className="note gray" style={{ marginTop: 4 }}>
+                🧠 本次未返回思考内容——渠道可能丢弃了 CoT 指令（带 tools 的中转渠道已知问题），或模型没有按 {'<think>'} 标签输出
+              </div>
+            )}
+            {/* 引用溯源（v4.1）：回答依据的命中文档 */}
+            {b.role === 'ASSISTANT' && b.refs && b.refs.length > 0 && (
+              <div className="note gray" style={{ marginTop: 4 }}>📚 依据：{b.refs.join('｜')}</div>
+            )}
+            {/* token 用量（v4.1）：run_completed.usage 直出 */}
+            {b.role === 'ASSISTANT' && b.usage && (b.usage.input > 0 || b.usage.output > 0) && (
+              <div className="note gray" style={{ marginTop: 2 }}>Tokens ↑{b.usage.input} ↓{b.usage.output}</div>
+            )}
+            {/* 耗时 + traceId 溯源（v4.1.3）：traceId 带一键复制，排查问题贴给后端即可对上全链路日志 */}
+            {b.role === 'ASSISTANT' && !streaming && (b.durationMs || b.traceId) && (
+              <div className="note gray" style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}>
+                {b.durationMs ? <span>⏱ 耗时 {(b.durationMs / 1000).toFixed(1)}s</span> : null}
+                {b.traceId ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span>traceId: {b.traceId.slice(0, 8)}…</span>
+                    <button
+                      className="btn sm"
+                      style={{ padding: '0 6px', fontSize: 11, lineHeight: '16px' }}
+                      title="复制完整 traceId"
+                      onClick={() => {
+                        if (b.traceId) {
+                          void navigator.clipboard.writeText(b.traceId)
+                          toast('traceId 已复制')
+                        }
+                      }}
+                    >复制</button>
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -687,11 +825,9 @@ export default function Chat() {
       <div className="chat-wrap">
         <div className="chat-main">
           <div className="chat-head">
-            <select className="btn sm" style={{ width: 'auto' }} value={strategy} onChange={(e) => setStrategy(e.target.value)}>
-              {STRATEGIES.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
+            <span className="tag gray" title="运行策略在「我的 Agent → 编辑」里配置，对话页跟随 Agent 发起">
+              策略 {STRATEGY_LABELS[strategy] ?? strategy}
+            </span>
             <button
               className={`btn sm ${thinkingOn ? 'primary' : ''}`}
               disabled={strategy === 'plan' || strategy === 'custom'}

@@ -5,7 +5,8 @@ import com.lemon.lemonagent.model.runtime.CreateKbDocResp;
 import com.lemon.lemonagent.model.runtime.DeleteKbDocReq;
 import com.lemon.lemonagent.model.runtime.DeleteKbDocResp;
 import com.lemon.lemonagent.model.runtime.KbDocsData;
-import com.lemon.lemonagent.model.runtime.KbSearchHit;
+import com.lemon.lemonagent.model.runtime.KbMissesData;
+import com.lemon.lemonagent.model.runtime.KbSearchData;
 import com.lemon.lemonagent.servicecore.runtime.KnowledgeService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
@@ -98,10 +99,22 @@ public class KnowledgeController {
      * @return 命中
      */
     @GetMapping("/search")
-    public BaseResult<List<KbSearchHit>> search(@RequestParam("q") String q,
-                                                @RequestParam(value = "topK", defaultValue = "5") int topK,
-                                                @RequestAttribute("lemon.userId") Long userId) {
-        return BaseResult.success(knowledgeService.search(userId, q, topK));
+    public BaseResult<KbSearchData> search(@RequestParam("q") String q,
+                                           @RequestParam(value = "topK", defaultValue = "5") int topK,
+                                           @RequestAttribute("lemon.userId") Long userId) {
+        return BaseResult.success(knowledgeService.searchDetailed(userId, q, topK));
+    }
+
+    /**
+     * 检索未命中队列（v4.1 运营闭环）：0 命中 query 按频次 Top N 展示，指导补文档。
+     *
+     * @param userId 当前用户
+     * @return 队列
+     */
+    @GetMapping("/misses")
+    public BaseResult<KbMissesData> misses(@RequestAttribute("lemon.userId") Long userId,
+                                           @RequestParam(value = "limit", defaultValue = "20") int limit) {
+        return BaseResult.success(knowledgeService.misses(userId, limit));
     }
 
 }

@@ -11,6 +11,7 @@ import com.lemon.lemonagent.model.runtime.AgentGraphData;
 import com.lemon.lemonagent.model.runtime.WorkflowData;
 import com.lemon.lemonagent.model.runtime.WorkflowDetailData;
 import com.lemon.lemonagent.model.runtime.WorkflowVersionData;
+import com.lemon.lemonagent.model.runtime.GraphDiffData;
 import com.lemon.lemonagent.model.runtime.WorkflowsData;
 import com.lemon.architecture.model.BusinessException;
 import com.lemon.architecture.model.ResultCodes;
@@ -125,12 +126,59 @@ public class WorkflowService {
         AgentGraphData graph = requireAgentGraph(userId, sourceAgentId);
         GraphValidator.validate(graph, toolRegistry);
 
-        WorkflowVersionEntity current = workflowRepository.findActive(workflowId);
-        int version = current == null ? 1 : current.getVersion() + 1;
+        List<WorkflowVersionEntity> history = workflowRepository.findVersions(workflowId);
+        int version = history.isEmpty() ? 1 : history.get(0).getVersion() + 1;
         workflowRepository.deactivateAll(workflowId);
         String text = note == null || note.isBlank() ? defaultNote(sourceAgentId) : note.trim();
         insertVersion(workflowId, version, graph, text);
         return toDetail(wf, workflowRepository.findVersions(workflowId));
+    }
+
+    /**
+     * 版本回滚（v4.1）：把历史版本复制为新版本（校验后 version+1，note=「回滚自 vN」）——
+     * 非破坏式：不删任何版本，回滚本身也是一条可追溯的版本记录。
+     *
+     * @param userId     入参：当前用户
+     * @param workflowId 入参：工作流 ID
+     * @param version    入参：要回滚到的历史版本
+     * @return 出参：详情（含新版本）
+     */
+    public WorkflowDetailData rollback(Long userId, Long workflowId, int version) {
+        WorkflowEntity wf = requireOwned(userId, workflowId);
+        WorkflowVersionEntity source = workflowRepository.findVersion(workflowId, version);
+        if (source == null) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "版本不存在：" + version);
+        }
+        WorkflowVersionEntity current = workflowRepository.findActive(workflowId);
+        if (current != null && current.getVersion() == version) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "该版本已是当前生效版本，无需回滚");
+        }
+        AgentGraphData graph = GraphCodec.decodeGraph(source.getGraphJson());
+        GraphValidator.validate(graph, toolRegistry);
+        List<WorkflowVersionEntity> history = workflowRepository.findVersions(workflowId);
+        int newVersion = history.isEmpty() ? 1 : history.get(0).getVersion() + 1;
+        workflowRepository.deactivateAll(workflowId);
+        insertVersion(workflowId, newVersion, graph, "回滚自 v" + version);
+        return toDetail(wf, workflowRepository.findVersions(workflowId));
+    }
+
+    /**
+     * 版本 diff（v4.1）：两版图的节点/边增删改对比。
+     *
+     * @param userId     入参：当前用户
+     * @param workflowId 入参：工作流 ID
+     * @param fromVersion 入参：基线版本
+     * @param toVersion   入参：对比版本
+     * @return 出参：结构化 diff
+     */
+    public GraphDiffData diff(Long userId, Long workflowId, int fromVersion, int toVersion) {
+        requireOwned(userId, workflowId);
+        WorkflowVersionEntity from = workflowRepository.findVersion(workflowId, fromVersion);
+        WorkflowVersionEntity to = workflowRepository.findVersion(workflowId, toVersion);
+        if (from == null || to == null) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "版本不存在");
+        }
+        return GraphDiffer.diff(fromVersion, toVersion, from.getGraphJson(), to.getGraphJson());
     }
 
     /**
@@ -183,8 +231,8 @@ public class WorkflowService {
     public WorkflowDetailData saveGraph(Long userId, Long workflowId, AgentGraphData graph) {
         WorkflowEntity wf = requireOwned(userId, workflowId);
         GraphValidator.validate(graph, toolRegistry);
-        WorkflowVersionEntity current = workflowRepository.findActive(workflowId);
-        int version = current == null ? 1 : current.getVersion() + 1;
+        List<WorkflowVersionEntity> history = workflowRepository.findVersions(workflowId);
+        int version = history.isEmpty() ? 1 : history.get(0).getVersion() + 1;
         workflowRepository.deactivateAll(workflowId);
         WorkflowVersionEntity v = new WorkflowVersionEntity();
         v.setWorkflowId(workflowId);

@@ -14,6 +14,9 @@ public class ToolInfoData {
     /** 工具名（授权清单里存的就是它） */
     private String name;
 
+    /** 展示标签（中文优先：内置工具中文名 / 「MCP 连接名」远端工具名；为空时前端回退 name） */
+    private String label;
+
     /** 工具描述（下发给模型的那段，也是给用户看的说明） */
     private String description;
 

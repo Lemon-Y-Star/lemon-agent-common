@@ -24,7 +24,8 @@ public class ModelConnectionJdbcRepository implements ModelConnectionRepository 
 
     private static final String COLUMNS =
             "id, user_id, name, provider, base_url, api_key_cipher, models_json, "
-                    + "allow_auxiliary, status, created_at, updated_at";
+                    + "allow_auxiliary, status, health_status, health_latency_ms, health_checked_at, "
+                    + "created_at, updated_at";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -41,6 +42,10 @@ public class ModelConnectionJdbcRepository implements ModelConnectionRepository 
             e.setModelsJson(rs.getString("models_json"));
             e.setAllowAuxiliary(rs.getInt("allow_auxiliary"));
             e.setStatus(rs.getInt("status"));
+            e.setHealthStatus(rs.getString("health_status"));
+            int latency = rs.getInt("health_latency_ms");
+            e.setHealthLatencyMs(rs.wasNull() ? null : latency);
+            e.setHealthCheckedAt(toInstant(rs.getTimestamp("health_checked_at")));
             e.setCreatedAt(toInstant(rs.getTimestamp("created_at")));
             e.setUpdatedAt(toInstant(rs.getTimestamp("updated_at")));
             return e;
@@ -64,6 +69,20 @@ public class ModelConnectionJdbcRepository implements ModelConnectionRepository 
                 "SELECT " + COLUMNS + " FROM model_connection WHERE id = ? AND user_id = ?",
                 mapper, id, userId);
         return list.isEmpty() ? null : list.get(0);
+    }
+
+    @Override
+    public List<ModelConnectionEntity> findAllEnabled() {
+        return jdbcTemplate.query(
+                "SELECT " + COLUMNS + " FROM model_connection WHERE status = 1 ORDER BY id", mapper);
+    }
+
+    @Override
+    public void saveHealth(Long id, String status, Integer latencyMs) {
+        jdbcTemplate.update(
+                "UPDATE model_connection SET health_status = ?, health_latency_ms = ?, health_checked_at = NOW(6) "
+                        + "WHERE id = ?",
+                status, latencyMs, id);
     }
 
     @Override

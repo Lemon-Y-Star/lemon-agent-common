@@ -5,9 +5,12 @@ import { ApiError } from '../api/client'
 import {
   createWorkflow,
   deleteWorkflow,
+  diffWorkflow,
   fetchWorkflow,
   fetchWorkflows,
+  rollbackWorkflow,
   saveWorkflowVersion,
+  type GraphDiff,
   type WorkflowDetail,
   type WorkflowItem,
 } from '../api/workflow'
@@ -34,6 +37,9 @@ export default function Workflows() {
 
   const [detail, setDetail] = useState<WorkflowDetail | null>(null)
   const [versionAgent, setVersionAgent] = useState<Record<number, number>>({})
+  // 版本 diff / 回滚（v4.1）
+  const [diff, setDiff] = useState<GraphDiff | null>(null)
+  const [diffBusy, setDiffBusy] = useState(false)
 
   const reload = useCallback(async () => {
     try {
@@ -100,6 +106,53 @@ export default function Workflows() {
     } finally {
       setBusy(false)
     }
+  }
+
+
+
+  /** 版本 diff（v4.1）：指定历史版本 vs 当前生效版本。 */
+  async function onDiff(version: number) {
+    if (!detail || !detail.currentVersion) return
+    setDiffBusy(true)
+    setError('')
+    try {
+      setDiff(await diffWorkflow(detail.id, version, detail.currentVersion))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '对比失败')
+    } finally {
+      setDiffBusy(false)
+    }
+  }
+
+  /** 版本回滚（v4.1）：历史版本另存为新的生效版本。 */
+  async function onRollback(version: number) {
+    if (!detail) return
+    setDiffBusy(true)
+    setError('')
+    try {
+      const updated = await rollbackWorkflow(detail.id, version)
+      setDetail(updated)
+      setDiff(null)
+      toast(`已回滚：v${version} 另存为新的生效版本 v${updated.currentVersion}`)
+      await reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '回滚失败')
+    } finally {
+      setDiffBusy(false)
+    }
+  }
+
+  /** diff 列表小节。 */
+  function DiffList({ title, items, color }: { title: string; items: string[]; color: string }) {
+    if (items.length === 0) return null
+    return (
+      <div style={{ marginTop: 6 }}>
+        <span style={{ color, fontSize: 12.5, fontWeight: 'bold' }}>{title}（{items.length}）</span>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginLeft: 12 }}>
+          {items.map((it, i) => <div key={i}>{it}</div>)}
+        </div>
+      </div>
+    )
   }
 
   async function onDelete(w: WorkflowItem) {
@@ -230,7 +283,7 @@ export default function Workflows() {
             ) : (
               <table>
                 <thead>
-                  <tr><th>版本</th><th>说明</th><th>节点数</th><th>状态</th></tr>
+                  <tr><th>版本</th><th>说明</th><th>节点数</th><th>状态</th><th>操作</th></tr>
                 </thead>
                 <tbody>
                   {detail.versions.map((v) => (
@@ -239,13 +292,43 @@ export default function Workflows() {
                       <td style={{ fontSize: 12 }}>{v.note || '—'}</td>
                       <td>{v.nodeCount}</td>
                       <td>{v.active ? <span className="tag ok">生效中</span> : <span className="tag gray">历史</span>}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {!v.active && detail.currentVersion > 0 && (
+                          <button
+                            className="btn sm"
+                            disabled={diffBusy}
+                            title={`对比 v${v.version} 与当前生效 v${detail.currentVersion}`}
+                            onClick={() => void onDiff(v.version)}
+                          >对比</button>
+                        )}{' '}
+                        <button
+                          className="btn sm"
+                          disabled={v.active || diffBusy}
+                          title={v.active ? '已是生效版本' : '把该版本另存为新的生效版本（历史版本保留）'}
+                          onClick={() => void onRollback(v.version)}
+                        >回滚到此</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
+            {diff && (
+              <div style={{ marginTop: 12, padding: 10, border: '1px solid #e2e6ef', borderRadius: 8, background: '#fafbff' }}>
+                <b style={{ fontSize: 13 }}>v{diff.fromVersion} → v{diff.toVersion} 对比</b>
+                <DiffList title="＋ 新增节点" items={diff.nodesAdded} color="#166534" />
+                <DiffList title="－ 删除节点" items={diff.nodesRemoved} color="#991b1b" />
+                <DiffList title="✎ 变更节点" items={diff.nodesChanged} color="#92400e" />
+                <DiffList title="＋ 新增连线" items={diff.edgesAdded} color="#166534" />
+                <DiffList title="－ 删除连线" items={diff.edgesRemoved} color="#991b1b" />
+                {diff.nodesAdded.length + diff.nodesRemoved.length + diff.nodesChanged.length
+                  + diff.edgesAdded.length + diff.edgesRemoved.length === 0 && (
+                  <div className="note gray">两版内容完全一致</div>
+                )}
+              </div>
+            )}
             <div className="note gray" style={{ marginTop: 10 }}>
-              挂载在 Agent 上才会跑；挂载入口在「我的 Agent → 编辑 → 挂载工作流」。
+              挂载在 Agent 上才会跑；挂载入口在「我的 Agent → 编辑 → 挂载工作流」。回滚 = 把历史版本另存为新的生效版本，历史全部保留。
             </div>
           </div>
         </div>

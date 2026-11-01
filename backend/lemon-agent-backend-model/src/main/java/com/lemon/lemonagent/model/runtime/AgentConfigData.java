@@ -24,6 +24,12 @@ public class AgentConfigData {
     /** 可用工具白名单；null = 全部已注册工具 */
     private java.util.List<String> tools;
 
+    /** 默认运行策略：auto/plan/custom/fixed（对话页跟随此策略发起运行） */
+    private String strategy;
+
+    /** 短期记忆窗口轮数（1 轮=用户+助手各 1 条；null = 默认 10 轮；0 = 不带历史） */
+    private Integer historyTurns;
+
     /** 当前执行图版本；0 = 还没有图（前端据此决定是否显示「执行图」入口） */
     private Integer graphVersion;
 

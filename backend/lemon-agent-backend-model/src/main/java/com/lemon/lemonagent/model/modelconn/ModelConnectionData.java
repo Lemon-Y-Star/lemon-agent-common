@@ -41,6 +41,15 @@ public class ModelConnectionData {
     private boolean allowAuxiliary;
 
     /** 创建时间（ISO-8601） */
+    /** 健康状态：ok / fail / unknown（v4.1 定时探测） */
+    private String healthStatus;
+
+    /** 最近探测时延 ms */
+    private Integer healthLatencyMs;
+
+    /** 最近探测时间 */
+    private String healthCheckedAt;
+
     private String createdAt;
 
     /** 更新时间（ISO-8601） */

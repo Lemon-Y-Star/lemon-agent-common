@@ -33,6 +33,10 @@ interface FormState {
   instruction: string
   /** null = 全部工具 */
   tools: string[] | null
+  /** 默认运行策略；对话页跟随此策略发起运行（v4.0 前置到 Agent） */
+  strategy: string
+  /** 短期记忆窗口轮数（1 轮=一问一答）；null = 默认 10 轮；0 = 不带历史 */
+  historyTurns: number | null
   modelConnectionId: number | null
   /** 挂载的工作流；null = 用 Agent 自己的执行图 */
   workflowId: number | null
@@ -41,6 +45,14 @@ interface FormState {
 }
 
 const ALL_TOOLS_HINT = '全部工具'
+
+/** 运行策略（与后端 Strategy 枚举同口径）；对话页按 Agent 配置发起，不再手选。 */
+const STRATEGIES = [
+  { value: 'auto', label: 'auto（自主迭代）' },
+  { value: 'plan', label: 'plan（先规划再执行）' },
+  { value: 'custom', label: 'custom（按执行图调度）' },
+  { value: 'fixed', label: 'fixed（直接问答）' },
+]
 
 export default function Agents() {
   const navigate = useNavigate()
@@ -132,6 +144,8 @@ export default function Agents() {
       description: form.description.trim(),
       instruction: form.instruction.trim(),
       tools: form.tools,
+      strategy: form.strategy,
+      historyTurns: form.historyTurns,
     }
     setBusy(true)
     setError('')
@@ -173,6 +187,10 @@ export default function Agents() {
     return connections.find((c) => c.id === agent.modelConnectionId)?.name ?? `#${agent.modelConnectionId}`
   }
 
+  function strategyLabel(agent: AgentConfig) {
+    return STRATEGIES.find((s) => s.value === (agent.strategy ?? 'auto'))?.label ?? agent.strategy
+  }
+
   function agentTable(list: AgentConfig[], readonly: boolean) {
     return (
       <table>
@@ -182,6 +200,7 @@ export default function Agents() {
             <th>描述</th>
             <th>可用工具</th>
             <th>模型来源</th>
+            <th>运行策略</th>
             <th>状态</th>
             <th>版本</th>
             {!readonly && <th>操作</th>}
@@ -208,6 +227,7 @@ export default function Agents() {
                 <td style={{ color: 'var(--muted)' }}>{a.description || '—'}</td>
                 <td style={{ color: 'var(--muted)', fontSize: 12 }}>{toolsLabel(a)}</td>
                 <td style={{ color: 'var(--muted)', fontSize: 12 }}>{modelLabel(a)}</td>
+                <td style={{ color: 'var(--muted)', fontSize: 12 }}>{strategyLabel(a)}</td>
                 <td>
                   {owned ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -234,6 +254,8 @@ export default function Agents() {
                           description: a.description,
                           instruction: a.instruction ?? '',
                           tools: a.tools,
+                          strategy: a.strategy ?? 'auto',
+                          historyTurns: a.historyTurns,
                           modelConnectionId: a.modelConnectionId,
                           workflowId: a.workflowId,
                           workflowVersion: a.workflowVersion,
@@ -307,7 +329,7 @@ export default function Agents() {
               onClick={() => {
                 setForm({
                   id: null, name: '', description: '', instruction: '',
-                  tools: null, modelConnectionId: null,
+                  tools: null, strategy: 'auto', historyTurns: null, modelConnectionId: null,
                   workflowId: null, workflowVersion: null,
                 })
                 setWfVersions([])
@@ -347,6 +369,44 @@ export default function Agents() {
                   style={{ width: '100%', border: '1px solid #d5d9e2', borderRadius: 7, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
                   placeholder="你是……助手。请用中文……需要创建工单时调用 create_ticket……"
                 />
+              </div>
+
+              <div className="field">
+                <label>
+                  短期记忆轮数
+                  <span className="hint">运行时携带的最近对话轮数（1 轮 = 一问一答）；0 = 只看本轮输入，留空 = 默认 10 轮，上限 50</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={form.historyTurns ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setForm({
+                      ...form,
+                      historyTurns: v === '' ? null : Math.max(0, Math.min(50, Number(v))),
+                    })
+                  }}
+                  placeholder="默认 10 轮"
+                  style={{ width: 160 }}
+                />
+              </div>
+
+              <div className="field">
+                <label>
+                  运行策略
+                  <span className="hint">对话页按此策略发起运行，不再每次手选；custom 需要执行图或挂载工作流</span>
+                </label>
+                <select
+                  value={form.strategy}
+                  onChange={(e) => setForm({ ...form, strategy: e.target.value })}
+                  style={{ width: '100%' }}
+                >
+                  {STRATEGIES.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="field">
@@ -423,7 +483,7 @@ export default function Agents() {
                         onChange={(e) => toggleOneTool(t.name, e.target.checked)}
                       />
                       <span className="tool-info">
-                        <span className="tool-name">{t.name}</span>
+                        <span className="tool-name" title={t.description}>{t.label || t.name}</span>
                         {t.needsApproval && <span className="tag warn">需审批</span>}
                         {!t.available && <span className="tag gray">不可用</span>}
                         <span className="tool-desc">{t.description}</span>

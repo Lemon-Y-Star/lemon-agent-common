@@ -31,6 +31,12 @@ public class AgentConfigEntity {
     /** 可用工具白名单（JSON 数组字符串）；NULL = 全部已注册工具 */
     private String toolsJson;
 
+    /** 默认运行策略：auto/plan/custom/fixed；NULL = auto（对话页跟随此配置发起运行） */
+    private String strategy;
+
+    /** 短期记忆窗口轮数（1 轮=用户+助手各 1 条）；NULL = 默认 10 轮；0 = 不带历史 */
+    private Integer historyTurns;
+
     /** 绑定模型连接；NULL = 用户最新启用连接 */
     private Long modelConnectionId;
 

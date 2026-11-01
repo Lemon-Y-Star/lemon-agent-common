@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
-import { createKbDoc, deleteKbDoc, fetchKbDocs, searchKb, type KbDoc, type KbHit } from '../api/knowledge'
+import {
+  createKbDoc, deleteKbDoc, fetchKbDocs, fetchKbMisses, searchKb,
+  type KbDoc, type KbHit, type KbMissItem, type KbSearchResult,
+} from '../api/knowledge'
 import { ToastHost, toast } from '../components/Toast'
 
 /** 我的知识库（v3.6）：文档管理 + 检索测试；未配 embedding 时自动降级为关键词检索。 */
@@ -10,15 +13,17 @@ export default function Knowledge() {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [query, setQuery] = useState('')
-  const [hits, setHits] = useState<KbHit[] | null>(null)
+  const [result, setResult] = useState<KbSearchResult | null>(null)
+  const [misses, setMisses] = useState<KbMissItem[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   const reload = useCallback(async () => {
     try {
-      const data = await fetchKbDocs()
+      const [data, missData] = await Promise.all([fetchKbDocs(), fetchKbMisses(20)])
       setDocs(data.docs)
       setVectorEnabled(data.vectorEnabled)
+      setMisses(missData.misses)
       setError('')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '加载失败')
@@ -59,7 +64,7 @@ export default function Knowledge() {
   async function onSearch() {
     if (!query.trim()) return
     try {
-      setHits(await searchKb(query.trim(), 5))
+      setResult(await searchKb(query.trim(), 5))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '检索失败')
     }
@@ -123,23 +128,65 @@ export default function Knowledge() {
             <button className="btn" onClick={() => void onSearch()}>检索</button>
           </div>
           <div className="kb-hits">
-            {hits === null && <div className="note gray">检索结果会显示在这里，并标注命中来源</div>}
-            {hits?.length === 0 && <div className="note gray">没有命中——换个关键词，或先入库文档</div>}
-            {hits?.map((h, i) => (
-              <div key={i} className="kb-hit">
-                <div className="kb-hit-head">
-                  <b>{h.title}</b>
-                  <span className={`tag ${h.source === 'vector' ? 'info' : 'gray'}`}>
-                    {h.source === 'vector' ? '向量' : '关键词'}
-                  </span>
-                </div>
-                <div className="kb-doc-body">{h.snippet}</div>
+            {result === null && <div className="note gray">检索结果会显示在这里，并标注命中来源</div>}
+            {result !== null && result.hits.length === 0 && (
+              <div className="note gray">没有命中——这条查询已进「未命中队列」，补充文档后即可被检索到</div>
+            )}
+            {result?.reranked && (
+              <div className="note gray" style={{ margin: '4px 0' }}>
+                已启用重排精排（<b>{result.hits.length}</b> 条）——重排前候选见下方对比
               </div>
-            ))}
+            )}
+            {result?.hits.map((h, i) => <KbHitView key={i} hit={h} />)}
+            {result?.reranked && result.beforeRerank && result.beforeRerank.length > 0 && (
+              <>
+                <div className="note gray" style={{ margin: '8px 0 2px' }}>↳ 重排前候选（对比）：</div>
+                {result.beforeRerank.map((h, i) => <KbHitView key={'b' + i} hit={h} muted />)}
+              </>
+            )}
           </div>
         </div>
       </div>
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <h3>检索未命中队列（{misses.length}）</h3>
+        <div className="note gray" style={{ marginBottom: 8 }}>
+          检索 0 命中的查询按频次沉淀在这里——补充对应文档后再用同一问题回归，检索准确率就是这么涨的
+        </div>
+        {misses.length === 0 && <div className="note gray">暂无未命中记录</div>}
+        {misses.map((m, i) => (
+          <div key={i} className="kb-doc" style={{ padding: '6px 0' }}>
+            <div className="kb-doc-head">
+              <span>{m.query}</span>
+              <span className="tag warn">未命中 {m.hits} 次</span>
+            </div>
+          </div>
+        ))}
+      </div>
       <ToastHost />
     </>
+  )
+}
+
+/** 单条命中渲染（v4.1：rerank 标签 + 多模态图片缩略）。 */
+function KbHitView({ hit, muted }: { hit: KbHit; muted?: boolean }) {
+  const sourceTag = hit.source === 'rerank' ? '精排' : hit.source === 'vector' ? '向量' : '关键词'
+  const tagClass = hit.source === 'rerank' ? 'ok' : hit.source === 'vector' ? 'info' : 'gray'
+  return (
+    <div className="kb-hit" style={muted ? { opacity: 0.65 } : undefined}>
+      <div className="kb-hit-head">
+        <b>{hit.title}</b>
+        <span className={`tag ${tagClass}`}>{sourceTag}</span>
+      </div>
+      <div className="kb-doc-body">{hit.snippet}</div>
+      {hit.images && hit.images.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+          {hit.images.map((u) => (
+            <img key={u} src={u} alt={hit.title}
+                 style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e6ef' }} />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

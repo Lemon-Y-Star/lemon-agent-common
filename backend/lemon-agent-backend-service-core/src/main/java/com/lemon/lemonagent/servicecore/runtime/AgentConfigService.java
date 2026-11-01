@@ -34,6 +34,12 @@ public class AgentConfigService {
     /** 模型连接「清除绑定」约定值：update 传 0 表示回落用户最新启用连接。 */
     private static final long CLEAR_MODEL_CONNECTION = 0L;
 
+    /** 合法运行策略（与 model 层 Strategy 枚举同口径）。 */
+    private static final List<String> STRATEGIES = List.of("auto", "plan", "custom", "fixed");
+
+    /** 短期记忆轮数上限：再多 prompt 就无界膨胀，成本线性增长。 */
+    private static final int MAX_HISTORY_TURNS = 50;
+
     private final AgentConfigRepository repository;
 
     private final ModelConnectionRepository modelConnectionRepository;
@@ -85,8 +91,9 @@ public class AgentConfigService {
      * @return 出参：创建后的 Agent
      */
     public AgentConfigData create(Long userId, String name, String description,
-                                  String instruction, List<String> tools, Long modelConnectionId,
-                                  Long workflowId, Integer workflowVersion) {
+                                  String instruction, List<String> tools, String strategy,
+                                  Integer historyTurns,
+                                  Long modelConnectionId, Long workflowId, Integer workflowVersion) {
         validate(name, instruction);
         AgentConfigEntity entity = new AgentConfigEntity();
         entity.setUserId(userId);
@@ -94,6 +101,8 @@ public class AgentConfigService {
         entity.setDescription(defaultIfBlank(description, ""));
         entity.setInstruction(instruction.trim());
         entity.setToolsJson(normalizeTools(tools));
+        entity.setStrategy(normalizeStrategy(strategy));
+        entity.setHistoryTurns(normalizeHistoryTurns(historyTurns));
         entity.setModelConnectionId(requireModelConnection(userId, modelConnectionId));
         Long wf = requireWorkflow(userId, workflowId);
         entity.setWorkflowId(wf);
@@ -112,14 +121,23 @@ public class AgentConfigService {
      * @return 出参：更新后的 Agent
      */
     public AgentConfigData update(Long userId, Long agentId, String name, String description,
-                                  String instruction, List<String> tools, Long modelConnectionId,
-                                  Boolean enabled, Long workflowId, Integer workflowVersion) {
+                                  String instruction, List<String> tools, String strategy,
+                                  Integer historyTurns,
+                                  Long modelConnectionId, Boolean enabled,
+                                  Long workflowId, Integer workflowVersion) {
         validate(name, instruction);
         AgentConfigEntity entity = requireOwned(userId, agentId);
         entity.setName(name.trim());
         entity.setDescription(defaultIfBlank(description, ""));
         entity.setInstruction(instruction.trim());
         entity.setToolsJson(normalizeTools(tools));
+        if (strategy != null) {
+            // null = 保持不变（与 modelConnectionId 的 update 语义一致）
+            entity.setStrategy(normalizeStrategy(strategy));
+        }
+        // historyTurns 无条件覆盖：前端表单总是携带该字段（清空 = null = 恢复默认 10 轮），
+        // 与 strategy 的「null = 保持不变」不同——这里 null 是一个合法的目标状态
+        entity.setHistoryTurns(normalizeHistoryTurns(historyTurns));
         if (modelConnectionId != null) {
             entity.setModelConnectionId(modelConnectionId == CLEAR_MODEL_CONNECTION
                     ? null : requireModelConnection(userId, modelConnectionId));
@@ -208,6 +226,40 @@ public class AgentConfigService {
         if (instruction == null || instruction.isBlank() || instruction.length() > 4000) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "系统提示词不能为空且不超过 4000 字符");
         }
+    }
+
+    /**
+     * 策略规整：null/空 = auto（不落库，查询侧兜底）；非法值报 VALIDATION_ERROR。
+     *
+     * @param strategy 入参：请求里的策略
+     * @return 出参：落库策略（null = auto）
+     */
+    private String normalizeStrategy(String strategy) {
+        if (strategy == null || strategy.isBlank()) {
+            return null;
+        }
+        String value = strategy.trim().toLowerCase();
+        if (!STRATEGIES.contains(value)) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                    "未知策略：" + strategy + "，可选 auto / plan / custom / fixed");
+        }
+        return value;
+    }
+
+    /**
+     * 短期记忆轮数归一化：负数报错、越界收敛到边界（0..50）、null 保持默认。
+     *
+     * @param historyTurns 入参：请求里的轮数
+     * @return 出参：落库轮数（null = 默认 10 轮）
+     */
+    private Integer normalizeHistoryTurns(Integer historyTurns) {
+        if (historyTurns == null) {
+            return null;
+        }
+        if (historyTurns < 0) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "短期记忆轮数不能为负数");
+        }
+        return Math.min(historyTurns, MAX_HISTORY_TURNS);
     }
 
     /**
@@ -310,6 +362,9 @@ public class AgentConfigService {
         // 平台公共不下发 instruction 明文（避免用户照抄平台提示词后自建同名 Agent 绕过版本管理）
         data.setInstruction(entity.getUserId() == null ? null : entity.getInstruction());
         data.setTools(AgentToolCodec.decode(entity.getToolsJson()));
+        // NULL = auto：对外统一回显具体策略，前端不用判空
+        data.setStrategy(entity.getStrategy() == null ? "auto" : entity.getStrategy());
+        data.setHistoryTurns(entity.getHistoryTurns());
         data.setModelConnectionId(entity.getModelConnectionId());
         boolean enabled = entity.getStatus() != null && entity.getStatus() == 1;
         data.setEnabled(enabled);

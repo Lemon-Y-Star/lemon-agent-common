@@ -30,6 +30,22 @@ public interface ModelConnectionRepository {
     ModelConnectionEntity findByIdAndUser(Long id, Long userId);
 
     /**
+     * 全部启用的连接（健康定时探测用，跨用户）。
+     *
+     * @return 出参：连接列表
+     */
+    List<ModelConnectionEntity> findAllEnabled();
+
+    /**
+     * 落健康探测结果（v4.1）。
+     *
+     * @param id        入参：连接 ID
+     * @param status    入参：ok / fail
+     * @param latencyMs 入参：时延 ms（失败为 null）
+     */
+    void saveHealth(Long id, String status, Integer latencyMs);
+
+    /**
      * 插入连接，回填自增主键。
      *
      * @param entity 入参：待插入实体

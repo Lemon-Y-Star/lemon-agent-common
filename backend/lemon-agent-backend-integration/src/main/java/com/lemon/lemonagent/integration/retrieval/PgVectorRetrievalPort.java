@@ -47,6 +47,70 @@ public class PgVectorRetrievalPort implements RetrievalPort {
     }
 
     @Override
+    public boolean rerankAvailable() {
+        var p = properties;
+        return p.getRerankBaseUrl() != null && !p.getRerankBaseUrl().isBlank()
+                && p.getRerankApiKey() != null && !p.getRerankApiKey().isBlank()
+                && p.getRerankModel() != null && !p.getRerankModel().isBlank();
+    }
+
+    /**
+     * 重排序（v4.1）：POST {rerankBaseUrl}/rerank（Jina/Cohere/硅基流动兼容格式），
+     * 入参 {model, query, documents, top_n}，回参 results[{index, relevance_score}]。
+     * 失败时降级为原序截断——精排是增强，不能因为它把检索搞挂（与 embedding 的降级哲学一致）。
+     */
+    @Override
+    public List<Hit> rerank(String query, List<Hit> candidates, int topK) {
+        if (!rerankAvailable() || candidates.size() <= 1) {
+            return candidates.stream().limit(Math.max(1, topK)).toList();
+        }
+        try {
+            return rerankViaHttp(query, candidates, topK);
+        } catch (Exception e) {
+            log.warn("重排失败，降级为原序截断: {}", e.getMessage());
+            return candidates.stream().limit(Math.max(1, topK)).toList();
+        }
+    }
+
+    private List<Hit> rerankViaHttp(String query, List<Hit> candidates, int topK) throws Exception {
+        String url = properties.getRerankBaseUrl().replaceAll("/+$", "") + "/rerank";
+        var payload = new java.util.LinkedHashMap<String, Object>();
+        payload.put("model", properties.getRerankModel());
+        payload.put("query", query);
+        payload.put("documents", candidates.stream()
+                .map(h -> h.title() + "\n" + h.snippet()).toList());
+        payload.put("top_n", Math.max(1, Math.min(topK, 10)));
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(url))
+                .header("Authorization", "Bearer " + properties.getRerankApiKey())
+                .header("Content-Type", "application/json")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload)))
+                .timeout(java.time.Duration.ofSeconds(15))
+                .build();
+        java.net.http.HttpResponse<String> resp = java.net.http.HttpClient.newHttpClient()
+                .send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new IllegalStateException("rerank HTTP " + resp.statusCode());
+        }
+        var root = mapper.readTree(resp.body());
+        var results = root.path("results");
+        if (!results.isArray() || results.isEmpty()) {
+            throw new IllegalStateException("rerank 返回空 results");
+        }
+        List<Hit> out = new ArrayList<>();
+        for (var r : results) {
+            int idx = r.path("index").asInt(-1);
+            if (idx >= 0 && idx < candidates.size()) {
+                Hit c = candidates.get(idx);
+                double score = r.path("relevance_score").asDouble(0);
+                out.add(new Hit(c.title(), c.snippet(), score, c.images()));
+            }
+        }
+        return out;
+    }
+
+    @Override
     public boolean available() {
         var p = properties;
         return p.getEmbeddingBaseUrl() != null && !p.getEmbeddingBaseUrl().isBlank()

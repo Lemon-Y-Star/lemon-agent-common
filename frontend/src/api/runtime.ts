@@ -33,6 +33,8 @@ export interface RunBrief {
   lastSeq: number
   traceId: string
   strategy: string
+  /** 运行耗时（毫秒，startedAt → endedAt）；未结束为 null */
+  durationMs?: number | null
 }
 
 export interface SessionDetail {

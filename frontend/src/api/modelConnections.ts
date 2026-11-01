@@ -14,6 +14,10 @@ export interface ModelConnection {
   models: string[]
   enabled: boolean
   allowAuxiliary: boolean
+  /** 健康状态：ok / fail / unknown（v4.1 定时探测） */
+  healthStatus: 'ok' | 'fail' | 'unknown'
+  healthLatencyMs: number | null
+  healthCheckedAt: string | null
   createdAt: string | null
   updatedAt: string | null
 }
@@ -51,4 +55,10 @@ export function updateModelConnection(id: number, payload: ModelConnectionPayloa
 
 export function deleteModelConnection(id: number): Promise<null> {
   return del<null>(`/workspace/model-connections/${id}`)
+}
+
+/** 立即探测当前用户的启用连接（v4.1「立即检测」按钮）。 */
+export function runHealthCheck(): Promise<{ id: number; name: string; healthStatus: string; healthLatencyMs: number | null }[]> {
+  return post<{ id: number; name: string; healthStatus: string; healthLatencyMs: number | null }[]>(
+    '/workspace/model-connections/health-check', {})
 }

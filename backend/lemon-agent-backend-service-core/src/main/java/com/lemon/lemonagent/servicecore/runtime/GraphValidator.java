@@ -81,8 +81,12 @@ final class GraphValidator {
                                     + "）：工作流经 auto / plan 对话调用，避免嵌套递归");
                 }
                 if (!registry.names().contains(node.getTool())) {
-                    throw new BusinessException(ResultCodes.VALIDATION_ERROR,
-                            "TOOL 节点 " + node.getId() + " 引用了未注册的工具：" + node.getTool());
+                    // MCP 桥接工具（mcp<connId>_<tool>）在启动后异步绑定，存在秒级空窗：
+                    // 此时创建 run 会误报「未注册」，放行交给执行期报明确错误（连接不可用/工具下线）
+                    if (!node.getTool().matches("^mcp\\d+_[a-zA-Z0-9_]+$")) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "TOOL 节点 " + node.getId() + " 引用了未注册的工具：" + node.getTool());
+                    }
                 }
             } else if ("LLM".equals(type)
                     && (node.getPrompt() == null || node.getPrompt().isBlank())

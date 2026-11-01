@@ -174,6 +174,9 @@ public class AgentRuntimeService {
                     brief.setLastSeq(r.getLastSeq());
                     brief.setTraceId(r.getTraceId());
                     brief.setStrategy(r.getStrategy());
+                    // 耗时：终态运行 endedAt - startedAt（对话页回答尾注展示用；未结束为 null）
+                    brief.setDurationMs(r.getStartedAt() == null || r.getEndedAt() == null
+                            ? null : r.getEndedAt().toEpochMilli() - r.getStartedAt().toEpochMilli());
                     return brief;
                 })
                 .toList());
@@ -233,7 +236,6 @@ public class AgentRuntimeService {
         if (clientRequestId == null || clientRequestId.isBlank() || clientRequestId.length() > 64) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "clientRequestId 必须为不超过 64 位的幂等键");
         }
-        Strategy strategy = Strategy.parse(strategyRaw);
 
         // ① 幂等：同 (userId, clientRequestId) 命中原 run，不新建不二次调模型
         AgentRunEntity existing = runRepository.findByClientRequestId(userId, clientRequestId);
@@ -262,6 +264,11 @@ public class AgentRuntimeService {
         // ④ 建 run：创建即 RUNNING；run_started 占 seq=1
         // Agent 挂载：跟随当前已启用版本（PRD S2 工具语义）；未指定时取平台默认
         AgentConfigEntity agent = resolveAgent(userId, agentId);
+
+        // 策略解析（v4.0 前置到 Agent）：请求显式指定 > Agent 配置的默认策略 > auto。
+        // 对话页不再传策略（跟随 Agent 配置）；/open/** 显式传参的口径不变。
+        Strategy strategy = Strategy.parse(strategyRaw == null || strategyRaw.isBlank()
+                ? agent.getStrategy() : strategyRaw);
 
         // custom（执行图）：提交时冻结图快照并校验，改图不影响在跑的运行；图非法则直接拒绝，不分配 seq
         String graphSnapshot = null;

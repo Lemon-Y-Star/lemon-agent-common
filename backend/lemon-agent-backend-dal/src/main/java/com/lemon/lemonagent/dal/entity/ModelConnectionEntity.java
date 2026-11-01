@@ -39,6 +39,15 @@ public class ModelConnectionEntity {
     /** 状态：1 启用 / 0 停用 */
     private Integer status;
 
+    /** 健康状态：ok / fail / unknown（定时探测，v4.1） */
+    private String healthStatus;
+
+    /** 最近一次探测时延 ms */
+    private Integer healthLatencyMs;
+
+    /** 最近探测时间 */
+    private Instant healthCheckedAt;
+
     /** 创建时间 */
     private Instant createdAt;
 

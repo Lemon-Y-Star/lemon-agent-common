@@ -88,6 +88,15 @@ public final class Operations {
     /** 工作流独立画布保存（保存 = 新版本，v3.9） */
     public static final String WORKFLOW_GRAPH_SAVE = "WORKFLOW_GRAPH_SAVE";
 
+    /** 工作流版本回滚（v4.1） */
+    public static final String WORKFLOW_ROLLBACK = "WORKFLOW_ROLLBACK";
+
+    /** Agent 执行图版本回滚（v4.1） */
+    public static final String AGENT_GRAPH_ROLLBACK = "AGENT_GRAPH_ROLLBACK";
+
+    /** 模型连接健康立即检测（v4.1） */
+    public static final String MODEL_HEALTH_CHECK = "MODEL_HEALTH_CHECK";
+
     /** 失败运行重试（按原始输入重放，v3.9.1） */
     public static final String RUN_RETRY = "RUN_RETRY";
 

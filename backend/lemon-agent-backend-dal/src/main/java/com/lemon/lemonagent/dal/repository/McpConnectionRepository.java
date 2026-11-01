@@ -25,6 +25,13 @@ public interface McpConnectionRepository {
     List<McpConnectionEntity> findByUser(Long userId);
 
     /**
+     * 查全部连接（平台公共 + 所有自建；MCP 工具桥启动回放用）。
+     *
+     * @return 出参：全部连接列表
+     */
+    List<McpConnectionEntity> findAll();
+
+    /**
      * 按 ID 查用户的自建连接。
      *
      * @param id     入参：连接 ID
@@ -57,5 +64,14 @@ public interface McpConnectionRepository {
      * @return 出参：影响行数
      */
     int delete(Long id, Long userId);
+
+    /**
+     * 仅更新可用性标注（工具桥探测成功/失败时写；不限归属，平台连接也要能写）。
+     *
+     * @param id     入参：连接 ID
+     * @param reason 入参：不可用原因；null = 清除（可用）
+     * @return 出参：影响行数
+     */
+    int updateUnavailable(Long id, String reason);
 
 }

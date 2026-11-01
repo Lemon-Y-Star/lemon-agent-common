@@ -9,6 +9,8 @@ import com.lemon.lemonagent.model.modelconn.UpdateModelConnectionReq;
 import com.lemon.lemonagent.model.modelconn.UpdateModelConnectionResp;
 import com.lemon.lemonagent.servicecore.conn.ModelConnectionService;
 import com.lemon.architecture.model.BaseResult;
+import com.lemon.lemonagent.model.runtime.ModelHealthCheckReq;
+import com.lemon.lemonagent.model.runtime.ModelHealthCheckResp;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;
 import jakarta.annotation.Resource;
@@ -23,6 +25,9 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * 模型连接接口（PRD FR-13）。
  *
@@ -32,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/workspace/model-connections")
 public class ModelConnectionController {
+
 
     /** 框架操作入口：校验 → 分发 → 日志 → 异常收口。 */
     @Resource
@@ -117,4 +123,19 @@ public class ModelConnectionController {
                 AssertUtils.notNull(req.getId(), "连接 ID 不能为空"));
     }
 
+
+    /**
+     * 立即探测当前用户的启用连接（v4.1，前端「立即检测」按钮）。
+     *
+     * @param userId 当前用户
+     * @return 逐条结果
+     */
+    @PostMapping("/health-check")
+    public ModelHealthCheckResp healthCheck(@RequestAttribute("lemon.userId") Long userId,
+                                            @RequestHeader(value = "X-Source", defaultValue = "web") String source) {
+        ModelHealthCheckReq request = new ModelHealthCheckReq();
+        request.setUserId(userId);
+        request.fillRoute(source);
+        return optUtil.exec(request, new ModelHealthCheckResp(), req -> { });
+    }
 }

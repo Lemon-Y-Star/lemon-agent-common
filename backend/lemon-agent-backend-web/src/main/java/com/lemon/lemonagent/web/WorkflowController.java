@@ -10,6 +10,9 @@ import com.lemon.lemonagent.model.runtime.SaveWorkflowGraphResp;
 import com.lemon.lemonagent.model.runtime.SaveWorkflowVersionReq;
 import com.lemon.lemonagent.model.runtime.SaveWorkflowVersionResp;
 import com.lemon.lemonagent.model.runtime.WorkflowDetailData;
+import com.lemon.lemonagent.model.runtime.GraphDiffData;
+import com.lemon.lemonagent.model.runtime.RollbackWorkflowReq;
+import com.lemon.lemonagent.model.runtime.RollbackWorkflowResp;
 import com.lemon.lemonagent.model.runtime.WorkflowsData;
 import com.lemon.lemonagent.servicecore.runtime.WorkflowService;
 import com.lemon.architecture.model.BaseResult;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -72,6 +76,44 @@ public class WorkflowController {
         return optUtil.exec(request, new CreateWorkflowResp(), req -> {
             AssertUtils.notBlank(req.getName(), "工作流名称不能为空");
         });
+    }
+
+    /**
+     * 版本回滚（v4.1）：历史版本复制为新版本（非破坏式）。
+     *
+     * @param workflowId 路径参数：工作流 ID
+     * @param version    路径参数：要回滚到的版本
+     * @param userId     当前用户
+     * @return 详情（含新版本）
+     */
+    @PostMapping("/{workflowId}/versions/{version}/rollback")
+    public RollbackWorkflowResp rollback(@PathVariable Long workflowId,
+                                         @PathVariable int version,
+                                         @RequestAttribute("lemon.userId") Long userId,
+                                         @RequestHeader(value = "X-Source", defaultValue = "web") String source) {
+        RollbackWorkflowReq request = new RollbackWorkflowReq();
+        request.setUserId(userId);
+        request.setWorkflowId(workflowId);
+        request.setVersion(version);
+        request.fillRoute(source);
+        return optUtil.exec(request, new RollbackWorkflowResp(), req -> { });
+    }
+
+    /**
+     * 版本 diff（v4.1）：两版图节点/边增删改。
+     *
+     * @param workflowId 路径参数：工作流 ID
+     * @param from       基线版本
+     * @param to         对比版本
+     * @param userId     当前用户
+     * @return 结构化 diff
+     */
+    @GetMapping("/{workflowId}/diff")
+    public BaseResult<GraphDiffData> diff(@PathVariable Long workflowId,
+                                          @RequestParam("from") int from,
+                                          @RequestParam("to") int to,
+                                          @RequestAttribute("lemon.userId") Long userId) {
+        return BaseResult.success(workflowService.diff(userId, workflowId, from, to));
     }
 
     /**

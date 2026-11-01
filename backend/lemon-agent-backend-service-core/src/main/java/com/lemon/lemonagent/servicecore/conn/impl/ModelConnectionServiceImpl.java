@@ -149,6 +149,9 @@ public class ModelConnectionServiceImpl implements ModelConnectionService {
         data.setModels(fromJson(entity.getModelsJson()));
         data.setEnabled(entity.getStatus() != null && entity.getStatus() == 1);
         data.setAllowAuxiliary(entity.getAllowAuxiliary() != null && entity.getAllowAuxiliary() == 1);
+        data.setHealthStatus(entity.getHealthStatus() == null ? "unknown" : entity.getHealthStatus());
+        data.setHealthLatencyMs(entity.getHealthLatencyMs());
+        data.setHealthCheckedAt(format(entity.getHealthCheckedAt()));
         data.setCreatedAt(format(entity.getCreatedAt()));
         data.setUpdatedAt(format(entity.getUpdatedAt()));
         return data;

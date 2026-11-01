@@ -27,12 +27,20 @@ lemon:
     pgvector-url: ${LEMON_PGVECTOR_URL:jdbc:postgresql://192.168.5.250:15432/lemon_agent}
     pgvector-username: ${LEMON_PGVECTOR_USER:postgres}
     pgvector-password: ${LEMON_PGVECTOR_PASSWORD:LangchatPg2026}
+    # 重排精排（v4.1）：OpenAI 兼容 /rerank 端点（Jina/Cohere/硅基流动风格）；未配置时跳过精排
+    rerank-base-url: ${LEMON_RERANK_BASE_URL:}
+    rerank-api-key: ${LEMON_RERANK_API_KEY:}
+    rerank-model: ${LEMON_RERANK_MODEL:}
   runtime:
     # 工具审批超时（秒）：BLOCKED 超过该时长未审批 → run_failed(APPROVAL_TIMEOUT)
     approval-timeout-seconds: 300
   tools:
     # 审批名单：名单内工具挂起等审批，名单外直接执行（显式白名单 + 默认拒绝）
     approval-required: create_ticket
+  health:
+    # 模型连接健康探测（v4.1）：间隔与首延迟（毫秒）
+    probe-interval-ms: ${LEMON_HEALTH_PROBE_INTERVAL_MS:300000}
+    initial-delay-ms: ${LEMON_HEALTH_INITIAL_DELAY_MS:30000}
   model-conn:
     # baseUrl 主机白名单（PRD FR-13 allowedHosts）；逗号分隔
     allowed-hosts: api.siliconflow.cn,api.deepseek.com,api.openai.com,dashscope.aliyuncs.com,apis.itedus.cn,api.shuaiapi.com,localhost,127.0.0.1

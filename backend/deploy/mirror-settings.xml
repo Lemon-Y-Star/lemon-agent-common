@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Docker 构建专用：Maven 3.8+ 默认封锁 HTTP 仓库（maven-default-http-blocker），
+     本工程 pom 里声明的是 NAS Gitea Maven 私服（HTTP），必须解除拦截并显式注册。
+     私服匿名可读，无需服务器凭据。 -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
+  <mirrors>
+    <mirror>
+      <id>maven-default-http-blocker</id>
+      <mirrorOf>nonexistent-placeholder</mirrorOf>
+      <url>http://0.0.0.0/</url>
+      <blocked>false</blocked>
+    </mirror>
+  </mirrors>
+  <profiles>
+    <profile>
+      <id>gitea</id>
+      <repositories>
+        <repository>
+          <id>gitea</id>
+          <url>http://192.168.5.250:18000/api/packages/lemon/maven</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>gitea</id>
+          <url>http://192.168.5.250:18000/api/packages/lemon/maven</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>gitea</activeProfile>
+  </activeProfiles>
+</settings>

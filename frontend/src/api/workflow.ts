@@ -69,3 +69,34 @@ export function saveWorkflowGraph(
 ): Promise<WorkflowDetail> {
   return put<WorkflowDetail>(`/workspace/workflows/${workflowId}/graph`, graph)
 }
+
+/** 图版本 diff（v4.1）：节点/边增删改，人类可读字符串列表。 */
+export interface GraphDiff {
+  fromVersion: number
+  toVersion: number
+  nodesAdded: string[]
+  nodesRemoved: string[]
+  nodesChanged: string[]
+  edgesAdded: string[]
+  edgesRemoved: string[]
+}
+
+/** 版本回滚（v4.1）：历史版本另存为新生效版本（非破坏式）。 */
+export function rollbackWorkflow(workflowId: number, version: number): Promise<WorkflowDetail> {
+  return post<WorkflowDetail>(`/workspace/workflows/${workflowId}/versions/${version}/rollback`, {})
+}
+
+/** 两版图 diff。 */
+export function diffWorkflow(workflowId: number, from: number, to: number): Promise<GraphDiff> {
+  return get<GraphDiff>(`/workspace/workflows/${workflowId}/diff?from=${from}&to=${to}`)
+}
+
+/** Agent 执行图版本列表（倒序）。 */
+export function fetchAgentGraphVersions(agentId: number): Promise<number[]> {
+  return get<number[]>(`/workspace/agents/${agentId}/graph/versions`)
+}
+
+/** Agent 执行图回滚。 */
+export function rollbackAgentGraph(agentId: number, version: number): Promise<unknown> {
+  return post<unknown>(`/workspace/agents/${agentId}/graph/rollback/${version}`, {})
+}

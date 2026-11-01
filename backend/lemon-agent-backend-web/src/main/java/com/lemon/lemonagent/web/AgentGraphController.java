@@ -1,6 +1,9 @@
 package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.AgentGraphData;
+import com.lemon.lemonagent.model.runtime.AgentGraphRollbackReq;
+import com.lemon.lemonagent.model.runtime.AgentGraphRollbackResp;
+import com.lemon.lemonagent.model.runtime.GraphDiffData;
 import com.lemon.lemonagent.model.runtime.SaveAgentGraphReq;
 import com.lemon.lemonagent.model.runtime.SaveAgentGraphResp;
 import com.lemon.lemonagent.servicecore.runtime.AgentGraphService;
@@ -10,12 +13,16 @@ import com.lemon.architecture.util.validation.AssertUtils;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * Agent 执行图接口（v3.2.0）：读取当前版本 + 保存新版本。
@@ -45,6 +52,57 @@ public class AgentGraphController {
     public BaseResult<AgentGraphData> get(@PathVariable Long agentId,
                                           @RequestAttribute("lemon.userId") Long userId) {
         return BaseResult.success(agentGraphService.get(userId, agentId));
+    }
+
+    /**
+     * 版本号列表（v4.1，倒序）。
+     *
+     * @param agentId 路径参数：Agent ID
+     * @param userId  当前用户
+     * @return 版本号列表
+     */
+    @GetMapping("/{agentId}/graph/versions")
+    public BaseResult<List<Integer>> versions(@PathVariable Long agentId,
+                                              @RequestAttribute("lemon.userId") Long userId) {
+        return BaseResult.success(agentGraphService.versions(userId, agentId));
+    }
+
+    /**
+     * 版本回滚（v4.1）：历史版本复制为新版本（非破坏式）。
+     *
+     * @param agentId 路径参数：Agent ID
+     * @param version 路径参数：要回滚到的版本
+     * @param userId  当前用户
+     * @return 回滚后的当前图
+     */
+    @PostMapping("/{agentId}/graph/rollback/{version}")
+    public AgentGraphRollbackResp rollback(@PathVariable Long agentId,
+                                           @PathVariable int version,
+                                           @RequestAttribute("lemon.userId") Long userId,
+                                           @RequestHeader(value = "X-Source", defaultValue = "web") String source) {
+        AgentGraphRollbackReq request = new AgentGraphRollbackReq();
+        request.setUserId(userId);
+        request.setAgentId(agentId);
+        request.setVersion(version);
+        request.fillRoute(source);
+        return optUtil.exec(request, new AgentGraphRollbackResp(), req -> { });
+    }
+
+    /**
+     * 版本 diff（v4.1）：两版图节点/边增删改。
+     *
+     * @param agentId 路径参数：Agent ID
+     * @param from    基线版本
+     * @param to      对比版本
+     * @param userId  当前用户
+     * @return 结构化 diff
+     */
+    @GetMapping("/{agentId}/graph/diff")
+    public BaseResult<GraphDiffData> diff(@PathVariable Long agentId,
+                                          @RequestParam("from") int from,
+                                          @RequestParam("to") int to,
+                                          @RequestAttribute("lemon.userId") Long userId) {
+        return BaseResult.success(agentGraphService.diff(userId, agentId, from, to));
     }
 
     /**

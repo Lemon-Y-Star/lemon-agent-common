@@ -64,6 +64,13 @@ public class McpConnectionJdbcRepository implements McpConnectionRepository {
     }
 
     @Override
+    public List<McpConnectionEntity> findAll() {
+        return jdbcTemplate.query(
+                "SELECT " + COLUMNS + " FROM mcp_connection ORDER BY id",
+                mapper);
+    }
+
+    @Override
     public List<McpConnectionEntity> findByUser(Long userId) {
         return jdbcTemplate.query(
                 "SELECT " + COLUMNS + " FROM mcp_connection WHERE user_id = ? ORDER BY id DESC",
@@ -128,6 +135,13 @@ public class McpConnectionJdbcRepository implements McpConnectionRepository {
     public int delete(Long id, Long userId) {
         return jdbcTemplate.update(
                 "DELETE FROM mcp_connection WHERE id=? AND user_id=?", id, userId);
+    }
+
+    @Override
+    public int updateUnavailable(Long id, String reason) {
+        return jdbcTemplate.update(
+                "UPDATE mcp_connection SET unavailable_reason=?, version=version+1, updated_at=? WHERE id=?",
+                reason, Timestamp.from(Instant.now()), id);
     }
 
     private static Instant toInstant(Timestamp ts) {

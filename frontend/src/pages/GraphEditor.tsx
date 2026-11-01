@@ -527,7 +527,7 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
                     {nodeToolsValue(selectedNode) === '__custom__' && (
                       <div className="ge-toolchecks">
                         {tools.map((t) => (
-                          <label key={t.name}>
+                          <label key={t.name} title={t.description}>
                             <input
                               type="checkbox"
                               disabled={!editable}
@@ -539,7 +539,7 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
                                 updateNode(selectedNode.id, { tools: [...cur] })
                               }}
                             />
-                            {t.name}
+                            {t.label || t.name}
                           </label>
                         ))}
                       </div>
@@ -559,7 +559,9 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
                     >
                       <option value="">选择工具…</option>
                       {tools.filter((t) => t.available).map((t) => (
-                        <option key={t.name} value={t.name}>{t.name}{t.needsApproval ? '（写操作）' : ''}</option>
+                        <option key={t.name} value={t.name} title={t.description}>
+                          {t.label || t.name}{t.needsApproval ? '（写操作）' : ''}
+                        </option>
                       ))}
                     </select>
                   </div>

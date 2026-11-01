@@ -2,6 +2,8 @@ package com.lemon.lemonagent.dal.repository;
 
 import com.lemon.lemonagent.dal.entity.AgentGraphEntity;
 
+import java.util.List;
+
 /** Agent 执行图仓储端口。 */
 public interface AgentGraphRepository {
 
@@ -12,6 +14,12 @@ public interface AgentGraphRepository {
      * @return 出参：图实体；没有则 null
      */
     AgentGraphEntity findActive(Long agentId);
+
+    /** 全部版本（按版本倒序，v4.1 diff/回滚用）。 */
+    List<AgentGraphEntity> findVersions(Long agentId);
+
+    /** 读取指定版本。 */
+    AgentGraphEntity findVersion(Long agentId, Integer version);
 
     /**
      * 插入新版本（调用方负责把旧版本置 0）。

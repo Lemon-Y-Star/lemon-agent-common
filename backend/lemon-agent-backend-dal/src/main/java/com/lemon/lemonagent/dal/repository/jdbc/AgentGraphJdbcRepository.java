@@ -1,6 +1,8 @@
 package com.lemon.lemonagent.dal.repository.jdbc;
 
 import com.lemon.lemonagent.dal.entity.AgentGraphEntity;
+
+import java.util.List;
 import com.lemon.lemonagent.dal.repository.AgentGraphRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -53,6 +55,20 @@ public class AgentGraphJdbcRepository implements AgentGraphRepository {
     }
 
     @Override
+    public List<AgentGraphEntity> findVersions(Long agentId) {
+        return jdbcTemplate.query(
+                "SELECT " + COLUMNS + " FROM agent_graph WHERE agent_id = ? ORDER BY version DESC",
+                mapper, agentId);
+    }
+
+    @Override
+    public AgentGraphEntity findVersion(Long agentId, Integer version) {
+        List<AgentGraphEntity> list = jdbcTemplate.query(
+                "SELECT " + COLUMNS + " FROM agent_graph WHERE agent_id = ? AND version = ?",
+                mapper, agentId, version);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
     public int insert(AgentGraphEntity e) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {

@@ -1,0 +1,35 @@
+# Dokploy 部署编排：前后端同一仓库一个 compose。
+# 后端容器内 8090 → NAS 主机 17790；前端 nginx 容器内 8080 → NAS 主机 17780。
+# 密钥不进仓库：LEMON_DB_PASSWORD 在 Dokploy 服务设置的 Environment 中填写注入。
+# 数据库沿用 NAS 既有实例：MySQL 13306/lemon_agent + PgVector 15432（地址写在
+# bootstrap/src/main/resources/application.yml，如需覆盖用 LEMON_DB_* / LEMON_PGVECTOR_* 环境变量）。
+name: lemon-agent
+
+services:
+  lemon-agent-backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: lemon-agent-backend
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      SERVER_PORT: 8090
+      LEMON_DB_PASSWORD: ${LEMON_DB_PASSWORD}
+    ports:
+      - "17790:8090"
+
+  lemon-agent-ui:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: lemon-agent-ui
+    restart: unless-stopped
+    depends_on:
+      - lemon-agent-backend
+    environment:
+      TZ: Asia/Shanghai
+      API_UPSTREAM: http://192.168.5.250:17790
+      CLIENT_MAX_BODY_SIZE: 20m
+    ports:
+      - "17780:8080"
