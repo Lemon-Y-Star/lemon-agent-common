@@ -14,6 +14,8 @@ RUN mvn -B -DskipTests -s deploy/mirror-settings.xml package
 
 FROM ${RUN_IMAGE} AS runtime
 WORKDIR /app
+# ARG 在首个 FROM 后出作用域，须重新声明才能在 COPY --from 里展开
+ARG NODE_IMAGE=docker.1ms.run/library/node:24
 # stdio 型 MCP 连接需要 node/npx 运行时可用
 COPY --from=${NODE_IMAGE} /usr/local/bin/node /usr/local/bin/node
 COPY --from=${NODE_IMAGE} /usr/local/lib/node_modules /usr/local/lib/node_modules
