@@ -508,3 +508,11 @@ tr:hover td{background:#fafbfe}
 /* ---------- v4.4 沙箱 CODE 节点 ---------- */
 .ge-code{font-family:'Cascadia Code',Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre;tab-size:4}
 .ge-code-out{font-family:'Cascadia Code',Consolas,monospace;font-size:12px;line-height:1.5;background:var(--bg,#f6f7f9);border:1px solid var(--border,#e2e5ea);border-radius:8px;padding:8px 10px;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0}
+
+/* ---------- v4.4.2 工具调用紧凑芯片 ---------- */
+.tool-call-card.slim{margin-left:40px;padding:5px 10px}
+.tool-call-card.slim>details>summary{cursor:pointer;list-style:none;user-select:none}
+.tool-call-card.slim>details>summary::-webkit-details-marker{display:none}
+.tool-call-card.slim .tcc-name{font-weight:600}
+.tool-call-card.slim .tcc-args{max-height:260px;overflow:auto;background:#ffffffb3;border:1px solid #a7e6d2;border-radius:8px;padding:7px 9px;white-space:pre-wrap}
+.tool-call-card.slim .tcc-res{margin-top:5px}

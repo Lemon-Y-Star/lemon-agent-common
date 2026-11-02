@@ -23,6 +23,17 @@ import { ToastHost, toast } from '../components/Toast'
 import Markdown from '../components/Markdown'
 import ThinkingPanel, { splitThink } from '../components/ThinkingPanel'
 
+/** 工具名 → 展示名（对话工具芯片用）：内部工具给中文名，MCP/工作流去前缀。 */
+function toolLabel(name: string): string {
+  if (name === 'run_python') return 'Python 代码沙箱'
+  if (name === 'search_docs') return '知识库检索'
+  if (name === 'current_time') return '查询当前时间'
+  if (name === 'create_ticket') return '创建工单'
+  if (name.startsWith('run_wf_')) return '调用工作流'
+  if (name.startsWith('mcp')) return 'MCP · ' + name.replace(/^mcp\d+_/, '')
+  return name
+}
+
 /**
  * 对话运行时（v2）：会话侧栏 + 消息区 + SSE 流式气泡 + 工具调用与审批。
  *
@@ -45,6 +56,8 @@ interface Bubble {
   resultBrief?: string
   resultOk?: boolean
   resultDone?: boolean
+  /** 工具执行耗时（tool_result 事件 durationMs，芯片行展示） */
+  resultMs?: number
   // 审批卡
   approvalId?: string
   decided?: 'APPROVE' | 'REJECT'
@@ -388,7 +401,8 @@ export default function Chat() {
           setBubbles((prev) => prev.map((b) => (
             b.kind === 'tool' && b.callId === callId
               ? { ...b, resultBrief: String(ev.payload.resultBrief ?? ''), resultOk: !!ev.payload.ok,
-                  resultDone: true, refs: refs && refs.length > 0 ? refs : undefined }
+                  resultDone: true, resultMs: Number(ev.payload.durationMs ?? 0) || undefined,
+                  refs: refs && refs.length > 0 ? refs : undefined }
               : b
           )))
         } else if (ev.type === 'approval_resolved') {
@@ -681,14 +695,24 @@ export default function Chat() {
       )
     }
     if (b.kind === 'tool') {
+      // 紧凑芯片（v4.4.2）：默认只显示一行「🔧 友好名 · 状态」，代码/结果收进可展开详情，不再铺原始 JSON
+      const label = toolLabel(b.toolName ?? '')
+      const code = typeof b.args?.code === 'string' ? (b.args.code as string) : undefined
+      const detail = code ?? JSON.stringify(b.args, null, 2)
       return (
-        <div key={i} className={`tool-call-card ${b.resultDone && !b.resultOk ? 'err' : ''}`}>
-          <div className="tcc-head">
-            🔧 调用工具 {b.toolName}
-            <span className={`tag ${b.riskLevel === 'HIGH' ? 'err' : 'info'}`}>{b.riskLevel === 'HIGH' ? '高风险 · 需审批' : '只读'}</span>
-          </div>
-          <div className="tcc-args">{JSON.stringify(b.args)}</div>
-          {b.resultDone && <div className="tcc-res">{b.resultOk ? '✅ ' : '❌ '}{b.resultBrief}</div>}
+        <div key={i} className={`tool-call-card slim ${b.resultDone && !b.resultOk ? 'err' : ''}`}>
+          <details>
+            <summary className="tcc-head">
+              <span className="tcc-icon">🔧</span>
+              <span className="tcc-name">{label}</span>
+              {!b.resultDone && <span className="tag info">执行中…</span>}
+              {b.resultDone && (b.resultOk
+                ? <span className="tag ok">完成{b.resultMs != null ? ` ${(b.resultMs / 1000).toFixed(1)}s` : ''}</span>
+                : <span className="tag err">失败</span>)}
+            </summary>
+            <div className="tcc-args">{detail}</div>
+            {b.resultDone && <div className="tcc-res">{b.resultOk ? '✅ ' : '❌ '}{b.resultBrief}</div>}
+          </details>
           {b.refs && b.refs.length > 0 && <div className="tcc-res">📚 命中：{b.refs.join('｜')}</div>}
         </div>
       )

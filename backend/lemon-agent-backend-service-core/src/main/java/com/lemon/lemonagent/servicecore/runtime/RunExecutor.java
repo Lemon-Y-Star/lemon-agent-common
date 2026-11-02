@@ -1476,8 +1476,11 @@ public class RunExecutor {
                         + "请改用已授权工具，或直接回答用户。");
                 continue;
             }
+            // callId 两侧必须一致：tool_call 事件与 tool_result 事件用同一个 id，前端才能配对翻转状态
+            // （此前 execArgs 漏放 __callId → tool_result 回空串 → 工具卡永远停在「执行中…」，run168 实测）
+            String callId = call.id() == null ? UUID.randomUUID().toString() : call.id();
             appendEvent(runId, RuntimeEventType.TOOL_CALL, objectMapper.writeValueAsString(Map.of(
-                    "callId", call.id() == null ? UUID.randomUUID().toString() : call.id(),
+                    "callId", callId,
                     "toolName", call.name(),
                     "args", parseArgs(call.arguments()),
                     "riskLevel", handler.needsApproval ? "HIGH" : "LOW",
@@ -1492,6 +1495,7 @@ public class RunExecutor {
             Map<String, Object> execArgs = new HashMap<>(parseArgs(call.arguments()));
             execArgs.put("__runId", run.getId());
             execArgs.put("__userId", run.getUserId());
+            execArgs.put("__callId", callId);
             executeAndEmitToolResult(run, call.name(), handler, execArgs, continuationNotes);
         }
         // 全部工具直执行完毕，继续下一轮模型调用
