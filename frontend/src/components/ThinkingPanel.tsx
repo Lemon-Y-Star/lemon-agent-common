@@ -10,7 +10,10 @@ import { useEffect, useRef } from 'react'
 /** 拆分 <think> 包裹的推理与最终回答；done=true 表示闭合标签已到。 */
 export function splitThink(raw: string): { think: string; answer: string; done: boolean } {
   const start = raw.indexOf('<think>')
-  if (start === -1) return { think: '', answer: raw, done: false }
+  if (start === -1) {
+    // 无开始标签也可能有孤立闭合标签（模型偶发只吐 </think>），同样清掉避免渲染出字面标签
+    return { think: '', answer: raw.replace(/<\/?think>/g, '').trim(), done: false }
+  }
   const body = raw.slice(start + '<think>'.length)
   const end = body.indexOf('</think>')
   if (end === -1) {
@@ -18,7 +21,9 @@ export function splitThink(raw: string): { think: string; answer: string; done: 
     const think = body.replace(/<\/(t|h|i|n|k)?$/, '')
     return { think: think.trim(), answer: '', done: false }
   }
-  return { think: body.slice(0, end).trim(), answer: body.slice(end + '</think>'.length).trim(), done: true }
+  // 回答里可能还有残留的孤立 think 标签（嵌套/重复闭合），一并清掉（run165 房价图会话实测尾部漏 </think>）
+  const answer = body.slice(end + '</think>'.length).replace(/<\/?think>/g, '').trim()
+  return { think: body.slice(0, end).trim(), answer, done: true }
 }
 
 /** 去掉 <think> 块（产物 / 评测等只展示结论的场景）。 */

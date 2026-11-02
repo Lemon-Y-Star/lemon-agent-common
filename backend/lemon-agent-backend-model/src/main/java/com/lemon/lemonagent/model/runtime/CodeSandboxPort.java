@@ -27,7 +27,15 @@ public interface CodeSandboxPort {
             int exitCode,
             long durationMs,
             boolean timedOut,
-            boolean truncated) {
+            boolean truncated,
+            java.util.List<String> images) {
+
+        /** 兼容旧 JSON（无 images 字段）反序列化。 */
+        public ExecResult {
+            if (images == null) {
+                images = java.util.List.of();
+            }
+        }
 
         /** 拼装为给模型/正文看的紧凑文本（stdout 为主，stderr 附后）。 */
         public String asText() {

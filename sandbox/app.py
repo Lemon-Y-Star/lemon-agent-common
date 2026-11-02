@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -20,6 +21,7 @@ import subprocess
 import tempfile
 import time
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -29,6 +31,11 @@ app = FastAPI(title="LemonAgent Sandbox", version="1.0.0")
 MAX_TIMEOUT = 15          # 单次执行上限（秒）
 MAX_OUTPUT = 8 * 1024     # stdout/stderr 各自截断阈值（字节）
 RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runner.py")
+
+# 图片回收（v4.4.3）：执行后扫描工作区的 png，base64 直通前端渲染（不进模型上下文）
+MAX_IMAGES = 4                    # 单次最多回收张数
+MAX_IMAGE_BYTES = 512 * 1024      # 单张上限 512KB
+MAX_IMAGES_TOTAL = 1536 * 1024    # 单次总量上限 1.5MB
 
 # 访问令牌（竞品对比加固）：FastGPT v4.14.8 被审计点名"沙箱 HTTP 接口默认无认证"，
 # 同内网任何容器都能提交代码。设了 LEMON_SANDBOX_TOKEN 就强制校验，没设则只靠网络隔离。
@@ -49,6 +56,7 @@ class ExecResp(BaseModel):
     durationMs: int
     timedOut: bool
     truncated: bool
+    images: list[str] = Field(default_factory=list)
 
 
 @app.get("/health")
@@ -82,6 +90,8 @@ def execute(req: ExecReq, x_sandbox_token: str = Header(default="")) -> ExecResp
             # 清空环境变量：不带任何密钥/连接串进沙箱进程
             env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                  "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8",
+                 # matplotlib 无头渲染必须 Agg，否则 import pyplot 直接崩
+                 "MPLBACKEND": "Agg",
                  "HOME": ws, "TMPDIR": ws},
         )
         timed_out = False
@@ -103,9 +113,32 @@ def execute(req: ExecReq, x_sandbox_token: str = Header(default="")) -> ExecResp
             durationMs=duration,
             timedOut=timed_out,
             truncated=truncated,
+            images=collect_images(ws),
         )
     finally:
         shutil.rmtree(ws, ignore_errors=True)
+
+
+def collect_images(ws: str) -> list[str]:
+    """回收工作区里的 png（图表直通前端）：按修改时间倒序，限张数/单张/总量，base64 data URI。"""
+    uris: list[str] = []
+    total = 0
+    try:
+        pngs = sorted(Path(ws).rglob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+    except OSError:
+        return uris
+    for p in pngs:
+        if len(uris) >= MAX_IMAGES:
+            break
+        try:
+            data = p.read_bytes()
+        except OSError:
+            continue
+        if not data or len(data) > MAX_IMAGE_BYTES or total + len(data) > MAX_IMAGES_TOTAL:
+            continue
+        uris.append("data:image/png;base64," + base64.b64encode(data).decode())
+        total += len(data)
+    return uris
 
 
 @app.exception_handler(Exception)

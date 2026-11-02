@@ -58,6 +58,8 @@ interface Bubble {
   resultDone?: boolean
   /** 工具执行耗时（tool_result 事件 durationMs，芯片行展示） */
   resultMs?: number
+  /** 沙箱图表（v4.4.3，data URI）：tool_result 旁路，不进模型上下文，直接渲染 */
+  images?: string[]
   // 审批卡
   approvalId?: string
   decided?: 'APPROVE' | 'REJECT'
@@ -405,6 +407,7 @@ export default function Chat() {
             b.kind === 'tool' && b.callId === callId
               ? { ...b, resultBrief: String(ev.payload.resultBrief ?? ''), resultOk: !!ev.payload.ok,
                   resultDone: true, resultMs: Number(ev.payload.durationMs ?? 0) || undefined,
+                  images: Array.isArray(ev.payload.images) ? (ev.payload.images as string[]) : undefined,
                   refs: refs && refs.length > 0 ? refs : undefined }
               : b
           )))
@@ -717,6 +720,13 @@ export default function Chat() {
             {b.resultDone && <div className="tcc-res">{b.resultOk ? '✅ ' : '❌ '}{b.resultBrief}</div>}
           </details>
           {b.refs && b.refs.length > 0 && <div className="tcc-res">📚 命中：{b.refs.join('｜')}</div>}
+          {b.images && b.images.length > 0 && (
+            <div className="tcc-imgs">
+              {b.images.map((src, k) => (
+                <a key={k} href={src} target="_blank" rel="noreferrer"><img src={src} alt={`图表 ${k + 1}`} /></a>
+              ))}
+            </div>
+          )}
         </div>
       )
     }

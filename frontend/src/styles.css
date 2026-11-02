@@ -516,3 +516,7 @@ tr:hover td{background:#fafbfe}
 .tool-call-card.slim .tcc-name{font-weight:600}
 .tool-call-card.slim .tcc-args{max-height:260px;overflow:auto;background:#ffffffb3;border:1px solid #a7e6d2;border-radius:8px;padding:7px 9px;white-space:pre-wrap}
 .tool-call-card.slim .tcc-res{margin-top:5px}
+
+/* ---------- v4.4.3 沙箱图表直出 ---------- */
+.tcc-imgs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 2px}
+.tcc-imgs img{max-width:340px;max-height:240px;border:1px solid var(--border,#e2e5ea);border-radius:8px;background:#fff;cursor:zoom-in}

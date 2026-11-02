@@ -194,8 +194,10 @@ public class ToolRegistry {
         this.runPythonTool = new ToolHandler(new ModelPort.ToolSpec(
                 "run_python",
                 "在隔离沙箱中执行一段 Python 代码并返回 stdout/stderr（不改变外部状态，代码无法联网）。"
-                        + "适合精确计算、数据处理、格式转换、算法验证等模型心算不可靠的场景；"
-                        + "环境已预装 numpy/pandas。代码必须用 print() 输出结果。",
+                        + "适合精确计算、数据处理、格式转换、算法验证、绘制图表等模型心算不可靠的场景；"
+                        + "环境已预装 numpy/pandas/matplotlib。代码必须用 print() 输出结果；"
+                        + "画图时用 matplotlib 并 plt.savefig('名称.png', dpi=120, bbox_inches='tight')，"
+                        + "保存的图片会自动展示在用户界面（不要用 plt.show，不要把 base64 打进 stdout）。",
                 "{\"type\":\"object\",\"properties\":{"
                         + "\"code\":{\"type\":\"string\",\"description\":\"要执行的 Python 代码（Python 3.11）\"}},"
                         + "\"required\":[\"code\"]}"),
@@ -217,6 +219,10 @@ public class ToolRegistry {
                         }
                         out.put("exitCode", r.exitCode());
                         out.put("durationMs", r.durationMs());
+                        // 图片直通前端（v4.4.3）：data URI 只进 tool_result 事件，绝不进模型上下文
+                        if (r.images() != null && !r.images().isEmpty()) {
+                            out.put("images", r.images());
+                        }
                         return out;
                     } catch (Exception e) {
                         return Map.of("error", "沙箱调用失败：" + e.getMessage());

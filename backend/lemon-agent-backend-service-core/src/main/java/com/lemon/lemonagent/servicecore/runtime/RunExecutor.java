@@ -1543,13 +1543,21 @@ public class RunExecutor {
         String resultBrief;
         boolean ok;
         List<String> refs = List.of();
+        List<String> images = List.of();
         try {
-            Map<String, Object> result = handler.execute(args);
+            Map<String, Object> result = new java.util.LinkedHashMap<>(handler.execute(args));
+            // 图片旁路（v4.4.3）：data URI 只进 tool_result 事件给前端渲染，绝不进模型上下文（notes/结果回注）
+            Object imgObj = result.remove("images");
+            if (imgObj instanceof List<?> list) {
+                images = list.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+            }
             ok = true;
             resultBrief = result.values().stream().map(String::valueOf)
                     .reduce((a, b) -> a + " / " + b).orElse("done");
+            String imgNote = images.isEmpty() ? "" : "（另外已生成 " + images.size()
+                    + " 张图表并直接展示给用户，无需重复描述图片内容）";
             notes.add("工具 " + toolName + " 已执行成功，结果：" + objectMapper.writeValueAsString(result)
-                    + "。请基于该结果继续完成用户的任务。");
+                    + imgNote + "。请基于该结果继续完成用户的任务。");
             // 引用溯源（v4.1）：search_docs 的命中文档标题随 tool_result 透出，前端渲染「依据」chip
             if ("search_docs".equals(toolName) && result.get("hits") instanceof List<?> hitList) {
                 refs = hitList.stream()
@@ -1568,6 +1576,9 @@ public class RunExecutor {
         payload.put("durationMs", System.currentTimeMillis() - start);
         payload.put("resultBrief", resultBrief);
         payload.put("resultChars", resultBrief.length());
+        if (!images.isEmpty()) {
+            payload.put("images", images);
+        }
         payload.put("ts", System.currentTimeMillis());
         if (!refs.isEmpty()) {
             payload.put("refs", refs);
