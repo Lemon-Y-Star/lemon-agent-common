@@ -523,3 +523,9 @@ tr:hover td{background:#fafbfe}
 
 /* ---------- v4.4.4 产物下载链接 ---------- */
 .tcc-file{color:var(--primary,#4f46e5);text-decoration:underline;margin-right:8px}
+
+/* ---------- v4.4.4 图表灯箱（data URI 不可顶层导航，改页内预览） ---------- */
+.img-lightbox{position:fixed;inset:0;background:#000000cc;z-index:1200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;cursor:zoom-out}
+.img-lightbox img{max-width:92vw;max-height:82vh;border-radius:8px;background:#fff;box-shadow:0 8px 40px #0008}
+.img-lightbox-bar{display:flex;align-items:center;gap:14px}
+.img-lightbox-bar .btn{background:#fff}

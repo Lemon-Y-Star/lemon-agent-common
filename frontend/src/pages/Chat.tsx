@@ -120,6 +120,8 @@ export default function Chat() {
   const [agentId, setAgentId] = useState<number | null>(null)
   const [renaming, setRenaming] = useState<{ sessionId: number; title: string } | null>(null)
   const [deleting, setDeleting] = useState<SessionItem | null>(null)
+  /** 图表灯箱（v4.4.4）：data URI 不能顶层导航，点击改页内预览 */
+  const [imgPreview, setImgPreview] = useState<string | null>(null)
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
@@ -733,7 +735,7 @@ export default function Chat() {
           {b.images && b.images.length > 0 && (
             <div className="tcc-imgs">
               {b.images.map((src, k) => (
-                <a key={k} href={src} target="_blank" rel="noreferrer"><img src={src} alt={`图表 ${k + 1}`} /></a>
+                <img key={k} src={src} alt={`图表 ${k + 1}`} onClick={() => setImgPreview(src)} />
               ))}
             </div>
           )}
@@ -1006,6 +1008,15 @@ export default function Chat() {
           onConfirm={onDelete}
           onCancel={() => setDeleting(null)}
         />
+      )}
+      {imgPreview && (
+        <div className="img-lightbox" onClick={() => setImgPreview(null)}>
+          <img src={imgPreview} alt="图表预览" />
+          <div className="img-lightbox-bar">
+            <a className="btn sm" href={imgPreview} download="chart.png">⬇ 下载 PNG</a>
+            <span className="note gray">点击空白处关闭</span>
+          </div>
+        </div>
       )}
       <ToastHost />
     </>
