@@ -2,7 +2,7 @@ package com.lemon.lemonagent.service.biz.process.agent;
 
 import com.lemon.lemonagent.model.runtime.DeleteAgentReq;
 import com.lemon.lemonagent.model.runtime.DeleteAgentResp;
-import com.lemon.lemonagent.servicecore.runtime.AgentConfigService;
+import com.lemon.lemonagent.servicecore.runtime.agent.AgentConfigService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

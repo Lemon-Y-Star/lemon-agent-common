@@ -7,7 +7,7 @@ import com.lemon.lemonagent.model.runtime.DeleteKbDocResp;
 import com.lemon.lemonagent.model.runtime.KbDocsData;
 import com.lemon.lemonagent.model.runtime.KbMissesData;
 import com.lemon.lemonagent.model.runtime.KbSearchData;
-import com.lemon.lemonagent.servicecore.runtime.KnowledgeService;
+import com.lemon.lemonagent.servicecore.runtime.knowledge.KnowledgeService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;

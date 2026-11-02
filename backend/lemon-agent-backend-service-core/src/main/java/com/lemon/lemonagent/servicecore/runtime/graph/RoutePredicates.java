@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.graph;
 
 import com.lemon.architecture.model.BusinessException;
 import com.lemon.architecture.model.ResultCodes;
@@ -21,16 +21,16 @@ import java.util.Locale;
  * <p><b>为什么要有 startsWith</b>：contains 会被否定句误伤——上游写「常规：…无紧急迹象」时
  * {@code contains:紧急} 也命中，两条分支会同时跑。按标签前缀判定（「紧急：…」/「常规：…」）才是确定性的分支语义。</p>
  */
-final class RoutePredicates {
+public final class RoutePredicates {
 
     /** 恒真名。 */
-    static final String ALWAYS = "always";
+    public static final String ALWAYS = "always";
 
     /** 非空名。 */
-    static final String NON_EMPTY = "nonEmpty";
+    public static final String NON_EMPTY = "nonEmpty";
 
     /** 空名。 */
-    static final String EMPTY = "empty";
+    public static final String EMPTY = "empty";
 
     /** 前缀匹配关键词。 */
     private static final String STARTS_WITH_PREFIX = "startsWith:";
@@ -50,7 +50,7 @@ final class RoutePredicates {
      * @param route 入参：边上的 route
      * @return 出参：归一后的谓词名
      */
-    static String normalize(String route) {
+    public static String normalize(String route) {
         return route == null || route.isBlank() ? ALWAYS : route.trim();
     }
 
@@ -60,7 +60,7 @@ final class RoutePredicates {
      * @param route 入参：边上的 route（可空）
      * @return 出参：归一后的谓词名
      */
-    static String validate(String route) {
+    public static String validate(String route) {
         String name = normalize(route);
         if (ALWAYS.equals(name) || NON_EMPTY.equals(name) || EMPTY.equals(name)) {
             return name;
@@ -85,7 +85,7 @@ final class RoutePredicates {
      * @param upstreamOutput 入参：上游节点产出（可空）
      * @return 出参：是否走这条边
      */
-    static boolean evaluate(String route, String upstreamOutput) {
+    public static boolean evaluate(String route, String upstreamOutput) {
         String name = normalize(route);
         String output = upstreamOutput == null ? "" : upstreamOutput;
         if (ALWAYS.equals(name)) {

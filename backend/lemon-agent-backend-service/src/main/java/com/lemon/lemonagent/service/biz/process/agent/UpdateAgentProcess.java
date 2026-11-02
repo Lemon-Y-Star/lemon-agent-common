@@ -3,7 +3,7 @@ package com.lemon.lemonagent.service.biz.process.agent;
 import com.lemon.lemonagent.model.runtime.AgentConfigData;
 import com.lemon.lemonagent.model.runtime.UpdateAgentReq;
 import com.lemon.lemonagent.model.runtime.UpdateAgentResp;
-import com.lemon.lemonagent.servicecore.runtime.AgentConfigService;
+import com.lemon.lemonagent.servicecore.runtime.agent.AgentConfigService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

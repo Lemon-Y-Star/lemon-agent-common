@@ -3,7 +3,7 @@ package com.lemon.lemonagent.service.biz.process.feedback;
 import com.lemon.lemonagent.model.runtime.FeedbackData;
 import com.lemon.lemonagent.model.runtime.SubmitFeedbackReq;
 import com.lemon.lemonagent.model.runtime.SubmitFeedbackResp;
-import com.lemon.lemonagent.servicecore.runtime.ArtifactService;
+import com.lemon.lemonagent.servicecore.runtime.artifact.ArtifactService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

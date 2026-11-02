@@ -3,7 +3,7 @@ package com.lemon.lemonagent.service.biz.process.apikey;
 import com.lemon.lemonagent.model.runtime.ApiKeyCreatedData;
 import com.lemon.lemonagent.model.runtime.CreateApiKeyReq;
 import com.lemon.lemonagent.model.runtime.CreateApiKeyResp;
-import com.lemon.lemonagent.servicecore.runtime.ApiKeyService;
+import com.lemon.lemonagent.servicecore.runtime.apikey.ApiKeyService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

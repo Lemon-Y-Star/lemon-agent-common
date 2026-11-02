@@ -1,7 +1,7 @@
 package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.LlmOverviewData;
-import com.lemon.lemonagent.servicecore.runtime.LlmObservabilityService;
+import com.lemon.lemonagent.servicecore.runtime.obs.LlmObservabilityService;
 import com.lemon.architecture.model.BaseResult;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.obs;
 
 import com.lemon.lemonagent.dal.repository.AgentRunRepository;
 import com.lemon.lemonagent.model.runtime.UsageOverviewData;

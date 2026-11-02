@@ -2,7 +2,7 @@ package com.lemon.lemonagent.service.biz.process.workflow;
 
 import com.lemon.lemonagent.model.runtime.SaveWorkflowVersionReq;
 import com.lemon.lemonagent.model.runtime.SaveWorkflowVersionResp;
-import com.lemon.lemonagent.servicecore.runtime.WorkflowService;
+import com.lemon.lemonagent.servicecore.runtime.workflow.WorkflowService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

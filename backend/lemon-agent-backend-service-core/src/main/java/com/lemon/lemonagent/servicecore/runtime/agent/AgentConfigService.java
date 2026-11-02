@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.agent;
 
 import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.ModelConnectionEntity;
@@ -19,6 +19,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import com.lemon.lemonagent.servicecore.runtime.tool.ToolRegistry;
 
 /**
  * Agent 配置领域服务（PRD FR-6 最小充分版）：

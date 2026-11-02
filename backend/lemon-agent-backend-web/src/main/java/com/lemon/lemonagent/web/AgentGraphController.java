@@ -6,7 +6,7 @@ import com.lemon.lemonagent.model.runtime.AgentGraphRollbackResp;
 import com.lemon.lemonagent.model.runtime.GraphDiffData;
 import com.lemon.lemonagent.model.runtime.SaveAgentGraphReq;
 import com.lemon.lemonagent.model.runtime.SaveAgentGraphResp;
-import com.lemon.lemonagent.servicecore.runtime.AgentGraphService;
+import com.lemon.lemonagent.servicecore.runtime.graph.AgentGraphService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;

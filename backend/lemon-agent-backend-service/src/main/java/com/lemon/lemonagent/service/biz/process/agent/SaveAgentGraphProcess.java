@@ -3,7 +3,7 @@ package com.lemon.lemonagent.service.biz.process.agent;
 import com.lemon.lemonagent.model.runtime.AgentGraphData;
 import com.lemon.lemonagent.model.runtime.SaveAgentGraphReq;
 import com.lemon.lemonagent.model.runtime.SaveAgentGraphResp;
-import com.lemon.lemonagent.servicecore.runtime.AgentGraphService;
+import com.lemon.lemonagent.servicecore.runtime.graph.AgentGraphService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

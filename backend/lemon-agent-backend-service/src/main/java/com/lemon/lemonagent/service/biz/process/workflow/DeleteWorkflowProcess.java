@@ -2,7 +2,7 @@ package com.lemon.lemonagent.service.biz.process.workflow;
 
 import com.lemon.lemonagent.model.runtime.DeleteWorkflowReq;
 import com.lemon.lemonagent.model.runtime.DeleteWorkflowResp;
-import com.lemon.lemonagent.servicecore.runtime.WorkflowService;
+import com.lemon.lemonagent.servicecore.runtime.workflow.WorkflowService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

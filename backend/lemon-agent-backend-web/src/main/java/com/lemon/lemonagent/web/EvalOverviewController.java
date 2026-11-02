@@ -1,7 +1,7 @@
 package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.EvalBatchesData;
-import com.lemon.lemonagent.servicecore.runtime.EvalService;
+import com.lemon.lemonagent.servicecore.runtime.eval.EvalService;
 import com.lemon.architecture.model.BaseResult;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;

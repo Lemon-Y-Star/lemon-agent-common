@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.memory;
 
 import com.lemon.lemonagent.dal.entity.AgentMemoryEntity;
 import com.lemon.lemonagent.dal.repository.KnowledgeRepository;

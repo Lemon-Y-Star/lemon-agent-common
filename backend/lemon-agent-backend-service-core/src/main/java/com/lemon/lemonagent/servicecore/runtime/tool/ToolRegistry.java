@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.tool;
 
 import com.lemon.lemonagent.dal.entity.AgentRunEntity;
 import com.lemon.lemonagent.dal.entity.McpConnectionEntity;
@@ -31,6 +31,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import com.lemon.lemonagent.servicecore.runtime.engine.RunExecutor;
+import com.lemon.lemonagent.servicecore.runtime.engine.AgentRuntimeService;
+import com.lemon.lemonagent.servicecore.runtime.knowledge.KnowledgeService;
 
 /**
  * 工具注册表：定义、审批名单、执行（BUILD-SPEC §1.3）。

@@ -1,7 +1,7 @@
 package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.UsageOverviewData;
-import com.lemon.lemonagent.servicecore.runtime.UsageService;
+import com.lemon.lemonagent.servicecore.runtime.obs.UsageService;
 import com.lemon.architecture.model.BaseResult;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;

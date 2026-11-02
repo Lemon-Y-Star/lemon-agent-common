@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.engine;
 
 import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.AgentMessageEntity;
@@ -34,6 +34,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import tools.jackson.databind.ObjectMapper;
+import com.lemon.lemonagent.servicecore.runtime.graph.GraphCodec;
+import com.lemon.lemonagent.servicecore.runtime.graph.RoutePredicates;
+import com.lemon.lemonagent.servicecore.runtime.agent.AgentConfigService;
+import com.lemon.lemonagent.servicecore.runtime.agent.AgentToolCodec;
+import com.lemon.lemonagent.servicecore.runtime.tool.ToolRegistry;
+import com.lemon.lemonagent.servicecore.runtime.memory.MemoryService;
+import com.lemon.lemonagent.servicecore.runtime.artifact.RunArtifactService;
 
 /**
  * 运行执行器：异步跑模型流式调用 + 手动工具循环（BUILD-SPEC §7.3）。

@@ -8,7 +8,7 @@ import com.lemon.lemonagent.model.runtime.DeleteAgentReq;
 import com.lemon.lemonagent.model.runtime.DeleteAgentResp;
 import com.lemon.lemonagent.model.runtime.UpdateAgentReq;
 import com.lemon.lemonagent.model.runtime.UpdateAgentResp;
-import com.lemon.lemonagent.servicecore.runtime.AgentConfigService;
+import com.lemon.lemonagent.servicecore.runtime.agent.AgentConfigService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;

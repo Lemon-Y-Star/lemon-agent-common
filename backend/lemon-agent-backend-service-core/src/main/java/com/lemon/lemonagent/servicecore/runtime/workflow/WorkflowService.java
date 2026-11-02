@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.workflow;
 
 import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.AgentGraphEntity;
@@ -19,6 +19,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.lemon.lemonagent.servicecore.runtime.graph.GraphCodec;
+import com.lemon.lemonagent.servicecore.runtime.graph.GraphDiffer;
+import com.lemon.lemonagent.servicecore.runtime.graph.GraphValidator;
+import com.lemon.lemonagent.servicecore.runtime.tool.ToolRegistry;
 
 /**
  * 工作流领域服务（v3.7，PRD FR-25 最小闭环）。

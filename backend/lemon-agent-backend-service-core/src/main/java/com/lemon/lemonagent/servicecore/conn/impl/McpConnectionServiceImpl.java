@@ -6,7 +6,7 @@ import com.lemon.lemonagent.model.enums.ConnectionStatus;
 import com.lemon.lemonagent.model.enums.TransportType;
 import com.lemon.lemonagent.model.mcpconn.McpConnectionData;
 import com.lemon.lemonagent.servicecore.conn.McpConnectionService;
-import com.lemon.lemonagent.servicecore.runtime.ToolRegistry;
+import com.lemon.lemonagent.servicecore.runtime.tool.ToolRegistry;
 import com.lemon.lemonagent.util.crypto.CryptoUtil;
 import com.lemon.architecture.model.BusinessException;
 import com.lemon.architecture.model.ResultCodes;

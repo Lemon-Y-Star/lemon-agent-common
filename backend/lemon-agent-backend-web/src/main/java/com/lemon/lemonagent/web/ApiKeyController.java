@@ -6,7 +6,7 @@ import com.lemon.lemonagent.model.runtime.CreateApiKeyReq;
 import com.lemon.lemonagent.model.runtime.CreateApiKeyResp;
 import com.lemon.lemonagent.model.runtime.RevokeApiKeyReq;
 import com.lemon.lemonagent.model.runtime.RevokeApiKeyResp;
-import com.lemon.lemonagent.servicecore.runtime.ApiKeyService;
+import com.lemon.lemonagent.servicecore.runtime.apikey.ApiKeyService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;

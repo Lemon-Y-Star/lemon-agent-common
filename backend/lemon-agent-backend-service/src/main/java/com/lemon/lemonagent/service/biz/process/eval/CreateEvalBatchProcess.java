@@ -2,7 +2,7 @@ package com.lemon.lemonagent.service.biz.process.eval;
 
 import com.lemon.lemonagent.model.runtime.CreateEvalBatchReq;
 import com.lemon.lemonagent.model.runtime.CreateEvalBatchResp;
-import com.lemon.lemonagent.servicecore.runtime.EvalService;
+import com.lemon.lemonagent.servicecore.runtime.eval.EvalService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

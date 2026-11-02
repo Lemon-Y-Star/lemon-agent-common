@@ -14,7 +14,7 @@ import com.lemon.lemonagent.model.runtime.GraphDiffData;
 import com.lemon.lemonagent.model.runtime.RollbackWorkflowReq;
 import com.lemon.lemonagent.model.runtime.RollbackWorkflowResp;
 import com.lemon.lemonagent.model.runtime.WorkflowsData;
-import com.lemon.lemonagent.servicecore.runtime.WorkflowService;
+import com.lemon.lemonagent.servicecore.runtime.workflow.WorkflowService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;
@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import com.lemon.lemonagent.servicecore.runtime.graph.GraphValidator;
 
 /**
  * 工作流接口（v3.7）：列表 / 创建（可从 Agent 执行图另存）/ 详情 / 保存新版本。

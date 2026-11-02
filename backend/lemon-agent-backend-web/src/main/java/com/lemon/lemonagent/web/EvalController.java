@@ -4,7 +4,7 @@ import com.lemon.lemonagent.model.runtime.CreateEvalBatchReq;
 import com.lemon.lemonagent.model.runtime.CreateEvalBatchResp;
 import com.lemon.lemonagent.model.runtime.EvalBatchData;
 import com.lemon.lemonagent.model.runtime.EvalBatchesData;
-import com.lemon.lemonagent.servicecore.runtime.EvalService;
+import com.lemon.lemonagent.servicecore.runtime.eval.EvalService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;

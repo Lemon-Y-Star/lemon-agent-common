@@ -7,7 +7,7 @@ import com.lemon.lemonagent.model.runtime.DeleteMemoryResp;
 import com.lemon.lemonagent.model.runtime.MemoriesData;
 import com.lemon.lemonagent.model.runtime.ToggleMemoryReq;
 import com.lemon.lemonagent.model.runtime.ToggleMemoryResp;
-import com.lemon.lemonagent.servicecore.runtime.MemoryService;
+import com.lemon.lemonagent.servicecore.runtime.memory.MemoryService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;

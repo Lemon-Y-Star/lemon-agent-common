@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.graph;
 
 import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.AgentGraphEntity;
@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.lemon.lemonagent.servicecore.runtime.tool.ToolRegistry;
 
 /**
  * Agent 执行图领域服务（v3.2.0）：读取当前版本、保存新版本（校验后 version+1）。

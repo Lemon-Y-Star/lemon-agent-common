@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.knowledge;
 
 import com.lemon.lemonagent.dal.entity.KbDocumentEntity;
 import com.lemon.lemonagent.dal.entity.KbImageEntity;

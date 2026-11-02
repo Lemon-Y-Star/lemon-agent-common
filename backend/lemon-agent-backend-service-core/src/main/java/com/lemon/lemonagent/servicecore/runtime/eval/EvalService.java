@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.eval;
 
 import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.AgentGraphEntity;
@@ -25,6 +25,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import com.lemon.lemonagent.servicecore.runtime.engine.AgentRuntimeService;
+import com.lemon.lemonagent.servicecore.runtime.graph.GraphCodec;
+import com.lemon.lemonagent.servicecore.runtime.workflow.WorkflowService;
 
 /**
  * 评测回归服务（v3.5）：把「一批用例」按**当前执行图版本**跑成一组运行，

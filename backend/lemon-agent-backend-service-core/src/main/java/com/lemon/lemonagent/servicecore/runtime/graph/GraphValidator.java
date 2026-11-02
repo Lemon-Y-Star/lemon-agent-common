@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.graph;
 
 import com.lemon.lemonagent.model.runtime.AgentGraphData;
 import com.lemon.lemonagent.model.runtime.GraphEdge;
@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.lemon.lemonagent.servicecore.runtime.tool.ToolRegistry;
 
 /**
  * 执行图校验与拓扑排序（v3.2.0，PRD FR-7.1 §⑦）。
@@ -23,10 +24,10 @@ import java.util.Set;
  * 有且仅有一个 START、至少一个 END、边两端存在、START 无入边、非 START 必须有入边、
  * TOOL 节点的工具必须已注册、LLM 节点必须有指令、CODE 节点必须有代码、无环（Kahn）。</p>
  */
-final class GraphValidator {
+public final class GraphValidator {
 
     /** 节点类型白名单。 */
-    static final Set<String> TYPES = Set.of("START", "LLM", "TOOL", "CODE", "APPROVAL", "END");
+    public static final Set<String> TYPES = Set.of("START", "LLM", "TOOL", "CODE", "APPROVAL", "END");
 
     /** 节点上限：再多就不是"图"而是运维脚本，且串行执行成本线性增长。 */
     private static final int MAX_NODES = 20;
@@ -40,7 +41,7 @@ final class GraphValidator {
      * @param graph    入参：图
      * @param registry 入参：工具注册表（校验 TOOL 节点）
      */
-    static void validate(AgentGraphData graph, ToolRegistry registry) {
+    public static void validate(AgentGraphData graph, ToolRegistry registry) {
         if (graph == null || graph.getNodes() == null || graph.getNodes().isEmpty()) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "执行图不能为空");
         }
@@ -152,7 +153,7 @@ final class GraphValidator {
      * @param graph 入参：已校验的图
      * @return 出参：拓扑序节点列表（有环时不足全量）
      */
-    static List<GraphNode> topoOrder(AgentGraphData graph) {
+    public static List<GraphNode> topoOrder(AgentGraphData graph) {
         List<GraphNode> nodes = graph.getNodes() == null ? List.of() : graph.getNodes();
         Map<String, GraphNode> byId = new HashMap<>();
         Map<String, Integer> inDegree = new HashMap<>();

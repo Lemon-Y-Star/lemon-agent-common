@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.artifact;
 
 import com.lemon.lemonagent.dal.entity.AgentRunEntity;
 import com.lemon.lemonagent.dal.entity.RunFeedbackEntity;

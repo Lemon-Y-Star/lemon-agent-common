@@ -1,7 +1,7 @@
 package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.ToolsData;
-import com.lemon.lemonagent.servicecore.runtime.ToolRegistry;
+import com.lemon.lemonagent.servicecore.runtime.tool.ToolRegistry;
 import com.lemon.architecture.model.BaseResult;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -2,7 +2,7 @@ package com.lemon.lemonagent.service.biz.process.memory;
 
 import com.lemon.lemonagent.model.runtime.CreateMemoryReq;
 import com.lemon.lemonagent.model.runtime.CreateMemoryResp;
-import com.lemon.lemonagent.servicecore.runtime.MemoryService;
+import com.lemon.lemonagent.servicecore.runtime.memory.MemoryService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

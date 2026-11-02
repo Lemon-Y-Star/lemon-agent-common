@@ -2,7 +2,7 @@ package com.lemon.lemonagent.service.biz.process.knowledge;
 
 import com.lemon.lemonagent.model.runtime.DeleteKbDocReq;
 import com.lemon.lemonagent.model.runtime.DeleteKbDocResp;
-import com.lemon.lemonagent.servicecore.runtime.KnowledgeService;
+import com.lemon.lemonagent.servicecore.runtime.knowledge.KnowledgeService;
 import com.lemon.architecture.model.route.BusinessType;
 import com.lemon.architecture.model.route.SourceType;
 import com.lemon.architecture.service.util.annotation.HandlerRoute;

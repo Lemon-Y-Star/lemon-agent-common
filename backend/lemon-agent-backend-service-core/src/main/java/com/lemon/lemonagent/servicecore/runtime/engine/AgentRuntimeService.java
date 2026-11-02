@@ -1,4 +1,4 @@
-package com.lemon.lemonagent.servicecore.runtime;
+package com.lemon.lemonagent.servicecore.runtime.engine;
 
 import com.lemon.lemonagent.dal.entity.AgentConfigEntity;
 import com.lemon.lemonagent.dal.entity.AgentMessageEntity;
@@ -41,6 +41,11 @@ import java.util.Map;
 import java.util.UUID;
 
 import tools.jackson.databind.ObjectMapper;
+import com.lemon.lemonagent.servicecore.runtime.graph.GraphCodec;
+import com.lemon.lemonagent.servicecore.runtime.graph.GraphValidator;
+import com.lemon.lemonagent.servicecore.runtime.agent.AgentConfigService;
+import com.lemon.lemonagent.servicecore.runtime.tool.ToolRegistry;
+import com.lemon.lemonagent.servicecore.runtime.workflow.WorkflowService;
 
 /**
  * 对话运行时领域服务：会话管理、运行编排（幂等 / 互斥 / 状态机）、SSE 订阅、取消。
