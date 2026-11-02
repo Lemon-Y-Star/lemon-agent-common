@@ -266,9 +266,11 @@ public class RunExecutor {
 
         // ④ 分支：工具调用（挂起或直执行） vs 文本完成；fixed 模式没有装配工具，模型报 tool_calls 属异常，按文本收口
         if (turn.toolCalls() != null && !fixed) {
-            // 中场发言落库（模型调工具前输出的文本，恢复后仍在上下文里）
-            if (!turn.text().isEmpty()) {
-                insertAssistantMessage(run, turn.text(), runId);
+            // 中场发言落库（模型调工具前输出的文本，恢复后仍在上下文里）。
+            // 剥思考块后为空（这轮只思考+调工具）就不落库——否则历史里出现一串「无正文」气泡（run164 实测）
+            String midText = stripThink(turn.text());
+            if (!midText.isBlank()) {
+                insertAssistantMessage(run, midText, runId);
             }
             handleToolCalls(run, turn.toolCalls(), continuationNotes, depth, allowedTools);
             return;

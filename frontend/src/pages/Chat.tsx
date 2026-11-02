@@ -182,7 +182,10 @@ export default function Chat() {
       if (String(sessionId) !== params.sessionId) {
         navigate(`/chat/${sessionId}`, { replace: true })
       }
-      setBubbles(detail.messages.map((m: MessageItem) => {
+      setBubbles(detail.messages
+        // 历史兜底（v4.4.2）：早期版本把「只思考无正文」的中间轮也落了库，剥思考块后为空的消息不渲染（run164 实测一串空泡）
+        .filter((m: MessageItem) => !(m.role === 'ASSISTANT' && splitThink(m.content).answer.trim() === ''))
+        .map((m: MessageItem) => {
         // 历史回答的耗时/traceId：按 runId 从会话详情的运行摘要回填（v4.1.3）
         const run = m.runId != null ? detail.runs.find((r) => r.runId === m.runId) : undefined
         return {
