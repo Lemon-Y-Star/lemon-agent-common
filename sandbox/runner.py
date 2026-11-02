@@ -11,7 +11,9 @@ try:
 except ImportError:
     resource = None  # Windows 本地开发无 rlimit；生产为 Linux 容器，硬限生效
 
-MEM_BYTES = 256 * 1024 * 1024      # 虚拟内存上限 256MB（numpy/pandas 足够）
+# RLIMIT_AS 限的是虚拟地址空间：numpy/pandas 的 mmap 映射远超真实 RSS，
+# 放宽到 2GB 仅供地址空间；实际内存占用由 compose 的容器 mem_limit 512M 硬限兜底
+MEM_BYTES = 2 * 1024 * 1024 * 1024  # 虚拟内存上限 2GB
 CPU_SECONDS = 15                   # CPU 时间上限（秒）
 FILE_BYTES = 8 * 1024 * 1024       # 单文件写上限 8MB
 
