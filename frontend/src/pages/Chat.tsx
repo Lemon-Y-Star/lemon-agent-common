@@ -62,6 +62,8 @@ interface Bubble {
   images?: string[]
   /** 运行文件产物（v4.4.4）：落库后的下载元数据 */
   artifacts?: { id: number; name: string; contentType: string; sizeBytes: number }[]
+  /** 回答正文内的沙箱图表（v4.4.5）：run_completed 时从工具芯片挪入，主视图展示 */
+  answerImages?: string[]
   // 审批卡
   approvalId?: string
   decided?: 'APPROVE' | 'REJECT'
@@ -434,13 +436,20 @@ export default function Chat() {
             const base = prev.map((b) => (
               b.kind === 'plan' && b.runId === runId && b.graphStartedAt
                 ? { ...b, graphDurationMs: Math.max(0, completedTs - b.graphStartedAt) }
-                : b
+                // 沙箱图表（v4.4.5）：完成后从工具芯片挪进正文回答气泡（芯片区只留 📎 产物）
+                : b.kind === 'tool' && b.runId === runId && b.images
+                  ? { ...b, images: undefined }
+                  : b
             ))
             const texts = base.filter((b) => b.kind === 'msg' && b.role === 'ASSISTANT' && b.runId === runId)
             // 引用溯源（v4.1）：收集本 run 的 search_docs 命中文档标题，去重后挂到回答气泡
             const runRefs = Array.from(new Set(prev
               .filter((b) => b.kind === 'tool' && b.runId === runId && b.refs)
               .flatMap((b) => b.refs ?? [])))
+            // 沙箱图表（v4.4.5）：收集本 run 工具产生的图片，挂到回答气泡正文内
+            const runImages = Array.from(new Set(prev
+              .filter((b) => b.kind === 'tool' && b.runId === runId && b.images)
+              .flatMap((b) => b.images ?? [])))
             // 单气泡（auto/plan）以权威正文覆盖；多气泡（并行图）保留各节点文本，避免重复一遍
             if (texts.length > 1) {
               return base
@@ -457,6 +466,7 @@ export default function Chat() {
                   thinkOpen: b.thinkTouched ? b.thinkOpen : false,
                   noThink: !!lastMetaRef.current.thinking && !outputText.includes('<think>') || undefined,
                   refs: runRefs.length > 0 ? runRefs : undefined,
+                  answerImages: runImages.length > 0 ? runImages : undefined,
                   usage: usagePayload
                     ? { input: Number(usagePayload.inputTokens ?? 0), output: Number(usagePayload.outputTokens ?? 0) }
                     : undefined,
@@ -800,6 +810,14 @@ export default function Chat() {
                 </>
               )
             })()}
+            {/* 沙箱图表（v4.4.5）：run_completed 后从工具芯片挪入回答正文，主视图展示（两种思考路径统一在这渲染） */}
+            {b.role === 'ASSISTANT' && b.answerImages && b.answerImages.length > 0 && (
+              <div className="tcc-imgs">
+                {b.answerImages.map((src, k) => (
+                  <img key={k} src={src} alt={`图表 ${k + 1}`} onClick={() => setImgPreview(src)} />
+                ))}
+              </div>
+            )}
             {b.role === 'USER' && (b.content || (streaming ? '…' : ''))}
             {b.role === 'ASSISTANT' && !b.content
               && (streaming
