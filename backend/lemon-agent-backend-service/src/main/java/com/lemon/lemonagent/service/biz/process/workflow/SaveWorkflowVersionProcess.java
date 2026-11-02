@@ -14,6 +14,7 @@ import jakarta.annotation.Resource;
 public class SaveWorkflowVersionProcess extends Handler<SaveWorkflowVersionReq, SaveWorkflowVersionResp> {
 
     @Resource
+    /** 工作流领域服务。 */
     private WorkflowService workflowService;
 
     /**

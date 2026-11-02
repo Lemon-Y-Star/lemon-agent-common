@@ -17,6 +17,7 @@ import jakarta.annotation.Resource;
 public class CreateSessionProcess extends Handler<CreateSessionReq, CreateSessionResp> {
 
     @Resource
+    /** 运行时领域服务（会话/运行/审批）。 */
     private AgentRuntimeService agentRuntimeService;
 
     /**

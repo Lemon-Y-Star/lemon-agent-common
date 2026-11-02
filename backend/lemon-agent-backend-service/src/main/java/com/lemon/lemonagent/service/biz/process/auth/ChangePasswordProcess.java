@@ -18,6 +18,7 @@ import jakarta.annotation.Resource;
 public class ChangePasswordProcess extends Handler<ChangePasswordReq, ChangePasswordResp> {
 
     @Resource
+    /** 认证领域服务。 */
     private AuthService authService;
 
     /**

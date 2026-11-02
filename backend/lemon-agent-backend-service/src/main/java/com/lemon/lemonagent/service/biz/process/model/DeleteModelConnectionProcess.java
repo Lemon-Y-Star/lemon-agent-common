@@ -16,6 +16,7 @@ import jakarta.annotation.Resource;
 public class DeleteModelConnectionProcess extends Handler<DeleteModelConnectionReq, DeleteModelConnectionResp> {
 
     @Resource
+    /** 模型连接领域服务。 */
     private ModelConnectionService modelConnectionService;
 
     /**

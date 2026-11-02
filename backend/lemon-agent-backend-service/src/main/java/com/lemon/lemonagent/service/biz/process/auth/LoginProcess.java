@@ -20,6 +20,7 @@ import jakarta.annotation.Resource;
 public class LoginProcess extends Handler<LoginReq, LoginResp> {
 
     @Resource
+    /** 认证领域服务。 */
     private AuthService authService;
 
     /**

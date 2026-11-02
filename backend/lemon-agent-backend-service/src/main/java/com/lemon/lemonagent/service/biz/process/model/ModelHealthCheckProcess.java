@@ -14,6 +14,7 @@ import jakarta.annotation.Resource;
 public class ModelHealthCheckProcess extends Handler<ModelHealthCheckReq, ModelHealthCheckResp> {
 
     @Resource
+    /** 模型连接健康探测。 */
     private ModelHealthProbe modelHealthProbe;
 
     /**

@@ -14,8 +14,14 @@ import jakarta.annotation.Resource;
 public class CreateKbDocProcess extends Handler<CreateKbDocReq, CreateKbDocResp> {
 
     @Resource
+    /** 知识库领域服务。 */
     private KnowledgeService knowledgeService;
-
+    /**
+     * 新增知识库文档（userId 由服务端填充；切片/向量化在领域服务里做）。
+     *
+     * @param request  已通过校验的请求
+     * @param response 待填充的响应
+     */
     @Override
     protected void doExecute(CreateKbDocReq request, CreateKbDocResp response) {
         response.setData(knowledgeService.create(request.getUserId(), request.getTitle(), request.getContent()));

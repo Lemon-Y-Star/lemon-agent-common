@@ -14,6 +14,7 @@ import jakarta.annotation.Resource;
 public class DeleteWorkflowProcess extends Handler<DeleteWorkflowReq, DeleteWorkflowResp> {
 
     @Resource
+    /** 工作流领域服务。 */
     private WorkflowService workflowService;
 
     /**

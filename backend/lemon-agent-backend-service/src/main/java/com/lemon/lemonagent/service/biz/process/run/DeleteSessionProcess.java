@@ -14,6 +14,7 @@ import jakarta.annotation.Resource;
 public class DeleteSessionProcess extends Handler<DeleteSessionReq, DeleteSessionResp> {
 
     @Resource
+    /** 运行时领域服务（会话/运行/审批）。 */
     private AgentRuntimeService agentRuntimeService;
 
     /**

@@ -14,6 +14,7 @@ import jakarta.annotation.Resource;
 public class CreateEvalBatchProcess extends Handler<CreateEvalBatchReq, CreateEvalBatchResp> {
 
     @Resource
+    /** 评测领域服务。 */
     private EvalService evalService;
 
     /**

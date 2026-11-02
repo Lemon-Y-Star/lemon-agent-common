@@ -16,6 +16,7 @@ import jakarta.annotation.Resource;
 public class DeleteMcpConnectionProcess extends Handler<DeleteMcpConnectionReq, DeleteMcpConnectionResp> {
 
     @Resource
+    /** MCP 连接领域服务。 */
     private McpConnectionService mcpConnectionService;
 
     /**

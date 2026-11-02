@@ -15,6 +15,7 @@ import jakarta.annotation.Resource;
 public class CreateApiKeyProcess extends Handler<CreateApiKeyReq, CreateApiKeyResp> {
 
     @Resource
+    /** API 密钥领域服务。 */
     private ApiKeyService apiKeyService;
 
     /**

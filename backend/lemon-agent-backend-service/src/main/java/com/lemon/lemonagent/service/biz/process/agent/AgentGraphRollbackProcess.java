@@ -14,6 +14,7 @@ import jakarta.annotation.Resource;
 public class AgentGraphRollbackProcess extends Handler<AgentGraphRollbackReq, AgentGraphRollbackResp> {
 
     @Resource
+    /** Agent 执行图领域服务（保存/版本/回滚）。 */
     private AgentGraphService agentGraphService;
 
     /**

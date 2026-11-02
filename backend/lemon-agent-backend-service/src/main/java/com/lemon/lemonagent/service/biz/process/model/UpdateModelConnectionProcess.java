@@ -17,6 +17,7 @@ import jakarta.annotation.Resource;
 public class UpdateModelConnectionProcess extends Handler<UpdateModelConnectionReq, UpdateModelConnectionResp> {
 
     @Resource
+    /** 模型连接领域服务。 */
     private ModelConnectionService modelConnectionService;
 
     /**

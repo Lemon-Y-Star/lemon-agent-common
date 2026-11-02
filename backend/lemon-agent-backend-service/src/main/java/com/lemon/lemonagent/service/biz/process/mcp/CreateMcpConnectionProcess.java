@@ -17,6 +17,7 @@ import jakarta.annotation.Resource;
 public class CreateMcpConnectionProcess extends Handler<CreateMcpConnectionReq, CreateMcpConnectionResp> {
 
     @Resource
+    /** MCP 连接领域服务。 */
     private McpConnectionService mcpConnectionService;
 
     /**

@@ -14,8 +14,14 @@ import jakarta.annotation.Resource;
 public class ToggleMemoryProcess extends Handler<ToggleMemoryReq, ToggleMemoryResp> {
 
     @Resource
+    /** 长期记忆领域服务。 */
     private MemoryService memoryService;
-
+    /**
+     * 启停长期记忆条目（停用后不再参与提示词聚合，不删除内容）。
+     *
+     * @param request  已通过校验的请求
+     * @param response 待填充的响应
+     */
     @Override
     protected void doExecute(ToggleMemoryReq request, ToggleMemoryResp response) {
         memoryService.toggle(request.getUserId(), request.getMemoryId(), request.getEnabled());

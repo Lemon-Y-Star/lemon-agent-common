@@ -23,6 +23,7 @@ import java.util.Map;
 public class CreateRunProcess extends Handler<CreateRunReq, CreateRunResp> {
 
     @Resource
+    /** 运行时领域服务（会话/运行/审批）。 */
     private AgentRuntimeService agentRuntimeService;
 
     /**

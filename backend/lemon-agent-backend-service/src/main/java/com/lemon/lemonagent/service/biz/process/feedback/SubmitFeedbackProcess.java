@@ -15,6 +15,7 @@ import jakarta.annotation.Resource;
 public class SubmitFeedbackProcess extends Handler<SubmitFeedbackReq, SubmitFeedbackResp> {
 
     @Resource
+    /** 产物与反馈领域服务。 */
     private ArtifactService artifactService;
 
     /**

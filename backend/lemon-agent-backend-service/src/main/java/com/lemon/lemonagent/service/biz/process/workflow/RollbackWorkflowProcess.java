@@ -14,6 +14,7 @@ import jakarta.annotation.Resource;
 public class RollbackWorkflowProcess extends Handler<RollbackWorkflowReq, RollbackWorkflowResp> {
 
     @Resource
+    /** 工作流领域服务。 */
     private WorkflowService workflowService;
 
     /**

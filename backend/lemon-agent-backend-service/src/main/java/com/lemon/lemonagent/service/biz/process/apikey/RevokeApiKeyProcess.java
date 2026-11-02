@@ -14,6 +14,7 @@ import jakarta.annotation.Resource;
 public class RevokeApiKeyProcess extends Handler<RevokeApiKeyReq, RevokeApiKeyResp> {
 
     @Resource
+    /** API 密钥领域服务。 */
     private ApiKeyService apiKeyService;
 
     /**

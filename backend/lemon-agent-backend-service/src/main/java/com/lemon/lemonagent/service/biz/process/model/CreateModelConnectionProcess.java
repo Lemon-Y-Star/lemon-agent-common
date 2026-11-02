@@ -22,6 +22,7 @@ import java.util.List;
 public class CreateModelConnectionProcess extends Handler<CreateModelConnectionReq, CreateModelConnectionResp> {
 
     @Resource
+    /** 模型连接领域服务。 */
     private ModelConnectionService modelConnectionService;
 
     /**

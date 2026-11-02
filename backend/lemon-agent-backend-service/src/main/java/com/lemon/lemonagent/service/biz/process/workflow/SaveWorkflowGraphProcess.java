@@ -15,6 +15,7 @@ import jakarta.annotation.Resource;
 public class SaveWorkflowGraphProcess extends Handler<SaveWorkflowGraphReq, SaveWorkflowGraphResp> {
 
     @Resource
+    /** 工作流领域服务。 */
     private WorkflowService workflowService;
 
     /**

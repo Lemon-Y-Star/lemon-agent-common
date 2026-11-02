@@ -15,6 +15,7 @@ import jakarta.annotation.Resource;
 public class CreateAgentProcess extends Handler<CreateAgentReq, CreateAgentResp> {
 
     @Resource
+    /** Agent 配置领域服务。 */
     private AgentConfigService agentConfigService;
 
     /**

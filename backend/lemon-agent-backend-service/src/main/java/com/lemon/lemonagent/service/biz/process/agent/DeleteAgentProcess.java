@@ -14,6 +14,7 @@ import jakarta.annotation.Resource;
 public class DeleteAgentProcess extends Handler<DeleteAgentReq, DeleteAgentResp> {
 
     @Resource
+    /** Agent 配置领域服务。 */
     private AgentConfigService agentConfigService;
 
     /**

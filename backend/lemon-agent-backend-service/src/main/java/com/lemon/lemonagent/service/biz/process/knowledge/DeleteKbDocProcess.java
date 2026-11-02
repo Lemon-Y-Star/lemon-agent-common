@@ -14,8 +14,14 @@ import jakarta.annotation.Resource;
 public class DeleteKbDocProcess extends Handler<DeleteKbDocReq, DeleteKbDocResp> {
 
     @Resource
+    /** 知识库领域服务。 */
     private KnowledgeService knowledgeService;
-
+    /**
+     * 删除知识库文档（userId 由服务端填充；归属校验与向量清理在领域服务里做）。
+     *
+     * @param request  已通过校验的请求
+     * @param response 待填充的响应
+     */
     @Override
     protected void doExecute(DeleteKbDocReq request, DeleteKbDocResp response) {
         knowledgeService.delete(request.getUserId(), request.getDocId());

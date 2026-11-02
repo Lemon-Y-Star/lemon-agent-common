@@ -14,8 +14,14 @@ import jakarta.annotation.Resource;
 public class CreateMemoryProcess extends Handler<CreateMemoryReq, CreateMemoryResp> {
 
     @Resource
+    /** 长期记忆领域服务。 */
     private MemoryService memoryService;
-
+    /**
+     * 新增长期记忆条目（默认启用；启用条目由 MemoryService 聚合进系统提示）。
+     *
+     * @param request  已通过校验的请求
+     * @param response 待填充的响应
+     */
     @Override
     protected void doExecute(CreateMemoryReq request, CreateMemoryResp response) {
         response.setData(memoryService.create(request.getUserId(), request.getContent()));
