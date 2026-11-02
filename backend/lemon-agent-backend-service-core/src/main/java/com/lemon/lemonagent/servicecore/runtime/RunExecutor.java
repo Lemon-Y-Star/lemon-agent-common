@@ -61,6 +61,10 @@ public class RunExecutor {
     private static final int MAX_HISTORY_TURNS = 50;
     private static final int MAX_TOOL_ROUNDS = 5;
 
+    /** 工具轮次用尽后的提示（run158 实测：不明说，DeepSeek 会把调用标记当正文吐出来）。 */
+    private static final String TOOL_CUT_NOTE = "[系统] 工具调用轮次已达上限，无法再调用任何工具。"
+            + "请直接基于以上已获得的工具结果给出最终回答：不要发起工具调用，也不要输出任何调用标记或代码围栏外的东西。";
+
     /** 计划步骤上限（plan 策略）：再多就不是「计划」而是流水账，且每次运行的成本线性增长。 */
     private static final int MAX_PLAN_STEPS = 6;
 
@@ -243,6 +247,10 @@ public class RunExecutor {
 
         List<ModelPort.ToolSpec> tools = !fixed && depth < MAX_TOOL_ROUNDS
                 ? toolRegistry.specs(allowedTools) : List.of();
+        if (!fixed && depth >= MAX_TOOL_ROUNDS) {
+            // 轮次上限后砍掉工具：必须明说，否则模型（如 DeepSeek）会把调用标记当文本吐出来（run158 实测）
+            context.add(new ModelPort.Msg("USER", TOOL_CUT_NOTE));
+        }
         // 深度思考（CoT）：auto / fixed 均支持（plan / custom 有各自的可见进度）。
         // 指令同时写 system 与用户消息——部分中转渠道在带 tools 的请求里会丢弃 system 消息（v3.0 已知缺陷），
         // 只写 system 会让 CoT 在 auto 模式静默失效；落库的 USER 消息保持原始输入不受影响。
@@ -375,6 +383,9 @@ public class RunExecutor {
             String stepInput = stepInput(step, stepIndex, userInput);
             List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                     ? toolRegistry.specs(allowedTools) : List.of();
+            if (depth >= MAX_TOOL_ROUNDS) {
+                context.add(new ModelPort.Msg("USER", TOOL_CUT_NOTE));
+            }
             TurnResult turn = streamTurnResilient(run, agent, prompt, context, stepInput, tools, stepIndex, true);
 
             if (turn.toolCalls() != null) {
@@ -1017,6 +1028,9 @@ public class RunExecutor {
             List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
             List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                     ? graphTools(allowed) : List.of();
+            if (depth >= MAX_TOOL_ROUNDS) {
+                context.add(new ModelPort.Msg("USER", TOOL_CUT_NOTE));
+            }
             TurnResult turn = streamTurnResilient(run, agent,
                     nodeSystemPrompt(instructionOf(agent, run.getUserId()), node),
                     context, nodeInput(node, userInput), tools, stepIndex, true);
@@ -1129,6 +1143,9 @@ public class RunExecutor {
                 final List<String> allowed = node.getTools() == null ? agentTools : node.getTools();
                 final List<ModelPort.ToolSpec> tools = depth < MAX_TOOL_ROUNDS
                         ? graphTools(allowed) : List.of();
+                if (depth >= MAX_TOOL_ROUNDS) {
+                    ctx.add(new ModelPort.Msg("USER", TOOL_CUT_NOTE));
+                }
                 futures.add(executor.submit(() -> {
                     TurnResult turn = streamTurnResilient(run, agent,
                             nodeSystemPrompt(instructionOf(agent, run.getUserId()), node), ctx,
