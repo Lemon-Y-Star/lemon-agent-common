@@ -2,7 +2,7 @@ import { get, put } from './client'
 
 /** 执行图 API（v3.2.0 后端 / v3.2.1 画布）。 */
 
-export type GraphNodeType = 'START' | 'LLM' | 'TOOL' | 'APPROVAL' | 'END'
+export type GraphNodeType = 'START' | 'LLM' | 'TOOL' | 'CODE' | 'APPROVAL' | 'END'
 
 export interface GraphNode {
   id: string
@@ -11,6 +11,8 @@ export interface GraphNode {
   prompt?: string
   tool?: string
   args?: Record<string, unknown> | null
+  /** CODE 节点：Python 源码（沙箱执行，代码内可读 upstream 列表 = 上游产出） */
+  code?: string
   approvalPrompt?: string
   tools?: string[] | null
   x?: number | null

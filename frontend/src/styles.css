@@ -504,3 +504,7 @@ tr:hover td{background:#fafbfe}
 /* ---------- v3.9.2 KaTeX 公式在深色气泡内不溢出 ---------- */
 .md .katex-display{overflow-x:auto;overflow-y:hidden;padding:2px 0}
 .md .katex{font-size:1.05em}
+
+/* ---------- v4.4 沙箱 CODE 节点 ---------- */
+.ge-code{font-family:'Cascadia Code',Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre;tab-size:4}
+.ge-code-out{font-family:'Cascadia Code',Consolas,monospace;font-size:12px;line-height:1.5;background:var(--bg,#f6f7f9);border:1px solid var(--border,#e2e5ea);border-radius:8px;padding:8px 10px;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0}

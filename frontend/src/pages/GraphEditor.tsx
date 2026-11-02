@@ -9,6 +9,7 @@ import {
   type GraphNodeType,
 } from '../api/graph'
 import { fetchTools, type ToolInfo } from '../api/agents'
+import { runSandbox, type SandboxResult } from '../api/sandbox'
 import { createWorkflow, fetchWorkflowGraph, saveWorkflowGraph } from '../api/workflow'
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
@@ -30,6 +31,7 @@ const TYPE_LABEL: Record<GraphNodeType, string> = {
   START: '开始',
   LLM: '大模型',
   TOOL: '工具',
+  CODE: '代码（Python）',
   APPROVAL: '审批门',
   END: '结束',
 }
@@ -38,6 +40,7 @@ const TYPE_COLOR: Record<GraphNodeType, string> = {
   START: '#16a34a',
   LLM: '#4f46e5',
   TOOL: '#0891b2',
+  CODE: '#9333ea',
   APPROVAL: '#d97706',
   END: '#475569',
 }
@@ -92,6 +95,8 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [argsText, setArgsText] = useState('')
+  /** CODE 节点试运行状态（v4.4）：null=未运行；运行中 disabled */
+  const [sandboxRun, setSandboxRun] = useState<{ loading: boolean; result?: SandboxResult; error?: string } | null>(null)
 
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
@@ -344,7 +349,7 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
           <h3>节点</h3>
           {editable ? (
             <div className="ge-palette-btns">
-              {(['LLM', 'TOOL', 'APPROVAL', 'START', 'END'] as GraphNodeType[]).map((t) => (
+              {(['LLM', 'TOOL', 'CODE', 'APPROVAL', 'START', 'END'] as GraphNodeType[]).map((t) => (
                 <button key={t} className="btn sm" onClick={() => addNode(t)}>＋ {TYPE_LABEL[t]}</button>
               ))}
             </div>
@@ -575,6 +580,53 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
                       placeholder={'{\n  "title": "日常巡检",\n  "priority": "P2"\n}'}
                     />
                   </div>
+                </>
+              )}
+
+              {selectedNode.type === 'CODE' && (
+                <>
+                  <div className="field">
+                    <label>Python 代码（隔离沙箱执行：禁网、限内存/超时；已预装 numpy/pandas）</label>
+                    <textarea
+                      rows={12}
+                      value={selectedNode.code ?? ''}
+                      disabled={!editable}
+                      onChange={(e) => updateNode(selectedNode.id, { code: e.target.value })}
+                      className="ge-code"
+                      placeholder={"# 用 print() 输出结果；上游节点产出在 upstream 列表里\nimport math\nprint('圆周率:', math.pi)"}
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div className="field">
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={!editable || sandboxRun?.loading || !(selectedNode.code ?? '').trim()}
+                      onClick={async () => {
+                        setSandboxRun({ loading: true })
+                        try {
+                          const r = await runSandbox(selectedNode.code ?? '')
+                          setSandboxRun({ loading: false, result: r })
+                        } catch (err) {
+                          setSandboxRun({ loading: false, error: err instanceof ApiError ? err.message : '沙箱调用失败' })
+                        }
+                      }}
+                    >
+                      {sandboxRun?.loading ? '运行中…' : '▶ 试运行（10s 上限）'}
+                    </button>
+                  </div>
+                  {sandboxRun?.error && <p className="note danger">{sandboxRun.error}</p>}
+                  {sandboxRun?.result && (
+                    <div className="field">
+                      <label>
+                        运行结果（{sandboxRun.result.durationMs}ms，退出码 {sandboxRun.result.exitCode}
+                        {sandboxRun.result.timedOut ? '，已超时终止' : ''}
+                        {sandboxRun.result.truncated ? '，输出被截断' : ''}）
+                      </label>
+                      <pre className="ge-code-out">{(sandboxRun.result.stdout || '(无输出)')
+                        + (sandboxRun.result.stderr ? '\n[stderr] ' + sandboxRun.result.stderr : '')}</pre>
+                    </div>
+                  )}
                 </>
               )}
 

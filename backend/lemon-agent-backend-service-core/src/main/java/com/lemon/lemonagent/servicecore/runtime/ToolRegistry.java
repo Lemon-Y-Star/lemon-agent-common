@@ -7,6 +7,7 @@ import com.lemon.lemonagent.dal.repository.AgentRunRepository;
 import com.lemon.lemonagent.dal.repository.McpConnectionRepository;
 import com.lemon.lemonagent.dal.repository.WorkflowRepository;
 import com.lemon.lemonagent.model.mcp.McpToolPort;
+import com.lemon.lemonagent.model.runtime.CodeSandboxPort;
 import com.lemon.lemonagent.model.runtime.ModelPort;
 import com.lemon.lemonagent.model.runtime.RetrievalPort;
 import com.lemon.lemonagent.model.runtime.RunStatus;
@@ -80,6 +81,9 @@ public class ToolRegistry {
     /** 检索工具（可空：embedding 未配置时不注册，对话不受影响）。 */
     private final ToolHandler searchDocsTool;
 
+    /** Python 沙箱工具（v4.4）：执行环境在沙箱容器，本进程只转发。 */
+    private final ToolHandler runPythonTool;
+
     /** 发布为工具的工作流（run_wf_<id>）：启动回放 + 创建/删除时动态绑定。 */
     private final Map<String, ToolHandler> workflowTools = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -115,6 +119,9 @@ public class ToolRegistry {
 
     private final McpConnectionRepository mcpConnectionRepository;
 
+    /** 代码沙箱端口（可空：沙箱服务缺席时工具仍注册，执行时返回明确错误）。 */
+    private final CodeSandboxPort codeSandbox;
+
     public ToolRegistry(JdbcTemplate jdbcTemplate,
                         RetrievalPort retrievalPort,
                         KnowledgeService knowledgeService,
@@ -123,6 +130,7 @@ public class ToolRegistry {
                         ObjectProvider<AgentRuntimeService> agentRuntimeProvider,
                         ObjectProvider<McpToolPort> mcpToolPortProvider,
                         McpConnectionRepository mcpConnectionRepository,
+                        ObjectProvider<CodeSandboxPort> codeSandboxProvider,
                         @Value("${agent.tools.approval-required:create_ticket}") String approvalList) {
         this.jdbcTemplate = jdbcTemplate;
         this.workflowRepository = workflowRepository;
@@ -133,6 +141,7 @@ public class ToolRegistry {
         this.approvalList = needsApproval;
         this.mcpToolPort = mcpToolPortProvider.getIfAvailable();
         this.mcpConnectionRepository = mcpConnectionRepository;
+        this.codeSandbox = codeSandboxProvider.getIfAvailable();
         // search_docs 常驻：没配 embedding 时走关键词检索（v3.6 双路降级），配了再叠加向量
         this.searchDocsTool = new ToolHandler(new ModelPort.ToolSpec(
                 "search_docs",
@@ -181,6 +190,38 @@ public class ToolRegistry {
                                 + "\"required\":[\"title\",\"priority\"]}"),
                         needsApproval.contains("create_ticket"),
                         this::createTicket));
+        // run_python 常驻（v4.4）：代码在隔离沙箱执行（禁网 + rlimit + 超时），写操作风险由沙箱吸收
+        this.runPythonTool = new ToolHandler(new ModelPort.ToolSpec(
+                "run_python",
+                "在隔离沙箱中执行一段 Python 代码并返回 stdout/stderr（不改变外部状态，代码无法联网）。"
+                        + "适合精确计算、数据处理、格式转换、算法验证等模型心算不可靠的场景；"
+                        + "环境已预装 numpy/pandas。代码必须用 print() 输出结果。",
+                "{\"type\":\"object\",\"properties\":{"
+                        + "\"code\":{\"type\":\"string\",\"description\":\"要执行的 Python 代码（Python 3.11）\"}},"
+                        + "\"required\":[\"code\"]}"),
+                needsApproval.contains("run_python"),
+                args -> {
+                    if (codeSandbox == null) {
+                        return Map.of("error", "沙箱服务未就绪（LEMON_SANDBOX_URL 未配置或服务未启动）");
+                    }
+                    String code = String.valueOf(args.getOrDefault("code", ""));
+                    try {
+                        CodeSandboxPort.ExecResult r = codeSandbox.exec(code, List.of(), 15);
+                        if (r.timedOut()) {
+                            return Map.of("error", "代码执行超时（超过 15 秒被强制终止）", "stdout", r.stdout());
+                        }
+                        Map<String, Object> out = new java.util.LinkedHashMap<>();
+                        out.put("stdout", r.stdout());
+                        if (r.stderr() != null && !r.stderr().isBlank()) {
+                            out.put("stderr", r.stderr());
+                        }
+                        out.put("exitCode", r.exitCode());
+                        out.put("durationMs", r.durationMs());
+                        return out;
+                    } catch (Exception e) {
+                        return Map.of("error", "沙箱调用失败：" + e.getMessage());
+                    }
+                });
         // 启动回放：把库里全部启用中的工作流发布为工具（run_wf_<id>）
         workflowRepository.findAllEnabled().forEach(this::bindWorkflow);
     }
@@ -399,6 +440,9 @@ public class ToolRegistry {
             result.add(searchDocsTool.spec);
         }
         result.add(fixedTools.get("create_ticket").spec);
+        if (runPythonTool != null) {
+            result.add(runPythonTool.spec);
+        }
         workflowTools.values().forEach(h -> result.add(h.spec));
         mcpTools.values().forEach(h -> result.add(h.spec));
         return result;
@@ -440,6 +484,9 @@ public class ToolRegistry {
         list.add(withLabel(toInfo(fixedTools.get("current_time"), true), "当前时间"));
         list.add(withLabel(toInfo(searchDocsTool, true), "知识库检索"));
         list.add(withLabel(toInfo(fixedTools.get("create_ticket"), true), "创建工单（演示写操作）"));
+        if (runPythonTool != null) {
+            list.add(withLabel(toInfo(runPythonTool, true), "Python 代码执行（沙箱）"));
+        }
         workflowTools.forEach((name, handler) -> {
             Long owner = workflowOwners.get(name);
             if (owner != null && owner.equals(userId)) {
@@ -491,6 +538,9 @@ public class ToolRegistry {
     public ToolHandler find(String name) {
         if ("search_docs".equals(name) && searchDocsTool != null) {
             return searchDocsTool;
+        }
+        if ("run_python".equals(name) && runPythonTool != null) {
+            return runPythonTool;
         }
         ToolHandler workflowTool = workflowTools.get(name);
         if (workflowTool != null) {

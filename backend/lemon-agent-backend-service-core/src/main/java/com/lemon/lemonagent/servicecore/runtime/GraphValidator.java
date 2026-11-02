@@ -19,14 +19,14 @@ import java.util.Set;
  * <p><b>校验在保存与提交两处都跑</b>：画布能存下的图，运行时一定能调度；
  * 反过来，运行时不接受"半张图"——创建 run 时若图非法直接 400，不分配事件序号。</p>
  *
- * <p>规则：节点 1..20 个、ID 唯一、类型白名单（START/LLM/TOOL/APPROVAL/END）、
+ * <p>规则：节点 1..20 个、ID 唯一、类型白名单（START/LLM/TOOL/CODE/APPROVAL/END）、
  * 有且仅有一个 START、至少一个 END、边两端存在、START 无入边、非 START 必须有入边、
- * TOOL 节点的工具必须已注册、LLM 节点必须有指令、无环（Kahn）。</p>
+ * TOOL 节点的工具必须已注册、LLM 节点必须有指令、CODE 节点必须有代码、无环（Kahn）。</p>
  */
 final class GraphValidator {
 
     /** 节点类型白名单。 */
-    static final Set<String> TYPES = Set.of("START", "LLM", "TOOL", "APPROVAL", "END");
+    static final Set<String> TYPES = Set.of("START", "LLM", "TOOL", "CODE", "APPROVAL", "END");
 
     /** 节点上限：再多就不是"图"而是运维脚本，且串行执行成本线性增长。 */
     private static final int MAX_NODES = 20;
@@ -61,7 +61,7 @@ final class GraphValidator {
             String type = node.getType() == null ? "" : node.getType().toUpperCase();
             if (!TYPES.contains(type)) {
                 throw new BusinessException(ResultCodes.VALIDATION_ERROR,
-                        "未知节点类型：" + node.getType() + "（支持 START/LLM/TOOL/APPROVAL/END）");
+                        "未知节点类型：" + node.getType() + "（支持 START/LLM/TOOL/CODE/APPROVAL/END）");
             }
             node.setType(type);
             if ("START".equals(type)) {
@@ -88,6 +88,10 @@ final class GraphValidator {
                                 "TOOL 节点 " + node.getId() + " 引用了未注册的工具：" + node.getTool());
                     }
                 }
+            } else if ("CODE".equals(type)
+                    && (node.getCode() == null || node.getCode().isBlank())) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                        "CODE 节点 " + node.getId() + " 需要填写 Python 代码");
             } else if ("LLM".equals(type)
                     && (node.getPrompt() == null || node.getPrompt().isBlank())
                     && (node.getTitle() == null || node.getTitle().isBlank())) {

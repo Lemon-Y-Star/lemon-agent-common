@@ -9,6 +9,7 @@ import com.lemon.lemonagent.dal.repository.AgentMessageRepository;
 import com.lemon.lemonagent.dal.repository.AgentRunRepository;
 import com.lemon.lemonagent.dal.repository.ModelConnectionRepository;
 import com.lemon.lemonagent.model.runtime.AgentGraphData;
+import com.lemon.lemonagent.model.runtime.CodeSandboxPort;
 import com.lemon.lemonagent.model.runtime.GraphEdge;
 import com.lemon.lemonagent.model.runtime.GraphNode;
 import com.lemon.lemonagent.model.runtime.GraphStateData;
@@ -20,6 +21,7 @@ import com.lemon.lemonagent.model.runtime.RuntimeEventType;
 import com.lemon.lemonagent.util.crypto.CryptoUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -110,6 +112,9 @@ public class RunExecutor {
     /** 长期记忆：拼进 system prompt。 */
     private final MemoryService memoryService;
 
+    /** 代码沙箱端口（可空：沙箱服务缺席时代码节点/工具报明确错误）。 */
+    private final CodeSandboxPort codeSandbox;
+
     private final com.lemon.lemonagent.servicecore.safety.SensitiveWordService sensitiveWords;
 
     public RunExecutor(AgentRunRepository runRepository,
@@ -117,6 +122,7 @@ public class RunExecutor {
                        ModelConnectionRepository modelConnectionRepository,
                        AgentConfigRepository agentConfigRepository,
                        MemoryService memoryService,
+                       ObjectProvider<CodeSandboxPort> codeSandboxProvider,
                        com.lemon.lemonagent.servicecore.safety.SensitiveWordService sensitiveWords,
                        ModelPort modelPort,
                        EventPublisher eventPublisher,
@@ -129,6 +135,7 @@ public class RunExecutor {
         this.modelConnectionRepository = modelConnectionRepository;
         this.agentConfigRepository = agentConfigRepository;
         this.memoryService = memoryService;
+        this.codeSandbox = codeSandboxProvider.getIfAvailable();
         this.sensitiveWords = sensitiveWords;
         this.modelPort = modelPort;
         this.eventPublisher = eventPublisher;
@@ -984,6 +991,20 @@ public class RunExecutor {
                 continue;
             }
 
+            if ("CODE".equals(node.getType())) {
+                recordNodeInput(state, node, node.getCode());
+                String output;
+                try {
+                    output = execInSandbox(node, upstreamOutputs(graph, state, node.getId()));
+                } catch (Exception e) {
+                    failIfStillRunning(runId, "SANDBOX_ERROR", "代码节点执行失败：" + e.getMessage());
+                    return;
+                }
+                done.add(node.getId());
+                markNodeDone(run, state, node, output, stepIndex);
+                continue;
+            }
+
             // LLM 节点（context 要在 lambda 里用，必须是 effectively final）
             List<ModelPort.Msg> history = historyContext(run, agent);
             final List<ModelPort.Msg> context = history == null ? new ArrayList<>() : history;
@@ -1092,6 +1113,11 @@ public class RunExecutor {
                     outcomes.add(runToolNode(run, graph, state, all, node, notesCopy));
                     continue;
                 }
+                if ("CODE".equals(node.getType())) {
+                    recordNodeInput(state, node, node.getCode());
+                    outcomes.add(runCodeNode(graph, state, all, node));
+                    continue;
+                }
                 List<ModelPort.Msg> context = historyContext(run, agent);
                 final List<ModelPort.Msg> ctx = context == null ? new ArrayList<>() : context;
                 for (String upstream : upstreamOutputs(graph, state, node.getId())) {
@@ -1181,6 +1207,38 @@ public class RunExecutor {
         return new NodeOutcome(node, stepIndex, output, 0, 0, null, true, null, null, null);
     }
 
+    /** 并行批次里的 CODE 节点（沙箱同步执行，快且无流式，主线程直接跑）。 */
+    private NodeOutcome runCodeNode(AgentGraphData graph, GraphStateData state,
+                                    List<GraphNode> all, GraphNode node) {
+        int stepIndex = all.indexOf(node);
+        try {
+            String output = execInSandbox(node, upstreamOutputs(graph, state, node.getId()));
+            return new NodeOutcome(node, stepIndex, output, 0, 0, null, true, null, null, null);
+        } catch (Exception e) {
+            return new NodeOutcome(node, stepIndex, "", 0, 0, null, false, null,
+                    "SANDBOX_ERROR", "代码节点执行失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 沙箱执行统一入口：CODE 节点串行/并行与 run_python 工具共用。
+     *
+     * @param node     入参：CODE 节点（须有 code）
+     * @param upstream 入参：上游节点产出（注入代码内 upstream 变量）
+     * @return 出参：stdout（+stderr/超时标记）文本
+     * @throws Exception 沙箱服务不可用等异常（调用方折算为 SANDBOX_ERROR）
+     */
+    private String execInSandbox(GraphNode node, List<String> upstream) throws Exception {
+        if (codeSandbox == null) {
+            throw new IllegalStateException("沙箱服务未就绪（LEMON_SANDBOX_URL 未配置或沙箱容器未启动）");
+        }
+        if (node.getCode() == null || node.getCode().isBlank()) {
+            throw new IllegalArgumentException("节点 " + node.getId() + " 没有可执行的代码");
+        }
+        CodeSandboxPort.ExecResult r = codeSandbox.exec(node.getCode(), upstream, 15);
+        return r.asText();
+    }
+
     /** 并行节点执行结果（主线程据此统一落库与发事件）。 */
     private record NodeOutcome(GraphNode node, int stepIndex, String output, long inputTokens,
                                long outputTokens, List<ModelPort.ModelToolCall> toolCalls,
@@ -1254,14 +1312,14 @@ public class RunExecutor {
                 "ts", System.currentTimeMillis())));
     }
 
-    /** 上游节点产出（用于拼下游上下文）：取所有指向本节点的边的来源节点输出。 */
+    /** 上游节点产出（用于拼下游上下文）：取所有指向本节点的边的来源节点输出（净文，剥思考块）。 */
     private List<String> upstreamOutputs(AgentGraphData graph, GraphStateData state, String nodeId) {
         List<String> result = new ArrayList<>();
         for (GraphEdge edge : graph.getEdges() == null ? List.<GraphEdge>of() : graph.getEdges()) {
             if (!nodeId.equals(edge.getTo())) {
                 continue;
             }
-            String output = state.getOutputs().get(edge.getFrom());
+            String output = stripThink(state.getOutputs().get(edge.getFrom()));
             if (output != null && !output.isBlank()) {
                 result.add("[上游 " + edge.getFrom() + "] " + output);
             }

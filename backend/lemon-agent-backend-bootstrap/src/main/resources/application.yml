@@ -37,6 +37,9 @@ lemon:
   tools:
     # 审批名单：名单内工具挂起等审批，名单外直接执行（显式白名单 + 默认拒绝）
     approval-required: create_ticket
+  sandbox:
+    # 代码沙箱基地址（v4.4）：compose 内网名或本地 17770；空串回落默认
+    url: ${LEMON_SANDBOX_URL:http://127.0.0.1:17770}
   health:
     # 模型连接健康探测（v4.1）：间隔与首延迟（毫秒）
     probe-interval-ms: ${LEMON_HEALTH_PROBE_INTERVAL_MS:300000}

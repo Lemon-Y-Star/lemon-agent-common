@@ -1,8 +1,10 @@
-# Dokploy 部署编排：前后端同一仓库一个 compose。
+# Dokploy 部署编排：前后端 + 沙箱同一仓库一个 compose。
 # 后端容器内 8090 → NAS 主机 17790；前端 nginx 容器内 8080 → NAS 主机 17780。
 # 密钥不进仓库：LEMON_DB_PASSWORD 在 Dokploy 服务设置的 Environment 中填写注入。
 # 数据库沿用 NAS 既有实例：MySQL 13306/lemon_agent + PgVector 15432（地址写在
 # bootstrap/src/main/resources/application.yml，如需覆盖用 LEMON_DB_* / LEMON_PGVECTOR_* 环境变量）。
+# 沙箱（v4.4）：sandnet 为 internal 网络——沙箱容器只挂它 = 代码禁网；
+# 后端双挂 default + sandnet 才能调沙箱。宿主机不暴露沙箱端口。
 name: lemon-agent
 
 services:
@@ -12,12 +14,18 @@ services:
       dockerfile: Dockerfile
     container_name: lemon-agent-backend
     restart: unless-stopped
+    depends_on:
+      - lemon-agent-sandbox
     environment:
       TZ: Asia/Shanghai
       SERVER_PORT: 8090
       LEMON_DB_PASSWORD: ${LEMON_DB_PASSWORD}
+      LEMON_SANDBOX_URL: http://lemon-agent-sandbox:8900
     ports:
       - "17790:8090"
+    networks:
+      - default
+      - sandnet
 
   lemon-agent-ui:
     build:
@@ -33,3 +41,28 @@ services:
       CLIENT_MAX_BODY_SIZE: 20m
     ports:
       - "17780:8080"
+
+  lemon-agent-sandbox:
+    build:
+      context: ../sandbox
+      dockerfile: Dockerfile
+    container_name: lemon-agent-sandbox
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - sandnet
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8900/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  sandnet:
+    internal: true

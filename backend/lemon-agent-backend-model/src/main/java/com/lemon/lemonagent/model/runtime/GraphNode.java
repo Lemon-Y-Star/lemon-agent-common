@@ -31,6 +31,9 @@ public class GraphNode {
     /** TOOL 节点：固定入参（作者显式配置 = 已授权，不再走审批） */
     private Map<String, Object> args;
 
+    /** CODE 节点（v4.4）：Python 源码（沙箱执行，代码内可读 upstream 列表 = 上游产出） */
+    private String code;
+
     /** APPROVAL 节点：审批提示语 */
     private String approvalPrompt;
 
