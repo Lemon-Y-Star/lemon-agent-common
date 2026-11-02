@@ -59,10 +59,9 @@ def execute(req: ExecReq) -> ExecResp:
     code_file = os.path.join(ws, "main.py")
     try:
         with open(code_file, "w", encoding="utf-8") as f:
-            if req.upstream:
-                # upstream 变量注入：CODE 节点可读取上游节点产出（列表，按上游顺序）
-                f.write("import json\nupstream = json.loads(%r)\n\n"
-                        % json.dumps(req.upstream, ensure_ascii=False))
+            # upstream 变量恒注入（含空列表）：只在非空时注入会让代码引用到未定义变量（体检 C5/C6 实测）
+            f.write("import json\nupstream = json.loads(%r)\n\n"
+                    % json.dumps(req.upstream, ensure_ascii=False))
             f.write(req.code)
         start = time.monotonic()
         proc = subprocess.Popen(
