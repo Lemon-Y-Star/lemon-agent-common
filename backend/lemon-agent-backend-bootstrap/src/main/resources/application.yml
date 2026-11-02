@@ -40,6 +40,8 @@ lemon:
   sandbox:
     # 代码沙箱基地址（v4.4）：compose 内网名或本地 17770；空串回落默认
     url: ${LEMON_SANDBOX_URL:http://127.0.0.1:17770}
+    # 沙箱访问令牌（v4.4.1）：与沙箱容器 LEMON_SANDBOX_TOKEN 一致；空 = 沙箱侧未启用校验
+    token: ${LEMON_SANDBOX_TOKEN:}
   health:
     # 模型连接健康探测（v4.1）：间隔与首延迟（毫秒）
     probe-interval-ms: ${LEMON_HEALTH_PROBE_INTERVAL_MS:300000}

@@ -21,6 +21,7 @@ services:
       SERVER_PORT: 8090
       LEMON_DB_PASSWORD: ${LEMON_DB_PASSWORD}
       LEMON_SANDBOX_URL: http://lemon-agent-sandbox:8900
+      LEMON_SANDBOX_TOKEN: ${LEMON_SANDBOX_TOKEN:-lemon-sbx-default-change-me}
     ports:
       - "17790:8090"
     networks:
@@ -50,11 +51,17 @@ services:
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
+      LEMON_SANDBOX_TOKEN: ${LEMON_SANDBOX_TOKEN:-lemon-sbx-default-change-me}
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 128
     security_opt:
       - no-new-privileges:true
+    # 只读根文件系统 + noexec 临时目录（竞品对比加固）：即使语言层被逃逸，
+    # 也写不进根 fs、/tmp 里的产物不可执行——系统层兜底再加一层
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     networks:
       - sandnet
     healthcheck:

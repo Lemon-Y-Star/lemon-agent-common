@@ -37,9 +37,15 @@ public class HttpCodeSandboxClient implements CodeSandboxPort {
     /** 沙箱基地址（compose 内网名 / 本地开发 127.0.0.1:17770）。 */
     private final String baseUrl;
 
-    public HttpCodeSandboxClient(@Value("${lemon.sandbox.url:http://127.0.0.1:17770}") String baseUrl) {
+    /** 沙箱访问令牌（与沙箱容器 LEMON_SANDBOX_TOKEN 一致；空 = 沙箱侧未启用校验）。 */
+    private final String token;
+
+    public HttpCodeSandboxClient(
+            @Value("${lemon.sandbox.url:http://127.0.0.1:17770}") String baseUrl,
+            @Value("${lemon.sandbox.token:}") String token) {
         this.baseUrl = baseUrl == null || baseUrl.isBlank() ? "http://127.0.0.1:17770" : baseUrl;
-        log.info("代码沙箱客户端就绪：{}", this.baseUrl);
+        this.token = token == null ? "" : token.trim();
+        log.info("代码沙箱客户端就绪：{}（令牌校验：{}）", this.baseUrl, this.token.isEmpty() ? "未启用" : "已启用");
     }
 
     @Override
@@ -50,11 +56,14 @@ public class HttpCodeSandboxClient implements CodeSandboxPort {
                 "code", code == null ? "" : code,
                 "timeoutSeconds", Math.min(Math.max(timeoutSeconds, 1), 15),
                 "upstream", upstream == null ? List.of() : upstream);
-        HttpRequest request = HttpRequest.newBuilder()
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/execute"))
                 .timeout(callTimeout)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(objectMapper.writeValueAsBytes(payload)))
+                .header("Content-Type", "application/json");
+        if (!token.isEmpty()) {
+            rb.header("X-Sandbox-Token", token);
+        }
+        HttpRequest request = rb.POST(HttpRequest.BodyPublishers.ofByteArray(objectMapper.writeValueAsBytes(payload)))
                 .build();
         HttpResponse<byte[]> resp = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
         if (resp.statusCode() != 200) {

@@ -21,7 +21,7 @@ import tempfile
 import time
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="LemonAgent Sandbox", version="1.0.0")
@@ -29,6 +29,10 @@ app = FastAPI(title="LemonAgent Sandbox", version="1.0.0")
 MAX_TIMEOUT = 15          # 单次执行上限（秒）
 MAX_OUTPUT = 8 * 1024     # stdout/stderr 各自截断阈值（字节）
 RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runner.py")
+
+# 访问令牌（竞品对比加固）：FastGPT v4.14.8 被审计点名"沙箱 HTTP 接口默认无认证"，
+# 同内网任何容器都能提交代码。设了 LEMON_SANDBOX_TOKEN 就强制校验，没设则只靠网络隔离。
+SANDBOX_TOKEN = os.environ.get("LEMON_SANDBOX_TOKEN", "").strip()
 
 
 class ExecReq(BaseModel):
@@ -52,8 +56,14 @@ def health() -> dict:
     return {"status": "UP"}
 
 
+def require_token(x_sandbox_token: str) -> None:
+    if SANDBOX_TOKEN and x_sandbox_token != SANDBOX_TOKEN:
+        raise HTTPException(status_code=401, detail="沙箱令牌无效")
+
+
 @app.post("/execute", response_model=ExecResp)
-def execute(req: ExecReq) -> ExecResp:
+def execute(req: ExecReq, x_sandbox_token: str = Header(default="")) -> ExecResp:
+    require_token(x_sandbox_token)
     timeout = min(req.timeoutSeconds, MAX_TIMEOUT)
     ws = tempfile.mkdtemp(prefix="sbx_")
     code_file = os.path.join(ws, "main.py")
@@ -100,4 +110,5 @@ def execute(req: ExecReq) -> ExecResp:
 
 @app.exception_handler(Exception)
 def on_error(request, exc):  # noqa: ANN001, ANN201
-    return HTTPException(status_code=500, detail=f"沙箱内部错误：{exc}")
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=500, content={"detail": f"沙箱内部错误：{exc}"})
