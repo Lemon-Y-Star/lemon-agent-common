@@ -119,6 +119,9 @@ public class RunExecutor {
     /** 代码沙箱端口（可空：沙箱服务缺席时代码节点/工具报明确错误）。 */
     private final CodeSandboxPort codeSandbox;
 
+    /** 运行文件产物（v4.4.4）：沙箱生成的文件落库。 */
+    private final RunArtifactService artifactService;
+
     private final com.lemon.lemonagent.servicecore.safety.SensitiveWordService sensitiveWords;
 
     public RunExecutor(AgentRunRepository runRepository,
@@ -127,6 +130,7 @@ public class RunExecutor {
                        AgentConfigRepository agentConfigRepository,
                        MemoryService memoryService,
                        ObjectProvider<CodeSandboxPort> codeSandboxProvider,
+                       RunArtifactService artifactService,
                        com.lemon.lemonagent.servicecore.safety.SensitiveWordService sensitiveWords,
                        ModelPort modelPort,
                        EventPublisher eventPublisher,
@@ -140,6 +144,7 @@ public class RunExecutor {
         this.agentConfigRepository = agentConfigRepository;
         this.memoryService = memoryService;
         this.codeSandbox = codeSandboxProvider.getIfAvailable();
+        this.artifactService = artifactService;
         this.sensitiveWords = sensitiveWords;
         this.modelPort = modelPort;
         this.eventPublisher = eventPublisher;
@@ -1008,7 +1013,7 @@ public class RunExecutor {
                 recordNodeInput(state, node, node.getCode());
                 String output;
                 try {
-                    output = execInSandbox(node, upstreamOutputs(graph, state, node.getId()));
+                    output = execInSandbox(run, node, upstreamOutputs(graph, state, node.getId()));
                 } catch (Exception e) {
                     failIfStillRunning(runId, "SANDBOX_ERROR", "代码节点执行失败：" + e.getMessage());
                     return;
@@ -1131,7 +1136,7 @@ public class RunExecutor {
                 }
                 if ("CODE".equals(node.getType())) {
                     recordNodeInput(state, node, node.getCode());
-                    outcomes.add(runCodeNode(graph, state, all, node));
+                    outcomes.add(runCodeNode(run, graph, state, all, node));
                     continue;
                 }
                 List<ModelPort.Msg> context = historyContext(run, agent);
@@ -1227,11 +1232,11 @@ public class RunExecutor {
     }
 
     /** 并行批次里的 CODE 节点（沙箱同步执行，快且无流式，主线程直接跑）。 */
-    private NodeOutcome runCodeNode(AgentGraphData graph, GraphStateData state,
+    private NodeOutcome runCodeNode(AgentRunEntity run, AgentGraphData graph, GraphStateData state,
                                     List<GraphNode> all, GraphNode node) {
         int stepIndex = all.indexOf(node);
         try {
-            String output = execInSandbox(node, upstreamOutputs(graph, state, node.getId()));
+            String output = execInSandbox(run, node, upstreamOutputs(graph, state, node.getId()));
             return new NodeOutcome(node, stepIndex, output, 0, 0, null, true, null, null, null);
         } catch (Exception e) {
             return new NodeOutcome(node, stepIndex, "", 0, 0, null, false, null,
@@ -1242,12 +1247,13 @@ public class RunExecutor {
     /**
      * 沙箱执行统一入口：CODE 节点串行/并行与 run_python 工具共用。
      *
+     * @param run      入参：运行（产物归属）
      * @param node     入参：CODE 节点（须有 code）
      * @param upstream 入参：上游节点产出（注入代码内 upstream 变量）
      * @return 出参：stdout（+stderr/超时标记）文本
      * @throws Exception 沙箱服务不可用等异常（调用方折算为 SANDBOX_ERROR）
      */
-    private String execInSandbox(GraphNode node, List<String> upstream) throws Exception {
+    private String execInSandbox(AgentRunEntity run, GraphNode node, List<String> upstream) throws Exception {
         if (codeSandbox == null) {
             throw new IllegalStateException("沙箱服务未就绪（LEMON_SANDBOX_URL 未配置或沙箱容器未启动）");
         }
@@ -1255,6 +1261,16 @@ public class RunExecutor {
             throw new IllegalArgumentException("节点 " + node.getId() + " 没有可执行的代码");
         }
         CodeSandboxPort.ExecResult r = codeSandbox.exec(node.getCode(), upstream, 15);
+        // CODE 节点产物落库（v4.4.4）：图片不进正文（数据 URI 会炸 token），文件统一入产物可下载
+        if (artifactService != null && r.files() != null && !r.files().isEmpty()) {
+            for (CodeSandboxPort.ExecResult.FileRef f : r.files()) {
+                try {
+                    artifactService.save(run.getUserId(), run.getId(), f.name(), f.contentType(), f.contentB64());
+                } catch (Exception e) {
+                    log.warn("CODE 节点产物落库失败 run={} name={}", run.getId(), f.name(), e);
+                }
+            }
+        }
         return r.asText();
     }
 
@@ -1544,6 +1560,7 @@ public class RunExecutor {
         boolean ok;
         List<String> refs = List.of();
         List<String> images = List.of();
+        List<Map<String, Object>> artifactMetas = new ArrayList<>();
         try {
             Map<String, Object> result = new java.util.LinkedHashMap<>(handler.execute(args));
             // 图片旁路（v4.4.3）：data URI 只进 tool_result 事件给前端渲染，绝不进模型上下文（notes/结果回注）
@@ -1551,13 +1568,32 @@ public class RunExecutor {
             if (imgObj instanceof List<?> list) {
                 images = list.stream().filter(String.class::isInstance).map(String.class::cast).toList();
             }
+            // 文件旁路（v4.4.4）：沙箱产物落库为运行文件产物，事件只带元数据供前端下载
+            Object fileObj = result.remove("artifactFiles");
+            if (fileObj instanceof List<?> rawFiles && !rawFiles.isEmpty()
+                    && args.get("__runId") != null && args.get("__userId") != null) {
+                Long uid = Long.valueOf(String.valueOf(args.get("__userId")));
+                Long rid2 = Long.valueOf(String.valueOf(args.get("__runId")));
+                for (Object o : rawFiles) {
+                    if (o instanceof Map<?, ?> f && f.get("contentB64") instanceof String b64
+                            && f.get("name") instanceof String name
+                            && f.get("contentType") instanceof String ct) {
+                        long artifactId = artifactService.save(uid, rid2, name, ct, b64);
+                        artifactMetas.add(Map.of("id", artifactId, "name", name,
+                                "contentType", ct, "sizeBytes", b64.length() / 4 * 3));
+                    }
+                }
+            }
             ok = true;
             resultBrief = result.values().stream().map(String::valueOf)
                     .reduce((a, b) -> a + " / " + b).orElse("done");
             String imgNote = images.isEmpty() ? "" : "（另外已生成 " + images.size()
                     + " 张图表并直接展示给用户，无需重复描述图片内容）";
+            String fileNote = artifactMetas.isEmpty() ? "" : "（已生成 " + artifactMetas.size()
+                    + " 个文件并保存到运行产物，用户界面可下载，文件名："
+                    + artifactMetas.stream().map(m -> m.get("name")).toList() + "）";
             notes.add("工具 " + toolName + " 已执行成功，结果：" + objectMapper.writeValueAsString(result)
-                    + imgNote + "。请基于该结果继续完成用户的任务。");
+                    + imgNote + fileNote + "。请基于该结果继续完成用户的任务。");
             // 引用溯源（v4.1）：search_docs 的命中文档标题随 tool_result 透出，前端渲染「依据」chip
             if ("search_docs".equals(toolName) && result.get("hits") instanceof List<?> hitList) {
                 refs = hitList.stream()
@@ -1578,6 +1614,9 @@ public class RunExecutor {
         payload.put("resultChars", resultBrief.length());
         if (!images.isEmpty()) {
             payload.put("images", images);
+        }
+        if (!artifactMetas.isEmpty()) {
+            payload.put("artifacts", artifactMetas);
         }
         payload.put("ts", System.currentTimeMillis());
         if (!refs.isEmpty()) {

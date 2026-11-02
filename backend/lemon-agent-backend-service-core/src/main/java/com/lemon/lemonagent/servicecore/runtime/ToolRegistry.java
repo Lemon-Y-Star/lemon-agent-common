@@ -219,9 +219,20 @@ public class ToolRegistry {
                         }
                         out.put("exitCode", r.exitCode());
                         out.put("durationMs", r.durationMs());
-                        // 图片直通前端（v4.4.3）：data URI 只进 tool_result 事件，绝不进模型上下文
-                        if (r.images() != null && !r.images().isEmpty()) {
-                            out.put("images", r.images());
+                        if (r.files() != null && !r.files().isEmpty()) {
+                            // 图片 data URI（给前端渲染）+ 原始文件（给产物落库），两者都被 executeAndEmitToolResult
+                            // 从结果里摘走，绝不进模型上下文（base64 会撑爆 token）
+                            List<String> images = r.files().stream()
+                                    .filter(f -> f.contentType() != null && f.contentType().startsWith("image/"))
+                                    .map(f -> "data:" + f.contentType() + ";base64," + f.contentB64())
+                                    .toList();
+                            if (!images.isEmpty()) {
+                                out.put("images", images);
+                            }
+                            out.put("artifactFiles", r.files().stream()
+                                    .map(f -> Map.of("name", f.name(), "contentType", f.contentType(),
+                                            "contentB64", f.contentB64()))
+                                    .toList());
                         }
                         return out;
                     } catch (Exception e) {

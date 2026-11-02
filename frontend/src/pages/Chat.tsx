@@ -60,6 +60,8 @@ interface Bubble {
   resultMs?: number
   /** 沙箱图表（v4.4.3，data URI）：tool_result 旁路，不进模型上下文，直接渲染 */
   images?: string[]
+  /** 运行文件产物（v4.4.4）：落库后的下载元数据 */
+  artifacts?: { id: number; name: string; contentType: string; sizeBytes: number }[]
   // 审批卡
   approvalId?: string
   decided?: 'APPROVE' | 'REJECT'
@@ -408,6 +410,7 @@ export default function Chat() {
               ? { ...b, resultBrief: String(ev.payload.resultBrief ?? ''), resultOk: !!ev.payload.ok,
                   resultDone: true, resultMs: Number(ev.payload.durationMs ?? 0) || undefined,
                   images: Array.isArray(ev.payload.images) ? (ev.payload.images as string[]) : undefined,
+                  artifacts: Array.isArray(ev.payload.artifacts) ? (ev.payload.artifacts as { id: number; name: string; contentType: string; sizeBytes: number }[]) : undefined,
                   refs: refs && refs.length > 0 ? refs : undefined }
               : b
           )))
@@ -720,6 +723,13 @@ export default function Chat() {
             {b.resultDone && <div className="tcc-res">{b.resultOk ? '✅ ' : '❌ '}{b.resultBrief}</div>}
           </details>
           {b.refs && b.refs.length > 0 && <div className="tcc-res">📚 命中：{b.refs.join('｜')}</div>}
+          {b.artifacts && b.artifacts.length > 0 && (
+            <div className="tcc-res">📎 已存为产物：{b.artifacts.map((a) => (
+              <a key={a.id} className="tcc-file" href={`/api/v1/workspace/artifacts/${a.id}/download`}>
+                {a.name}（{(a.sizeBytes / 1024).toFixed(1)}KB）
+              </a>
+            ))}</div>
+          )}
           {b.images && b.images.length > 0 && (
             <div className="tcc-imgs">
               {b.images.map((src, k) => (

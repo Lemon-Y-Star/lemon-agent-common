@@ -32,10 +32,11 @@ MAX_TIMEOUT = 15          # 单次执行上限（秒）
 MAX_OUTPUT = 8 * 1024     # stdout/stderr 各自截断阈值（字节）
 RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runner.py")
 
-# 图片回收（v4.4.3）：执行后扫描工作区的 png，base64 直通前端渲染（不进模型上下文）
-MAX_IMAGES = 4                    # 单次最多回收张数
-MAX_IMAGE_BYTES = 512 * 1024      # 单张上限 512KB
-MAX_IMAGES_TOTAL = 1536 * 1024    # 单次总量上限 1.5MB
+# 文件回收（v4.4.4）：执行后扫描工作区的 png/csv/html，base64 回传后端落库为运行产物
+MAX_FILES = 8                     # 单次最多回收文件数
+MAX_FILE_BYTES = 512 * 1024       # 单文件上限 512KB
+MAX_FILES_TOTAL = 2 * 1024 * 1024 # 单次总量上限 2MB
+FILE_TYPES = {".png": "image/png", ".csv": "text/csv", ".html": "text/html"}
 
 # 访问令牌（竞品对比加固）：FastGPT v4.14.8 被审计点名"沙箱 HTTP 接口默认无认证"，
 # 同内网任何容器都能提交代码。设了 LEMON_SANDBOX_TOKEN 就强制校验，没设则只靠网络隔离。
@@ -56,7 +57,7 @@ class ExecResp(BaseModel):
     durationMs: int
     timedOut: bool
     truncated: bool
-    images: list[str] = Field(default_factory=list)
+    files: list[dict] = Field(default_factory=list)
 
 
 @app.get("/health")
@@ -113,32 +114,38 @@ def execute(req: ExecReq, x_sandbox_token: str = Header(default="")) -> ExecResp
             durationMs=duration,
             timedOut=timed_out,
             truncated=truncated,
-            images=collect_images(ws),
+            files=collect_files(ws),
         )
     finally:
         shutil.rmtree(ws, ignore_errors=True)
 
 
-def collect_images(ws: str) -> list[str]:
-    """回收工作区里的 png（图表直通前端）：按修改时间倒序，限张数/单张/总量，base64 data URI。"""
-    uris: list[str] = []
+def collect_files(ws: str) -> list[dict]:
+    """回收工作区产物文件（png/csv/html）：按修改时间倒序，限数量/单文件/总量，base64 回传。"""
+    files: list[dict] = []
     total = 0
     try:
-        pngs = sorted(Path(ws).rglob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+        candidates = sorted(
+            (p for p in Path(ws).rglob("*") if p.suffix.lower() in FILE_TYPES and p.is_file()),
+            key=lambda p: p.stat().st_mtime, reverse=True)
     except OSError:
-        return uris
-    for p in pngs:
-        if len(uris) >= MAX_IMAGES:
+        return files
+    for p in candidates:
+        if len(files) >= MAX_FILES:
             break
         try:
             data = p.read_bytes()
         except OSError:
             continue
-        if not data or len(data) > MAX_IMAGE_BYTES or total + len(data) > MAX_IMAGES_TOTAL:
+        if not data or len(data) > MAX_FILE_BYTES or total + len(data) > MAX_FILES_TOTAL:
             continue
-        uris.append("data:image/png;base64," + base64.b64encode(data).decode())
+        files.append({
+            "name": p.relative_to(ws).as_posix(),
+            "contentType": FILE_TYPES[p.suffix.lower()],
+            "contentB64": base64.b64encode(data).decode(),
+        })
         total += len(data)
-    return uris
+    return files
 
 
 @app.exception_handler(Exception)

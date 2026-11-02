@@ -44,13 +44,19 @@ public class SandboxController {
         }
         try {
             CodeSandboxPort.ExecResult r = codeSandbox.exec(code, List.of(), 10);
-            return BaseResult.success(Map.of(
-                    "stdout", r.stdout(),
-                    "stderr", r.stderr(),
-                    "exitCode", r.exitCode(),
-                    "durationMs", r.durationMs(),
-                    "timedOut", r.timedOut(),
-                    "truncated", r.truncated()));
+            List<String> images = (r.files() == null ? List.<CodeSandboxPort.ExecResult.FileRef>of() : r.files()).stream()
+                    .filter(f -> f.contentType() != null && f.contentType().startsWith("image/"))
+                    .map(f -> "data:" + f.contentType() + ";base64," + f.contentB64())
+                    .toList();
+            Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("stdout", r.stdout());
+            out.put("stderr", r.stderr());
+            out.put("exitCode", r.exitCode());
+            out.put("durationMs", r.durationMs());
+            out.put("timedOut", r.timedOut());
+            out.put("truncated", r.truncated());
+            out.put("images", images);
+            return BaseResult.success(out);
         } catch (Exception e) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "沙箱不可用：" + e.getMessage());
         }

@@ -520,3 +520,6 @@ tr:hover td{background:#fafbfe}
 /* ---------- v4.4.3 沙箱图表直出 ---------- */
 .tcc-imgs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 2px}
 .tcc-imgs img{max-width:340px;max-height:240px;border:1px solid var(--border,#e2e5ea);border-radius:8px;background:#fff;cursor:zoom-in}
+
+/* ---------- v4.4.4 产物下载链接 ---------- */
+.tcc-file{color:var(--primary,#4f46e5);text-decoration:underline;margin-right:8px}
