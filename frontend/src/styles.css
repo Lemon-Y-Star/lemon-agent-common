@@ -568,3 +568,12 @@ tr:hover td{background:#fafbfe}
 .ge-run-dot.skip{color:#9ca3af}
 .ge-run-dot.err{color:var(--danger,#dc2626)}
 .ge-run-output{font-size:11px;color:var(--muted,#6b7280);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+
+/* ---------- v4.5.2 Agent 弹窗排版优化 ---------- */
+/* hint 改为标题下独立小字行（不再挤在标题行内折行） */
+.field label .hint{display:block;margin:2px 0 0;font-size:12px;line-height:1.5;font-weight:400;color:var(--muted)}
+/* 知识库绑定复选框：对抗 .field input{width:100%} 的拉通规则 */
+.kb-checks label{display:flex!important;align-items:center;gap:6px;margin:0!important;font-weight:400!important;font-size:13px;padding:3px 0;cursor:pointer}
+.kb-checks input[type=checkbox]{width:auto!important;flex:none!important;accent-color:var(--primary,#4f46e5)}
+/* 弹窗表单底部按钮统一 */
+.modal .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}

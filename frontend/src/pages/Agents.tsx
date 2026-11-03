@@ -392,19 +392,21 @@ export default function Agents() {
 
       {form && (
         <div className="mask" onClick={() => setForm(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 560, maxWidth: '92vw' }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 720, maxWidth: '94vw' }}>
             <h3>
               {form.id === null ? '创建 Agent' : `编辑 Agent：${form.name}`}
               <span className="x" onClick={() => setForm(null)}>✕</span>
             </h3>
             <form onSubmit={onSubmit}>
-              <div className="field">
-                <label>名称 *（1..100 字符）</label>
-                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={100} />
-              </div>
-              <div className="field">
-                <label>描述</label>
-                <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="一句话说明这个 Agent 干什么" />
+              <div className="row">
+                <div className="field">
+                  <label>名称 *（1..100 字符）</label>
+                  <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={100} />
+                </div>
+                <div className="field">
+                  <label>描述</label>
+                  <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="一句话说明这个 Agent 干什么" />
+                </div>
               </div>
               <div className="field">
                 <label>
@@ -460,37 +462,15 @@ export default function Agents() {
 
               <div className="field">
                 <label>
-                  短期记忆轮数
-                  <span className="hint">运行时携带的最近对话轮数（1 轮 = 一问一答）；0 = 只看本轮输入，留空 = 默认 10 轮，上限 50</span>
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={50}
-                  value={form.historyTurns ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setForm({
-                      ...form,
-                      historyTurns: v === '' ? null : Math.max(0, Math.min(50, Number(v))),
-                    })
-                  }}
-                  placeholder="默认 10 轮"
-                  style={{ width: 160 }}
-                />
-              </div>
-
-              <div className="field">
-                <label>
                   AGENT 知识库
                   <span className="hint">勾选后 search_docs 只检索勾选文档（v4.5.2，Dify 同款隔离）；不勾 = 搜全部</span>
                 </label>
                 {kbDocs.length === 0 ? (
                   <div className="note gray">知识库还没有文档，去「知识库」页上传后即可绑定</div>
                 ) : (
-                  <div style={{ maxHeight: 120, overflow: 'auto', border: '1px solid #d5d9e2', borderRadius: 7, padding: '6px 10px' }}>
+                  <div className="kb-checks" style={{ maxHeight: 120, overflow: 'auto', border: '1px solid #d5d9e2', borderRadius: 7, padding: '6px 10px' }}>
                     {kbDocs.map((d) => (
-                      <label key={d.id} style={{ display: 'block', fontSize: 13, padding: '2px 0', cursor: 'pointer' }}>
+                      <label key={d.id}>
                         <input
                           type="checkbox"
                           checked={form.knowledgeDocIds.includes(d.id)}
@@ -500,63 +480,81 @@ export default function Agents() {
                               ? [...form.knowledgeDocIds, d.id]
                               : form.knowledgeDocIds.filter((x) => x !== d.id),
                           })}
-                        />{' '}
-                        {d.title}
+                        />
+                        <span>{d.title}</span>
                       </label>
                     ))}
                   </div>
                 )}
               </div>
 
-              <div className="field">
-                <label>
-                  运行策略
-                  <span className="hint">对话页按此策略发起运行，不再每次手选；custom 需要执行图或挂载工作流</span>
-                </label>
-                <select
-                  value={form.strategy}
-                  onChange={(e) => setForm({ ...form, strategy: e.target.value })}
-                  style={{ width: '100%' }}
-                >
-                  {STRATEGIES.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
+              <div className="row">
+                <div className="field">
+                  <label>
+                    短期记忆轮数
+                    <span className="hint">最近对话轮数（1 轮 = 一问一答）；0 = 只看本轮；留空 = 默认 10 轮</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={form.historyTurns ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setForm({
+                        ...form,
+                        historyTurns: v === '' ? null : Math.max(0, Math.min(50, Number(v))),
+                      })
+                    }}
+                    placeholder="默认 10 轮"
+                  />
+                </div>
+                <div className="field">
+                  <label>
+                    运行策略
+                    <span className="hint">对话页按此策略发起运行；custom 需要执行图或挂载工作流</span>
+                  </label>
+                  <select
+                    value={form.strategy}
+                    onChange={(e) => setForm({ ...form, strategy: e.target.value })}
+                  >
+                    {STRATEGIES.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="field">
-                <label>模型来源</label>
-                <select
-                  value={form.modelConnectionId ?? ''}
-                  onChange={(e) => setForm({ ...form, modelConnectionId: e.target.value === '' ? null : Number(e.target.value) })}
-                  style={{ width: '100%' }}
-                >
-                  <option value="">跟随我的默认连接（最新启用）</option>
-                  {connections.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}（{c.models[0] ?? '未配置模型'}）</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="field">
-                <label>
-                  挂载工作流
-                  <span className="hint">
-                    挂载后 custom 策略跑的是工作流的图；不挂载则跑 Agent 自己的执行图（v3.7）
-                  </span>
-                </label>
-                <select
-                  value={form.workflowId ?? ''}
-                  onChange={(e) => void onPickWorkflow(e.target.value === '' ? null : Number(e.target.value))}
-                  style={{ width: '100%' }}
-                >
-                  <option value="">不挂载（用我自己的执行图）</option>
-                  {workflows.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}（当前 v{w.currentVersion} · {w.versionCount} 个版本）
-                    </option>
-                  ))}
-                </select>
+              <div className="row">
+                <div className="field">
+                  <label>模型来源</label>
+                  <select
+                    value={form.modelConnectionId ?? ''}
+                    onChange={(e) => setForm({ ...form, modelConnectionId: e.target.value === '' ? null : Number(e.target.value) })}
+                  >
+                    <option value="">跟随我的默认连接（最新启用）</option>
+                    {connections.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}（{c.models[0] ?? '未配置模型'}）</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>
+                    挂载工作流
+                    <span className="hint">挂载后 custom 跑工作流的图；不挂载则跑自己的执行图（v3.7）</span>
+                  </label>
+                  <select
+                    value={form.workflowId ?? ''}
+                    onChange={(e) => void onPickWorkflow(e.target.value === '' ? null : Number(e.target.value))}
+                  >
+                    <option value="">不挂载（用我自己的执行图）</option>
+                    {workflows.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}（当前 v{w.currentVersion} · {w.versionCount} 个版本）
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {form.workflowId !== null && (
