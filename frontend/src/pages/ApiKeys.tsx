@@ -2,13 +2,15 @@ import { useCallback, useEffect, useState } from 'react'
 import { createApiKey, fetchApiKeys, revokeApiKey, type ApiKeyItem } from '../api/apikeys'
 import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
+import { fmtLocal } from '../utils/fmtTime'
 
 /**
  * API 分发（v3.8，FR-24 最小版）：API 密钥管理 + 开放端点调用文档。
  * 库里只存哈希，明文只在创建时出现一次；吊销即时失效。
  */
 
-const fmt = (s: string | null | undefined) => (s ? s.slice(0, 19).replace('T', ' ') : '—')
+// v4.5.5 时区修复：UTC ISO 串转本地时间显示
+const fmt = (s: string | null | undefined) => fmtLocal(s, true)
 
 const CURL_SAMPLE = (agentId: number, wait = 60) => `curl -X POST http://127.0.0.1:18090/api/v1/open/agents/${agentId}/invoke \\
   -H "Authorization: Bearer sk-你的完整密钥" \\

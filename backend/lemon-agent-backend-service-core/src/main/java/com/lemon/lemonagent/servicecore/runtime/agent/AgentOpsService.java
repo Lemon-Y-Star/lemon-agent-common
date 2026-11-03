@@ -120,7 +120,9 @@ public class AgentOpsService {
         long totalOk = 0;
         long totalUp = 0;
         long totalRated = 0;
-        DateTimeFormatter dayFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
+        // v4.5.5 时区口径：SQL 层已按东八 CONVERT_TZ 分桶并直接返回日期字符串；这里 formatter
+        // 统一东八（兜底 Timestamp 分支用），与前端展示口径一致
+        DateTimeFormatter dayFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.ofHours(8));
         for (Map<String, Object> row : rows) {
             AgentMetricsData.DayMetric d = new AgentMetricsData.DayMetric();
             Object day = row.get("d");

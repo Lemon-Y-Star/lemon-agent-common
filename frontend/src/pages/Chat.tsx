@@ -24,6 +24,7 @@ import RunDetailModal from '../components/RunDetailModal'
 import { ToastHost, toast } from '../components/Toast'
 import Markdown from '../components/Markdown'
 import ThinkingPanel, { splitThink } from '../components/ThinkingPanel'
+import { fmtLocal } from '../utils/fmtTime'
 
 /** 工具名 → 展示名（对话工具芯片用）：内部工具给中文名，MCP/工作流去前缀。 */
 function toolLabel(name: string): string {
@@ -1095,7 +1096,7 @@ export default function Chat() {
               onClick={() => openSession(s.sessionId)}
             >
               {s.title}
-              <span className="st">{s.messageCount} 条消息 · {s.lastActiveAt?.slice(0, 16).replace('T', ' ')}</span>
+              <span className="st">{s.messageCount} 条消息 · {fmtLocal(s.lastActiveAt)}</span>
               <span className="sess-actions" onClick={(e) => e.stopPropagation()}>
                 <button
                   className="btn sm"

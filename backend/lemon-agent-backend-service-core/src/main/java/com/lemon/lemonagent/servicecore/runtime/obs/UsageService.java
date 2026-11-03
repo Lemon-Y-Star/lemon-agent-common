@@ -24,6 +24,9 @@ public class UsageService {
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
+    /** 业务日界统一东八（v4.5.5）：容器 JVM 可能是 UTC，LocalDate.now() 不带 zone 会把「今天」算错 8 小时。 */
+    private static final java.time.ZoneId EAST8 = java.time.ZoneId.of("Asia/Shanghai");
+
     private final AgentRunRepository runRepository;
 
     private final JdbcTemplate jdbcTemplate;
@@ -41,14 +44,15 @@ public class UsageService {
      * @return 出参：总览数据
      */
     public UsageOverviewData overview(Long userId, int days) {
-        LocalDate today = LocalDate.now();
+        // v4.5.5：今天按东八算（容器 JVM=UTC 时 LocalDate.now() 会让今天 0-16 点不进窗口）
+        LocalDate today = LocalDate.now(EAST8);
         LocalDate since = today.minusDays(days - 1L);
         String sinceStr = since.toString();
 
         UsageOverviewData data = new UsageOverviewData();
         data.setDays(days);
 
-        // 状态分布
+        // 状态分布（窗口边界：TIMESTAMP 列与日期字符串比较按 MySQL 会话时区（东八）解释，边界=东八午夜）
         List<UsageOverviewData.StatusCount> statusCounts = new ArrayList<>();
         jdbcTemplate.query(
                 "SELECT status, COUNT(*) AS cnt FROM agent_run WHERE user_id = ? "
@@ -62,14 +66,17 @@ public class UsageService {
         data.setStatusCounts(statusCounts);
         data.setTotalRuns(statusCounts.stream().mapToLong(UsageOverviewData.StatusCount::getCount).sum());
 
-        // 按天聚合（MySQL：DATE(started_at)）
+        // 按天聚合（v4.5.5 时区口径：MySQL 会话时区=东八，DATE() 分桶本来就对；改 DATE_FORMAT
+        // 在 SQL 端直接出字符串，绕开 java.sql.Date.toString() 按 JVM 默认时区格式化的坑——
+        // 部署容器 JVM 若是 UTC 会把日期差一天）
         Map<String, UsageOverviewData.DailyUsage> byDay = new HashMap<>();
         jdbcTemplate.query(
-                "SELECT DATE(started_at) AS d, COUNT(*) AS runs, "
+                "SELECT DATE_FORMAT(started_at,'%Y-%m-%d') AS d, COUNT(*) AS runs, "
                         + "COALESCE(SUM(input_tokens),0) AS in_tok, COALESCE(SUM(output_tokens),0) AS out_tok "
-                        + "FROM agent_run WHERE user_id = ? AND started_at >= ? GROUP BY DATE(started_at)",
+                        + "FROM agent_run WHERE user_id = ? AND started_at >= ? "
+                        + "GROUP BY d",
                 rs -> {
-                    String day = rs.getDate("d").toString();
+                    String day = rs.getString("d");
                     UsageOverviewData.DailyUsage du = new UsageOverviewData.DailyUsage();
                     du.setDate(day);
                     du.setRuns(rs.getLong("runs"));

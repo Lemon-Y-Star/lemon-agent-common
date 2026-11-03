@@ -8,6 +8,7 @@ import {
 } from '../api/agents'
 import { ApiError } from '../api/client'
 import { ToastHost } from '../components/Toast'
+import { fmtLocal } from '../utils/fmtTime'
 
 /**
  * Agent 运营页（v4.5.2，Dify「日志 / 监控」页同款）：
@@ -103,7 +104,7 @@ export default function AgentOps() {
                     </td>
                     <td style={{ color: 'var(--muted)' }}>{s.totalTokens}</td>
                     <td style={{ color: 'var(--muted)', fontSize: 12 }}>
-                      {s.lastAt?.slice(0, 19).replace('T', ' ')}
+                      {fmtLocal(s.lastAt, true)}
                     </td>
                   </tr>
                 ))}

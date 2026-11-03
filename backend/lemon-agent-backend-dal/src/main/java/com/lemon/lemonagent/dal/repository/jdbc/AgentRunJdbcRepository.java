@@ -269,8 +269,11 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     @Override
     public java.util.List<java.util.Map<String, Object>> sumByDayByAgent(Long userId, Long agentId, java.time.Instant since) {
         // 一次 JOIN 带出好评/评分数（run_feedback 每 run 最多一行 upsert）
+        // v4.5.5 时区口径：MySQL 容器 SYSTEM 时区=东八，DATE(started_at) 分桶本来就对；
+        // 但 DATE 表达式经 JDBC 读出是 java.sql.Date，其 toString() 按 JVM 默认时区格式化——
+        // 部署容器 JVM 若是 UTC 会差一天。DATE_FORMAT 直接在 SQL 端出字符串，驱动零解释。
         return jdbcTemplate.queryForList(
-                "SELECT DATE(r.started_at) AS d, COUNT(*) AS runs, "
+                "SELECT DATE_FORMAT(r.started_at,'%Y-%m-%d') AS d, COUNT(*) AS runs, "
                         + "COUNT(DISTINCT r.session_id) AS sessions, "
                         + "COALESCE(SUM(r.input_tokens),0) AS input_tokens, "
                         + "COALESCE(SUM(r.output_tokens),0) AS output_tokens, "
@@ -279,7 +282,7 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
                         + "SUM(CASE WHEN f.rating IS NOT NULL THEN 1 ELSE 0 END) AS rated "
                         + "FROM agent_run r LEFT JOIN run_feedback f ON f.run_id = r.id "
                         + "WHERE r.user_id = ? AND r.agent_id = ? AND r.started_at >= ? "
-                        + "GROUP BY DATE(r.started_at) ORDER BY d",
+                        + "GROUP BY d ORDER BY d",
                 userId, agentId, java.sql.Timestamp.from(since));
     }
 

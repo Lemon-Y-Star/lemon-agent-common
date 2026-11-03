@@ -6,6 +6,7 @@ import { ToastHost, toast } from '../components/Toast'
 import RunGraphView from '../components/RunGraphView'
 import Markdown from '../components/Markdown'
 import ThinkingPanel, { splitThink } from '../components/ThinkingPanel'
+import { fmtLocal } from '../utils/fmtTime'
 
 /**
  * 运行历史（PRD FR-18.5）：左列表（状态 / 会话 / traceId 过滤）+ 右详情（快照接口）。
@@ -91,7 +92,8 @@ export default function Runs() {
     }
   }
 
-  const fmt = (s: string | null | undefined) => (s ? s.slice(0, 19).replace('T', ' ') : '—')
+  // v4.5.5 时区修复：API 是 UTC ISO 串，slice 直接截会把 UTC 当本地显示（东八差 8h），统一 new Date 转本地
+  const fmt = (s: string | null | undefined) => fmtLocal(s, true)
 
   /** 重试失败 / 超时运行：按原输入 / 策略重放，完成后打开新运行详情。 */
   async function onRetry(rid: number) {

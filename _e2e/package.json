@@ -9,6 +9,7 @@
   "keywords": [],
   "type": "commonjs",
   "dependencies": {
+    "mysql2": "^3.24.6",
     "playwright-core": "^1.64.1"
   }
 }

@@ -3,13 +3,15 @@ import { fetchEvalOverview, type EvalBatchOverview } from '../api/eval'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { ToastHost } from '../components/Toast'
+import { fmtLocal } from '../utils/fmtTime'
 
 /**
  * 我的评测（v3.8）：跨 Agent 的评测批次总览。
  * 每批在哪个 Agent、哪一版图、跑完没有——深看某个 Agent 的并排对比，跳到它的评测页。
  */
 
-const fmt = (s: string | null | undefined) => (s ? s.slice(0, 19).replace('T', ' ') : '—')
+// v4.5.5 时区修复：UTC ISO 串转本地时间显示
+const fmt = (s: string | null | undefined) => fmtLocal(s, true)
 
 export default function Evals() {
   const [batches, setBatches] = useState<EvalBatchOverview[]>([])

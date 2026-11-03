@@ -4,13 +4,15 @@ import { ApiError } from '../api/client'
 import { ToastHost, toast } from '../components/Toast'
 import Markdown from '../components/Markdown'
 import { stripThink } from '../components/ThinkingPanel'
+import { fmtLocal } from '../utils/fmtTime'
 
 /**
  * 产物与反馈（v3.8，FR-17 最小版）：我的有产出运行 + 运行级反馈。
  * 产物实时读运行（不另存事实）；反馈一人一运行一条，改评覆盖旧评。
  */
 
-const fmt = (s: string | null | undefined) => (s ? s.slice(0, 19).replace('T', ' ') : '—')
+// v4.5.5 时区修复：UTC ISO 串转本地时间显示
+const fmt = (s: string | null | undefined) => fmtLocal(s, true)
 
 function ArtifactCard({ item, onChanged }: { item: ArtifactItem; onChanged: () => void }) {
   const [comment, setComment] = useState(item.myComment ?? '')
