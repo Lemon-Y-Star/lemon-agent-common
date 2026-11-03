@@ -10,6 +10,12 @@
       <url>http://0.0.0.0/</url>
       <blocked>false</blocked>
     </mirror>
+    <!-- v4.5.3：公共依赖走阿里云镜像（NAS 直连 Maven Central 抖动是构建卡顿主源之一） -->
+    <mirror>
+      <id>aliyun-central</id>
+      <mirrorOf>central</mirrorOf>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
   </mirrors>
   <profiles>
     <profile>
