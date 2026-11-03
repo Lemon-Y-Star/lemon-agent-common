@@ -40,6 +40,9 @@ public interface KnowledgeRepository {
     /** 按标题找文档 ID（向量召回只回传标题，图片经标题关联回带）。 */
     List<KbDocumentEntity> findByTitles(Long userId, List<String> titles);
 
+    /** 按 ID 查文档（v4.5.2 知识库绑定归属校验用）；不存在返回 null。 */
+    KbDocumentEntity findById(Long docId);
+
     /** 记忆列表（倒序）。 */
     List<AgentMemoryEntity> listMemories(Long userId);
 

@@ -41,6 +41,9 @@ public class UpdateAgentReq extends BaseReq {
     /** 建议问题（至多 5 条；null = 保持不变；v4.5） */
     private java.util.List<String> suggestedQuestions;
 
+    /** 绑定的知识库文档 ID（null = 保持不变；空数组 = 清除绑定；至多 20 个；v4.5.2） */
+    private java.util.List<Long> knowledgeDocIds;
+
     /** 绑定模型连接（null = 保持不变；0 = 清除绑定，回落用户最新启用连接） */
     private Long modelConnectionId;
 

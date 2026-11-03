@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { getToken } from './api/client'
 import Agents from './pages/Agents'
 import GraphEditor from './pages/GraphEditor'
+import AgentOps from './pages/AgentOps'
 import Eval from './pages/Eval'
 import Knowledge from './pages/Knowledge'
 import MemoryPage from './pages/Memory'
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="/account" element={<Account />} />
         <Route path="/agents" element={<Agents />} />
         <Route path="/agents/:agentId/graph" element={<GraphEditor />} />
+        <Route path="/agents/:agentId/ops" element={<AgentOps />} />
         <Route path="/agents/:agentId/eval" element={<Eval />} />
         <Route path="/knowledge" element={<Knowledge />} />
         <Route path="/memory" element={<MemoryPage />} />

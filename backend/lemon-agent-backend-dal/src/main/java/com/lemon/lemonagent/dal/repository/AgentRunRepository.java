@@ -141,6 +141,16 @@ public interface AgentRunRepository {
     java.util.List<java.util.Map<String, Object>> sumByModel(Long userId, java.time.Instant since);
 
     /**
+     * Agent 运营按天聚合（v4.5.2 监控面板）：运行数 / 会话数 / tokens / 成功数 / 好评数 / 评分数。
+     *
+     * @param userId  入参：用户
+     * @param agentId 入参：Agent ID
+     * @param since   入参：起始时间
+     * @return 出参：d / runs / sessions / input_tokens / output_tokens / ok / up / rated（每天一行）
+     */
+    java.util.List<java.util.Map<String, Object>> sumByDayByAgent(Long userId, Long agentId, java.time.Instant since);
+
+    /**
      * 回写事件序号游标（append 事务内调用；快照 / 续流起点以此为准）。
      *
      * @param id  入参：运行 ID

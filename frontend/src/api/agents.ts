@@ -17,6 +17,8 @@ export interface AgentConfig {
   openingStatement: string | null
   /** 建议问题（至多 5 条）；null = 不展示（v4.5） */
   suggestedQuestions: string[] | null
+  /** 绑定的知识库文档 ID；null/空 = 检索不限定范围（v4.5.2） */
+  knowledgeDocIds: number[] | null
   /** 当前执行图版本；0 = 还没有图 */
   graphVersion: number
   /** 挂载的工作流；null = 用 Agent 自己的执行图 */
@@ -72,6 +74,8 @@ export function createAgent(payload: {
   openingStatement?: string | null
   /** 建议问题（可空 = 不展示；至多 5 条；v4.5） */
   suggestedQuestions?: string[] | null
+  /** 绑定的知识库文档 ID（可空 = 不限定；至多 20 个；v4.5.2） */
+  knowledgeDocIds?: number[] | null
   modelConnectionId: number | null
   /** 挂载工作流（可空） */
   workflowId?: number | null
@@ -96,6 +100,8 @@ export function updateAgent(
     openingStatement?: string | null
     /** 建议问题（可空 = 清除；至多 5 条；v4.5） */
     suggestedQuestions?: string[] | null
+    /** 绑定的知识库文档 ID（null = 保持不变；空数组 = 清除；至多 20 个；v4.5.2） */
+    knowledgeDocIds?: number[] | null
     /** null = 保持不变；0 = 清除绑定 */
     modelConnectionId?: number | null
     enabled?: boolean
@@ -116,4 +122,43 @@ export function deleteAgent(id: number): Promise<null> {
 export async function optimizePrompt(instruction: string): Promise<string> {
   const data = await post<{ optimized: string }>('/workspace/agents/optimize-prompt', { instruction })
   return data.optimized
+}
+
+/** 会话日志行（v4.5.2，Dify「日志」页同款）。 */
+export interface SessionLog {
+  sessionId: number
+  title: string
+  runCount: number
+  okCount: number
+  firstAt: string | null
+  lastAt: string | null
+  totalTokens: number
+}
+
+/** Agent 会话日志。 */
+export async function fetchAgentLogs(agentId: number, days = 7): Promise<{ sessions: SessionLog[] }> {
+  return get<{ sessions: SessionLog[] }>(`/workspace/agents/${agentId}/logs?days=${days}`)
+}
+
+/** 单日监控指标。 */
+export interface DayMetric {
+  date: string
+  runs: number
+  sessions: number
+  tokens: number
+}
+
+/** Agent 监控数据（v4.5.2，Dify「监控」页同款）。 */
+export interface AgentMetrics {
+  days: DayMetric[]
+  totalRuns: number
+  totalSessions: number
+  totalTokens: number
+  successRate: number
+  likeRate: number
+}
+
+/** Agent 监控指标。 */
+export async function fetchAgentMetrics(agentId: number, days = 7): Promise<AgentMetrics> {
+  return get<AgentMetrics>(`/workspace/agents/${agentId}/metrics?days=${days}`)
 }

@@ -53,18 +53,23 @@ public class AgentConfigService {
 
     private final WorkflowRepository workflowRepository;
 
+    /** 知识库仓储（v4.5.2 知识库绑定的归属校验与标题回显）。 */
+    private final com.lemon.lemonagent.dal.repository.KnowledgeRepository knowledgeRepository;
+
     private final tools.jackson.databind.ObjectMapper objectMapper = new tools.jackson.databind.ObjectMapper();
 
     public AgentConfigService(AgentConfigRepository repository,
                               ModelConnectionRepository modelConnectionRepository,
                               ToolRegistry toolRegistry,
                               com.lemon.lemonagent.dal.repository.AgentGraphRepository agentGraphRepository,
-                              WorkflowRepository workflowRepository) {
+                              WorkflowRepository workflowRepository,
+                              com.lemon.lemonagent.dal.repository.KnowledgeRepository knowledgeRepository) {
         this.repository = repository;
         this.modelConnectionRepository = modelConnectionRepository;
         this.toolRegistry = toolRegistry;
         this.agentGraphRepository = agentGraphRepository;
         this.workflowRepository = workflowRepository;
+        this.knowledgeRepository = knowledgeRepository;
     }
 
     /**
@@ -96,6 +101,7 @@ public class AgentConfigService {
     public AgentConfigData create(Long userId, String name, String description,
                                   String instruction, List<String> tools, String strategy,
                                   Integer historyTurns, String openingStatement, List<String> suggestedQuestions,
+                                  List<Long> knowledgeDocIds,
                                   Long modelConnectionId, Long workflowId, Integer workflowVersion) {
         validate(name, instruction);
         AgentConfigEntity entity = new AgentConfigEntity();
@@ -108,6 +114,7 @@ public class AgentConfigService {
         entity.setHistoryTurns(normalizeHistoryTurns(historyTurns));
         entity.setOpeningStatement(normalizeOpening(openingStatement));
         entity.setSuggestedQuestions(normalizeSuggestions(suggestedQuestions));
+        entity.setKnowledgeDocIds(normalizeKbDocIds(userId, knowledgeDocIds));
         entity.setModelConnectionId(requireModelConnection(userId, modelConnectionId));
         Long wf = requireWorkflow(userId, workflowId);
         entity.setWorkflowId(wf);
@@ -128,6 +135,7 @@ public class AgentConfigService {
     public AgentConfigData update(Long userId, Long agentId, String name, String description,
                                   String instruction, List<String> tools, String strategy,
                                   Integer historyTurns, String openingStatement, List<String> suggestedQuestions,
+                                  List<Long> knowledgeDocIds,
                                   Long modelConnectionId, Boolean enabled,
                                   Long workflowId, Integer workflowVersion) {
         validate(name, instruction);
@@ -143,9 +151,10 @@ public class AgentConfigService {
         // historyTurns 无条件覆盖：前端表单总是携带该字段（清空 = null = 恢复默认 10 轮），
         // 与 strategy 的「null = 保持不变」不同——这里 null 是一个合法的目标状态
         entity.setHistoryTurns(normalizeHistoryTurns(historyTurns));
-        // 开场白/建议问题无条件覆盖（同 historyTurns 语义：清空 = null = 不展示）
+        // 开场白/建议问题/知识库绑定无条件覆盖（同 historyTurns 语义：清空 = null = 不展示/不限定）
         entity.setOpeningStatement(normalizeOpening(openingStatement));
         entity.setSuggestedQuestions(normalizeSuggestions(suggestedQuestions));
+        entity.setKnowledgeDocIds(normalizeKbDocIds(userId, knowledgeDocIds));
         if (modelConnectionId != null) {
             entity.setModelConnectionId(modelConnectionId == CLEAR_MODEL_CONNECTION
                     ? null : requireModelConnection(userId, modelConnectionId));
@@ -452,6 +461,7 @@ public class AgentConfigService {
         data.setHistoryTurns(entity.getHistoryTurns());
         data.setOpeningStatement(entity.getOpeningStatement());
         data.setSuggestedQuestions(decodeSuggestions(entity.getSuggestedQuestions()));
+        data.setKnowledgeDocIds(decodeKbDocIds(entity.getKnowledgeDocIds()));
         data.setModelConnectionId(entity.getModelConnectionId());
         boolean enabled = entity.getStatus() != null && entity.getStatus() == 1;
         data.setEnabled(enabled);
@@ -469,6 +479,81 @@ public class AgentConfigService {
         data.setCreatedAt(format(entity.getCreatedAt()));
         data.setUpdatedAt(format(entity.getUpdatedAt()));
         return data;
+    }
+
+    /** 知识库绑定条数上限：演示场景 20 篇足够，防配置无界。 */
+    private static final int MAX_KB_DOCS = 20;
+
+    /**
+     * 知识库绑定归一化：去重、限条数、校验文档归属（防止绑定别人的文档）；空列表归 null（= 不限定）。
+     *
+     * @param userId 入参：归属用户
+     * @param docIds 入参：请求里的文档 ID 列表
+     * @return 出参：落库 JSON 字符串
+     */
+    private String normalizeKbDocIds(Long userId, List<Long> docIds) {
+        if (docIds == null) {
+            return null;
+        }
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (Long id : docIds) {
+            if (id != null && id > 0) {
+                unique.add(id);
+            }
+            if (unique.size() >= MAX_KB_DOCS) {
+                break;
+            }
+        }
+        if (unique.isEmpty()) {
+            return null;
+        }
+        for (Long id : unique) {
+            com.lemon.lemonagent.dal.entity.KbDocumentEntity doc = knowledgeRepository.findById(id);
+            if (doc == null || doc.getUserId() == null || !doc.getUserId().equals(userId)) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR, "知识库文档不存在或不属于你：" + id);
+            }
+        }
+        return SUGGESTION_MAPPER.writeValueAsString(new ArrayList<>(unique));
+    }
+
+    /**
+     * 落库 JSON 解回知识库绑定列表（坏数据静默降级为不限定）。
+     *
+     * @param json 入参：落库字符串
+     * @return 出参：列表；解析失败/空返回 null
+     */
+    private List<Long> decodeKbDocIds(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            List<Long> list = SUGGESTION_MAPPER.readValue(json,
+                    SUGGESTION_MAPPER.getTypeFactory().constructCollectionType(List.class, Long.class));
+            return list == null || list.isEmpty() ? null : list;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 按 ID 查 Agent（运行时反查知识库绑定用；不校验归属，调用方自行保证）。
+     *
+     * @param agentId 入参：Agent ID
+     * @return 出参：实体；不存在返回 null
+     */
+    public AgentConfigEntity findById(Long agentId) {
+        return agentId == null ? null : repository.findById(agentId);
+    }
+
+    /**
+     * 按 ID 批量查文档标题（知识库绑定选择器回显用）。
+     *
+     * @param userId 入参：用户
+     * @param titles 入参：标题列表
+     * @return 出参：实体列表
+     */
+    public List<com.lemon.lemonagent.dal.entity.KbDocumentEntity> findDocsByTitles(Long userId, List<String> titles) {
+        return knowledgeRepository.findByTitles(userId, titles);
     }
 
     private static String defaultIfBlank(String s, String fallback) {

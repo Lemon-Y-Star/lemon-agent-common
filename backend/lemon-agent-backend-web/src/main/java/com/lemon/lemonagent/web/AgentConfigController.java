@@ -2,6 +2,8 @@ package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.AgentConfigData;
 import com.lemon.lemonagent.model.runtime.AgentConfigsData;
+import com.lemon.lemonagent.model.runtime.AgentLogsData;
+import com.lemon.lemonagent.model.runtime.AgentMetricsData;
 import com.lemon.lemonagent.model.runtime.CreateAgentReq;
 import com.lemon.lemonagent.model.runtime.CreateAgentResp;
 import com.lemon.lemonagent.model.runtime.DeleteAgentReq;
@@ -9,6 +11,7 @@ import com.lemon.lemonagent.model.runtime.DeleteAgentResp;
 import com.lemon.lemonagent.model.runtime.UpdateAgentReq;
 import com.lemon.lemonagent.model.runtime.UpdateAgentResp;
 import com.lemon.lemonagent.servicecore.runtime.agent.AgentConfigService;
+import com.lemon.lemonagent.servicecore.runtime.agent.AgentOpsService;
 import com.lemon.lemonagent.servicecore.runtime.agent.PromptOptimizeService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
@@ -23,10 +26,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
-
 /**
  * 我的 Agent 接口（PRD FR-6 最小充分版）：平台公共只读 + 个人自建增删改。
  */
@@ -45,6 +48,10 @@ public class AgentConfigController {
     /** 提示词 AI 优化器（v4.5）。 */
     @Resource
     private PromptOptimizeService promptOptimizeService;
+
+    /** Agent 运营数据（v4.5.2 日志/监控）。 */
+    @Resource
+    private AgentOpsService agentOpsService;
 
     /**
      * Agent 列表（平台公共在前，个人自建在后）。
@@ -114,6 +121,36 @@ public class AgentConfigController {
         String optimized = promptOptimizeService.optimize(userId,
                 body == null ? null : body.get("instruction"));
         return BaseResult.success(Map.of("optimized", optimized));
+    }
+
+    /**
+     * Agent 会话日志（v4.5.2，Dify「日志」页同款）：按会话聚合该 Agent 的对话。
+     *
+     * @param agentId Agent ID
+     * @param userId  归属用户
+     * @param days    时间窗（天，默认 7）
+     * @return 会话日志列表
+     */
+    @GetMapping("/{agentId}/logs")
+    public BaseResult<AgentLogsData> logs(@PathVariable Long agentId,
+                                          @RequestAttribute("lemon.userId") Long userId,
+                                          @RequestParam(name = "days", defaultValue = "7") int days) {
+        return BaseResult.success(agentOpsService.logs(userId, agentId, days));
+    }
+
+    /**
+     * Agent 监控指标（v4.5.2，Dify「监控」页同款）：按天聚合。
+     *
+     * @param agentId Agent ID
+     * @param userId  归属用户
+     * @param days    时间窗（天，默认 7）
+     * @return 日指标 + 汇总
+     */
+    @GetMapping("/{agentId}/metrics")
+    public BaseResult<AgentMetricsData> metrics(@PathVariable Long agentId,
+                                                @RequestAttribute("lemon.userId") Long userId,
+                                                @RequestParam(name = "days", defaultValue = "7") int days) {
+        return BaseResult.success(agentOpsService.metrics(userId, agentId, days));
     }
 
     /**

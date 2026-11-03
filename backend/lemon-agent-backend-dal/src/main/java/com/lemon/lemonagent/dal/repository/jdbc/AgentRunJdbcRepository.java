@@ -261,6 +261,23 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     }
 
     @Override
+    public java.util.List<java.util.Map<String, Object>> sumByDayByAgent(Long userId, Long agentId, java.time.Instant since) {
+        // 一次 JOIN 带出好评/评分数（run_feedback 每 run 最多一行 upsert）
+        return jdbcTemplate.queryForList(
+                "SELECT DATE(r.started_at) AS d, COUNT(*) AS runs, "
+                        + "COUNT(DISTINCT r.session_id) AS sessions, "
+                        + "COALESCE(SUM(r.input_tokens),0) AS input_tokens, "
+                        + "COALESCE(SUM(r.output_tokens),0) AS output_tokens, "
+                        + "SUM(CASE WHEN r.status = 'COMPLETED' THEN 1 ELSE 0 END) AS ok, "
+                        + "SUM(CASE WHEN f.rating = 'UP' THEN 1 ELSE 0 END) AS up, "
+                        + "SUM(CASE WHEN f.rating IS NOT NULL THEN 1 ELSE 0 END) AS rated "
+                        + "FROM agent_run r LEFT JOIN run_feedback f ON f.run_id = r.id "
+                        + "WHERE r.user_id = ? AND r.agent_id = ? AND r.started_at >= ? "
+                        + "GROUP BY DATE(r.started_at) ORDER BY d",
+                userId, agentId, java.sql.Timestamp.from(since));
+    }
+
+    @Override
     public int updateLastSeq(Long id, long seq) {
         return jdbcTemplate.update("UPDATE agent_run SET last_seq = ? WHERE id = ?", seq, id);
     }

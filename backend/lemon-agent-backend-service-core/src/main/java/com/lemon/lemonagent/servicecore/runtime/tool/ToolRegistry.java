@@ -159,8 +159,10 @@ public class ToolRegistry {
                     String query = String.valueOf(args.getOrDefault("query", ""));
                     int topK = Integer.parseInt(String.valueOf(args.getOrDefault("topK", "5")));
                     Long userId = Long.valueOf(String.valueOf(args.getOrDefault("__userId", "0")));
+                    // Agent 级知识库绑定（v4.5.2）：__kbDocIds 由运行时注入（JSON 数组），null = 不限定
+                    java.util.Set<Long> allowedDocIds = parseKbScope(args.get("__kbDocIds"));
                     List<com.lemon.lemonagent.model.runtime.KbSearchHit> hits =
-                            knowledgeService.search(userId, query, topK);
+                            knowledgeService.search(userId, query, topK, allowedDocIds);
                     // 空召回显式 {hits:[]}（AC-25 第一道闸）：不抛异常、不兜底
                     List<Map<String, Object>> hitMaps = hits.stream()
                             .map(h -> {
@@ -595,6 +597,29 @@ public class ToolRegistry {
         }, keys);
         long ticketId = keys.getKey().longValue();
         return Map.of("ticketId", ticketId, "url", "/tickets/" + ticketId, "title", title);
+    }
+
+    /**
+     * 解析 Agent 知识库绑定范围（v4.5.2）：入参是运行时注入的 JSON 数组字符串。
+     *
+     * @param raw 入参：__kbDocIds 的值（JSON 数组字符串 / null）
+     * @return 出参：允许的文档 ID 集合；null = 不限定
+     */
+    private static java.util.Set<Long> parseKbScope(Object raw) {
+        if (raw == null || String.valueOf(raw).isBlank() || "null".equalsIgnoreCase(String.valueOf(raw))) {
+            return null;
+        }
+        try {
+            List<?> list = new tools.jackson.databind.ObjectMapper()
+                    .readValue(String.valueOf(raw), List.class);
+            java.util.Set<Long> ids = new java.util.HashSet<>();
+            for (Object o : list) {
+                ids.add(Long.valueOf(String.valueOf(o)));
+            }
+            return ids.isEmpty() ? null : ids;
+        } catch (Exception e) {
+            return null; // 坏数据按不限定处理（与 AgentConfigService 解码口径一致）
+        }
     }
 
 }

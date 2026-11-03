@@ -195,6 +195,14 @@ public class KnowledgeJdbcRepository implements KnowledgeRepository {
     }
 
     @Override
+    public KbDocumentEntity findById(Long docId) {
+        List<KbDocumentEntity> list = jdbcTemplate.query(
+                "SELECT id, user_id, title, content, created_at, updated_at FROM kb_document WHERE id = ?",
+                docMapper, docId);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    @Override
     public List<AgentMemoryEntity> listMemories(Long userId) {
         return jdbcTemplate.query(
                 "SELECT id, user_id, content, enabled, created_at FROM agent_memory "

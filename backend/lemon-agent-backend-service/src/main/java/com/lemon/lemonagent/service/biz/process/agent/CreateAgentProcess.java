@@ -29,6 +29,7 @@ public class CreateAgentProcess extends Handler<CreateAgentReq, CreateAgentResp>
         response.setData(agentConfigService.create(request.getUserId(), request.getName(),
                 request.getDescription(), request.getInstruction(), request.getTools(), request.getStrategy(),
                 request.getHistoryTurns(), request.getOpeningStatement(), request.getSuggestedQuestions(),
+                request.getKnowledgeDocIds(),
                 request.getModelConnectionId(), request.getWorkflowId(), request.getWorkflowVersion()));
     }
 

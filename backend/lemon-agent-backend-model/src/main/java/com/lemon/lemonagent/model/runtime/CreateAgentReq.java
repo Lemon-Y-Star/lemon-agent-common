@@ -38,6 +38,9 @@ public class CreateAgentReq extends BaseReq {
     /** 建议问题（至多 5 条；可空 = 不展示；v4.5） */
     private java.util.List<String> suggestedQuestions;
 
+    /** 绑定的知识库文档 ID（可空 = 不限定；至多 20 个；v4.5.2） */
+    private java.util.List<Long> knowledgeDocIds;
+
     /** 绑定模型连接（可空） */
     private Long modelConnectionId;
 

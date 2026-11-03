@@ -12,6 +12,7 @@ import {
   type ToolInfo,
 } from '../api/agents'
 import { fetchModelConnections, type ModelConnection } from '../api/modelConnections'
+import { fetchKbDocs, type KbDoc } from '../api/knowledge'
 import {
   fetchWorkflow,
   fetchWorkflows,
@@ -42,6 +43,8 @@ interface FormState {
   openingStatement: string
   /** 建议问题编辑态：一行一个（空 = 不展示，v4.5） */
   suggestedQuestions: string
+  /** 绑定的知识库文档 ID（空 = 不限定范围，v4.5.2） */
+  knowledgeDocIds: number[]
   /** 提示词优化进行中（按钮转圈） */
   optimizing?: boolean
   modelConnectionId: number | null
@@ -66,6 +69,7 @@ export default function Agents() {
   const [page, setPage] = useState<AgentPage | null>(null)
   const [tools, setTools] = useState<ToolInfo[]>([])
   const [connections, setConnections] = useState<ModelConnection[]>([])
+  const [kbDocs, setKbDocs] = useState<KbDoc[]>([])
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [wfVersions, setWfVersions] = useState<WorkflowVersionItem[]>([])
   const [form, setForm] = useState<FormState | null>(null)
@@ -91,6 +95,7 @@ export default function Agents() {
       .then((p) => setConnections(p.connections.filter((c) => c.enabled)))
       .catch(() => setConnections([]))
     void fetchWorkflows().then((d) => setWorkflows(d.workflows)).catch(() => setWorkflows([]))
+    void fetchKbDocs().then((d) => setKbDocs(d.docs)).catch(() => setKbDocs([]))
   }, [reload])
 
   /** 选中工作流时顺带拉版本列表（用于「指定版本」下拉）。 */
@@ -134,6 +139,7 @@ export default function Agents() {
         modelConnectionId: agent.modelConnectionId ?? 0,
         openingStatement: agent.openingStatement ?? '',
         suggestedQuestions: agent.suggestedQuestions ?? [],
+        knowledgeDocIds: agent.knowledgeDocIds ?? [],
         enabled,
       })
       toast(enabled ? 'Agent 已启用' : 'Agent 已停用（对话页不再可选）')
@@ -161,6 +167,7 @@ export default function Agents() {
         .map((s) => s.trim())
         .filter(Boolean)
         .slice(0, 5),
+      knowledgeDocIds: form.knowledgeDocIds,
     }
     setBusy(true)
     setError('')
@@ -291,6 +298,7 @@ export default function Agents() {
                           historyTurns: a.historyTurns,
                           openingStatement: a.openingStatement ?? '',
                           suggestedQuestions: (a.suggestedQuestions ?? []).join('\n'),
+                          knowledgeDocIds: a.knowledgeDocIds ?? [],
                           modelConnectionId: a.modelConnectionId,
                           workflowId: a.workflowId,
                           workflowVersion: a.workflowVersion,
@@ -305,6 +313,9 @@ export default function Agents() {
                       编辑
                     </button>{' '}
                     <button className="btn sm danger" onClick={() => setDeleting(a)}>删除</button>
+                    <button className="btn sm" onClick={() => navigate(`/agents/${a.id}/ops`)}>
+                      运营
+                    </button>{' '}
                     <button className="btn sm" onClick={() => navigate(`/agents/${a.id}/graph`)}>
                       执行图{a.graphVersion > 0 ? ` v${a.graphVersion}` : ''}
                     </button>
@@ -365,7 +376,7 @@ export default function Agents() {
                 setForm({
                   id: null, name: '', description: '', instruction: '',
                   tools: null, strategy: 'auto', historyTurns: null,
-                  openingStatement: '', suggestedQuestions: '', modelConnectionId: null,
+                  openingStatement: '', suggestedQuestions: '', knowledgeDocIds: [], modelConnectionId: null,
                   workflowId: null, workflowVersion: null,
                 })
                 setWfVersions([])
@@ -467,6 +478,34 @@ export default function Agents() {
                   placeholder="默认 10 轮"
                   style={{ width: 160 }}
                 />
+              </div>
+
+              <div className="field">
+                <label>
+                  AGENT 知识库
+                  <span className="hint">勾选后 search_docs 只检索勾选文档（v4.5.2，Dify 同款隔离）；不勾 = 搜全部</span>
+                </label>
+                {kbDocs.length === 0 ? (
+                  <div className="note gray">知识库还没有文档，去「知识库」页上传后即可绑定</div>
+                ) : (
+                  <div style={{ maxHeight: 120, overflow: 'auto', border: '1px solid #d5d9e2', borderRadius: 7, padding: '6px 10px' }}>
+                    {kbDocs.map((d) => (
+                      <label key={d.id} style={{ display: 'block', fontSize: 13, padding: '2px 0', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={form.knowledgeDocIds.includes(d.id)}
+                          onChange={(e) => setForm({
+                            ...form,
+                            knowledgeDocIds: e.target.checked
+                              ? [...form.knowledgeDocIds, d.id]
+                              : form.knowledgeDocIds.filter((x) => x !== d.id),
+                          })}
+                        />{' '}
+                        {d.title}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="field">

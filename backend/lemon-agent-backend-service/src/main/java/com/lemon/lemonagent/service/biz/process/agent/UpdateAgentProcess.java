@@ -29,8 +29,8 @@ public class UpdateAgentProcess extends Handler<UpdateAgentReq, UpdateAgentResp>
         response.setData(agentConfigService.update(request.getUserId(), request.getAgentId(),
                 request.getName(), request.getDescription(), request.getInstruction(), request.getTools(),
                 request.getStrategy(), request.getHistoryTurns(), request.getOpeningStatement(),
-                request.getSuggestedQuestions(), request.getModelConnectionId(), request.getEnabled(),
-                request.getWorkflowId(), request.getWorkflowVersion()));
+                request.getSuggestedQuestions(), request.getKnowledgeDocIds(), request.getModelConnectionId(),
+                request.getEnabled(), request.getWorkflowId(), request.getWorkflowVersion()));
     }
 
 }

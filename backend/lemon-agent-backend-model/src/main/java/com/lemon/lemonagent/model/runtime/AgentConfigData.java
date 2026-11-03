@@ -36,6 +36,9 @@ public class AgentConfigData {
     /** 建议问题（至多 5 条）；null = 不展示（v4.5，Dify Suggested Questions 同款） */
     private java.util.List<String> suggestedQuestions;
 
+    /** 绑定的知识库文档 ID；null/空 = 检索不限定范围（v4.5.2） */
+    private java.util.List<Long> knowledgeDocIds;
+
     /** 当前执行图版本；0 = 还没有图（前端据此决定是否显示「执行图」入口） */
     private Integer graphVersion;
 

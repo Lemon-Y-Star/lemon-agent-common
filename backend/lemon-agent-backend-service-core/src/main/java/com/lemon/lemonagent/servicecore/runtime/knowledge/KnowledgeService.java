@@ -124,7 +124,20 @@ public class KnowledgeService {
      * @return 出参：命中
      */
     public List<KbSearchHit> search(Long userId, String query, int topK) {
-        return searchDetailed(userId, query, topK).hits();
+        return searchDetailed(userId, query, topK, null).hits();
+    }
+
+    /**
+     * 带文档范围过滤的检索（v4.5.2 Agent 级知识库绑定）：只在 allowedDocIds 内召回。
+     *
+     * @param userId        入参：用户
+     * @param query         入参：查询
+     * @param topK          入参：条数
+     * @param allowedDocIds 入参：允许的文档 ID；null = 不限定（搜全部）
+     * @return 出参：命中
+     */
+    public List<KbSearchHit> search(Long userId, String query, int topK, java.util.Set<Long> allowedDocIds) {
+        return searchDetailed(userId, query, topK, allowedDocIds).hits();
     }
 
     /**
@@ -139,30 +152,62 @@ public class KnowledgeService {
      * @return 出参：hits + beforeRerank + reranked
      */
     public KbSearchData searchDetailed(Long userId, String query, int topK) {
+        return searchDetailed(userId, query, topK, null);
+    }
+
+    /**
+     * 检索详细结果（检索测试页用）：三级降级 + 重排前后对比 + 图片随文带出 + 未命中沉淀。
+     *
+     * <p>合并策略：关键词命中（title ×2 / content ×1 打分）与向量召回按 title 去重合并；
+     * rerank 可用时对合并候选精排取 topK（source=rerank），否则按原序截断。</p>
+     *
+     * @param userId        入参：用户
+     * @param query         入参：查询
+     * @param topK          入参：条数
+     * @param allowedDocIds 入参：允许的文档 ID（v4.5.2 知识库绑定）；null = 不限定
+     * @return 出参：hits + beforeRerank + reranked
+     */
+    public KbSearchData searchDetailed(Long userId, String query, int topK, java.util.Set<Long> allowedDocIds) {
         if (query == null || query.isBlank()) {
             return new KbSearchData(List.of(), null, false);
         }
         int limit = Math.min(Math.max(topK, 1), 10);
         List<String> terms = splitTerms(query);
 
-        // ① 关键词路：整串命中（全文索引优先 + LIKE 兜底），再分词降级
+        // ① 关键词路：整串命中（全文索引优先 + LIKE 兜底），再分词降级；绑定模式下按文档 ID 过滤
         Map<String, KbDocumentEntity> merged = new java.util.LinkedHashMap<>();
         for (KbDocumentEntity e : repository.searchDocs(userId, query.trim(), limit)) {
-            merged.put(e.getTitle(), e);
+            if (allowedDocIds == null || allowedDocIds.contains(e.getId())) {
+                merged.put(e.getTitle(), e);
+            }
         }
         if (merged.isEmpty()) {
             for (KbDocumentEntity e : termSearch(userId, terms)) {
-                merged.putIfAbsent(e.getTitle(), e);
+                if (allowedDocIds == null || allowedDocIds.contains(e.getId())) {
+                    merged.putIfAbsent(e.getTitle(), e);
+                }
             }
         }
         List<KbSearchHit> candidates = new ArrayList<>(attachImages(userId, merged,
                 merged.values().stream().map(KbDocumentEntity::getTitle).toList(), terms));
 
-        // ② 向量路叠加（可用时多召回一些作为重排候选池；不可用时 keyword+分词结果即全部）
+        // ② 向量路叠加（可用时多召回一些作为重排候选池；不可用时 keyword+分词结果即全部）；
+        //    绑定模式下向量命中也要按 title→docId 过滤（findByTitles 批量映射）
         if (retrievalPort.available()) {
             int pool = retrievalPort.rerankAvailable() ? Math.min(limit * 3, 10) : limit;
             try {
-                for (RetrievalPort.Hit hit : retrievalPort.search(query, pool)) {
+                List<RetrievalPort.Hit> vecHits = retrievalPort.search(query, pool);
+                if (allowedDocIds != null && !vecHits.isEmpty()) {
+                    List<String> vecTitles = vecHits.stream().map(RetrievalPort.Hit::title).toList();
+                    java.util.Set<String> allowedTitles = new java.util.HashSet<>();
+                    for (KbDocumentEntity e : repository.findByTitles(userId, vecTitles)) {
+                        if (allowedDocIds.contains(e.getId())) {
+                            allowedTitles.add(e.getTitle());
+                        }
+                    }
+                    vecHits = vecHits.stream().filter(h -> allowedTitles.contains(h.title())).toList();
+                }
+                for (RetrievalPort.Hit hit : vecHits) {
                     if (!merged.containsKey(hit.title())) {
                         candidates.add(new KbSearchHit(hit.title(), hit.snippet(), "vector"));
                     }

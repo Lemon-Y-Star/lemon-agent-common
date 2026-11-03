@@ -99,6 +99,9 @@ public class RunExecutor {
 
     private final ModelConnectionRepository modelConnectionRepository;
 
+    /** Agent 配置服务（v4.5.2：反查 Agent 知识库绑定范围）。 */
+    private final com.lemon.lemonagent.servicecore.runtime.agent.AgentConfigService agentConfigService;
+
     private final ModelPort modelPort;
 
     private final EventPublisher eventPublisher;
@@ -134,6 +137,7 @@ public class RunExecutor {
     public RunExecutor(AgentRunRepository runRepository,
                        AgentMessageRepository messageRepository,
                        ModelConnectionRepository modelConnectionRepository,
+                       com.lemon.lemonagent.servicecore.runtime.agent.AgentConfigService agentConfigService,
                        AgentConfigRepository agentConfigRepository,
                        MemoryService memoryService,
                        ObjectProvider<CodeSandboxPort> codeSandboxProvider,
@@ -148,6 +152,7 @@ public class RunExecutor {
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
         this.modelConnectionRepository = modelConnectionRepository;
+        this.agentConfigService = agentConfigService;
         this.agentConfigRepository = agentConfigRepository;
         this.memoryService = memoryService;
         this.codeSandbox = codeSandboxProvider.getIfAvailable();
@@ -1564,6 +1569,13 @@ public class RunExecutor {
     private void executeAndEmitToolResult(AgentRunEntity run, String toolName,
                                           ToolRegistry.ToolHandler handler,
                                           Map<String, Object> args, List<String> notes) {
+        // Agent 知识库绑定（v4.5.2）：search_docs 注入文档范围（四个工具执行点统一走这里，无需各自查）
+        if ("search_docs".equals(toolName) && !args.containsKey("__kbDocIds")) {
+            String kbScope = resolveKbDocIds(run);
+            if (kbScope != null) {
+                args.put("__kbDocIds", kbScope);
+            }
+        }
         long start = System.currentTimeMillis();
         String resultBrief;
         boolean ok;
@@ -1663,6 +1675,20 @@ public class RunExecutor {
                     "errorCode", errorCode,
                     "errorMsg", errorMsg,
                     "ts", System.currentTimeMillis())));
+        }
+    }
+
+    /** Agent 知识库绑定范围反查（v4.5.2）：run 挂载 Agent 的 knowledgeDocIds；无 Agent / 未绑定返回 null。 */
+    private String resolveKbDocIds(AgentRunEntity run) {
+        if (run.getAgentId() == null) {
+            return null;
+        }
+        try {
+            AgentConfigEntity agent = agentConfigService.findById(run.getAgentId());
+            return agent == null ? null : agent.getKnowledgeDocIds();
+        } catch (Exception e) {
+            log.warn("run {} 反查知识库绑定失败：{}", run.getId(), e.getMessage());
+            return null;
         }
     }
 

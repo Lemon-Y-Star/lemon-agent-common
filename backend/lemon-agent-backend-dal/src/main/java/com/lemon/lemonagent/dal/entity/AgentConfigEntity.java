@@ -43,6 +43,9 @@ public class AgentConfigEntity {
     /** 建议问题（JSON 数组字符串，至多 5 条）；NULL = 不展示（v4.5，Dify Suggested Questions 同款） */
     private String suggestedQuestions;
 
+    /** 绑定的知识库文档 ID（JSON 数组）；NULL/空 = 检索不限定范围（v4.5.2，Dify AGENT 知识库同款） */
+    private String knowledgeDocIds;
+
     /** 绑定模型连接；NULL = 用户最新启用连接 */
     private Long modelConnectionId;
 
