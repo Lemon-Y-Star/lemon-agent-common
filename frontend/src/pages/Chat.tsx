@@ -19,6 +19,7 @@ import { fetchAgents, type AgentConfig } from '../api/agents'
 import { ApiError } from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
+import RunDetailModal from '../components/RunDetailModal'
 import { ToastHost, toast } from '../components/Toast'
 import Markdown from '../components/Markdown'
 import ThinkingPanel, { splitThink } from '../components/ThinkingPanel'
@@ -124,6 +125,8 @@ export default function Chat() {
   const [deleting, setDeleting] = useState<SessionItem | null>(null)
   /** 图表灯箱（v4.4.4）：data URI 不能顶层导航，点击改页内预览 */
   const [imgPreview, setImgPreview] = useState<string | null>(null)
+  /** 运行详情弹窗（v4.5，Dify 对话日志同款）：要查看的 runId */
+  const [detailRunId, setDetailRunId] = useState<number | null>(null)
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
@@ -897,11 +900,14 @@ export default function Chat() {
             {b.role === 'ASSISTANT' && b.usage && (b.usage.input > 0 || b.usage.output > 0) && (
               <div className="note gray" style={{ marginTop: 2 }}>Tokens ↑{b.usage.input} ↓{b.usage.output}</div>
             )}
-            {/* 回答操作条（v4.5，Dify 同款）：复制正文 / 按原输入重新生成 */}
+            {/* 回答操作条（v4.5，Dify 同款）：复制正文 / 按原输入重新生成 / 运行详情 */}
             {b.role === 'ASSISTANT' && b.content && (b.usage || !streaming || b.runId !== activeRunId) && (
               <div className="msg-actions">
                 <button className="btn xs" onClick={() => void copyAnswer(b)}>📋 复制</button>
                 <button className="btn xs" disabled={streaming} onClick={() => regenerateFrom(i)}>🔄 重新生成</button>
+                {b.runId != null && (
+                  <button className="btn xs" onClick={() => setDetailRunId(b.runId!)}>🔍 详情</button>
+                )}
               </div>
             )}
             {/* 耗时 + traceId 溯源（v4.1.3）：traceId 带一键复制，排查问题贴给后端即可对上全链路日志 */}
@@ -1117,6 +1123,7 @@ export default function Chat() {
         </div>
       )}
       <ToastHost />
+      {detailRunId != null && <RunDetailModal runId={detailRunId} onClose={() => setDetailRunId(null)} />}
     </>
   )
 }

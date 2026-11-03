@@ -547,3 +547,24 @@ tr:hover td{background:#fafbfe}
 .msg-actions{display:flex;gap:6px;margin-top:6px;opacity:.55}
 .msg:hover .msg-actions{opacity:1}
 .btn.xs{padding:2px 8px;font-size:12px}
+
+/* ---------- v4.5 运行详情弹窗 + 画布试运行染色 ---------- */
+.run-detail h4{margin:12px 0 6px}
+.rd-meta{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 14px;font-size:13px}
+.rd-steps{margin:0;padding-left:4px;list-style:none}
+.rd-step{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13px}
+.rd-idx{width:18px;text-align:center;flex:none}
+.rd-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd-done .rd-idx{color:var(--ok,#16a34a)}
+.rd-skipped{opacity:.55}
+.rd-io{background:#f7f8fa;border:1px solid #e2e5ea;border-radius:7px;padding:8px 10px;font-size:12px;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.ge-node.run-done{box-shadow:0 0 0 2px var(--ok,#16a34a)}
+.ge-node.run-running{box-shadow:0 0 0 2px #3b82f6}
+.ge-node.run-skipped{opacity:.55}
+.ge-node.run-failed,.ge-node.run-blocked{box-shadow:0 0 0 2px var(--danger,#dc2626)}
+.ge-run-dot{margin-left:auto;font-size:12px;flex:none}
+.ge-run-dot.ok{color:var(--ok,#16a34a)}
+.ge-run-dot.run{color:#3b82f6}
+.ge-run-dot.skip{color:#9ca3af}
+.ge-run-dot.err{color:var(--danger,#dc2626)}
+.ge-run-output{font-size:11px;color:var(--muted,#6b7280);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}

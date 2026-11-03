@@ -10,8 +10,10 @@ import {
 } from '../api/graph'
 import { fetchTools, type ToolInfo } from '../api/agents'
 import { runSandbox, type SandboxResult } from '../api/sandbox'
+import { createRun, fetchRunSnapshot, type RunSnapshot } from '../api/runtime'
 import { createWorkflow, fetchWorkflowGraph, saveWorkflowGraph } from '../api/workflow'
 import { ApiError } from '../api/client'
+import Modal from '../components/Modal'
 import { ToastHost, toast } from '../components/Toast'
 
 /**
@@ -97,6 +99,16 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
   const [argsText, setArgsText] = useState('')
   /** CODE 节点试运行状态（v4.4）：null=未运行；运行中 disabled */
   const [sandboxRun, setSandboxRun] = useState<{ loading: boolean; result?: SandboxResult; error?: string } | null>(null)
+  /** 画布整图试运行（v4.5，Dify Workflow Run 同款）：null=未开；input=输入框；running=轮询中；done=出结果 */
+  const [canvasRun, setCanvasRun] = useState<{
+    phase: 'input' | 'running' | 'done'
+    input: string
+    runId?: number
+    snapshot?: RunSnapshot | null
+    error?: string
+  } | null>(null)
+  /** 节点运行染色（独立于弹窗状态：关闭弹窗后画布保留上一次运行的结果，直到下一次试运行重置） */
+  const [runStatusMap, setRunStatusMap] = useState<Record<string, { status: string; output: string | null }> | null>(null)
 
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
@@ -306,6 +318,71 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
     setDirty(true)
   }
 
+  /** 画布试运行轮询（v4.5）：2.5s 拉快照直到终态，节点染色实时更新；alive 防卸载后 setState。 */
+  const canvasRunAlive = useRef(true)
+  useEffect(() => {
+    canvasRunAlive.current = true
+    return () => {
+      canvasRunAlive.current = false
+    }
+  }, [])
+
+  async function pollCanvasRun(runId: number) {
+    const terminal = ['COMPLETED', 'FAILED', 'BLOCKED', 'CANCELLED']
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2500))
+      if (!canvasRunAlive.current) return
+      try {
+        const snap = await fetchRunSnapshot(runId)
+        if (!canvasRunAlive.current) return
+        setCanvasRun((prev) => (prev && prev.runId === runId ? { ...prev, snapshot: snap } : prev))
+        // 节点染色独立保存：关弹窗不清，下一次试运行开始时重置
+        const nodes = snap.graph?.nodes ?? []
+        if (nodes.length > 0) {
+          const map: Record<string, { status: string; output: string | null }> = {}
+          for (const n of nodes) map[n.id] = { status: n.status, output: n.output ?? null }
+          setRunStatusMap(map)
+        }
+        if (terminal.includes(snap.status)) {
+          setCanvasRun((prev) => (prev && prev.runId === runId ? { ...prev, phase: 'done' } : prev))
+          return
+        }
+      } catch (err) {
+        if (!canvasRunAlive.current) return
+        setCanvasRun((prev) => (prev && prev.runId === runId
+          ? { ...prev, phase: 'done', error: err instanceof Error ? err.message : '查询运行状态失败' }
+          : prev))
+        return
+      }
+    }
+  }
+
+  /** 开始画布试运行：custom 策略发一次真实运行，节点按快照染色。 */
+  async function onStartCanvasRun() {
+    if (!canvasRun || !canvasRun.input.trim()) return
+    setRunStatusMap(null)
+    try {
+      const created = await createRun({
+        agentId: id,
+        input: canvasRun.input.trim(),
+        strategy: 'custom',
+        clientRequestId: `canvas_run_${Date.now()}`,
+      })
+      setCanvasRun({ phase: 'running', input: canvasRun.input, runId: created.runId, snapshot: null })
+      void pollCanvasRun(created.runId)
+    } catch (err) {
+      setCanvasRun((prev) => (prev
+        ? { ...prev, phase: 'done', error: err instanceof ApiError ? err.message : '发起试运行失败' }
+        : prev))
+    }
+  }
+
+  /** 画布节点的运行染色（v4.5）：从独立染色 Map 查（关弹窗不清除）。 */
+  function runNodeStatus(nodeId: string): string | null {
+    const n = runStatusMap?.[nodeId]
+    return n ? n.status : null
+  }
+
   return (
     <>
       <div className="page-head">
@@ -321,6 +398,15 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
           <span className="tag gray">v{graph?.version ?? 0}</span>
           {dirty && <span className="tag warn">未保存</span>}
           <button className="btn" onClick={() => navigate(isWorkflow ? '/workflows' : '/agents')}>返回</button>
+          {!isWorkflow && (
+            <button
+              className="btn"
+              disabled={canvasRun?.phase === 'running'}
+              onClick={() => setCanvasRun({ phase: 'input', input: '' })}
+            >
+              ▶ 试运行
+            </button>
+          )}
           {!isWorkflow && <button className="btn" onClick={() => navigate(`/agents/${id}/eval`)}>评测回归</button>}
           {!isWorkflow && <button className="btn" onClick={() => navigate('/chat')}>去对话</button>}
           {editable && (
@@ -419,47 +505,59 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
             })}
           </svg>
 
-          {(graph?.nodes ?? []).map((n) => (
-            <div
-              key={n.id}
-              className={`ge-node ${selected === n.id ? 'selected' : ''} ${connectingFrom === n.id ? 'connecting' : ''}`}
-              style={{ left: n.x ?? 0, top: n.y ?? 0, width: NODE_W, height: NODE_H, borderLeft: `3px solid ${TYPE_COLOR[n.type]}` }}
-              onMouseDown={(e) => {
-                if (!editable) return
-                const rect = innerRef.current?.getBoundingClientRect()
-                if (!rect) return
-                dragRef.current = { id: n.id, dx: e.clientX - rect.left - (n.x ?? 0), dy: e.clientY - rect.top - (n.y ?? 0) }
-                setSelected(n.id)
-              }}
-              onClick={(e) => { e.stopPropagation(); setSelected(n.id) }}
-            >
-              <div className="ge-node-head">
-                <span className="ge-node-type" style={{ background: TYPE_COLOR[n.type] }}>{TYPE_LABEL[n.type]}</span>
-                <span className="ge-node-id">{n.id}</span>
-              </div>
-              <div className="ge-node-title">{n.title || n.id}</div>
-              {editable && (
-                <div className="ge-node-actions">
-                  <button
-                    className="btn sm"
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); setConnectingFrom(n.id) }}
-                  >
-                    连线
-                  </button>
-                  {connectingFrom && connectingFrom !== n.id && (
-                    <button
-                      className="btn sm primary"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); connectTo(n.id) }}
-                    >
-                      连到这里
-                    </button>
+          {(graph?.nodes ?? []).map((n) => {
+            const rn = runNodeStatus(n.id)
+            return (
+              <div
+                key={n.id}
+                className={`ge-node ${selected === n.id ? 'selected' : ''} ${connectingFrom === n.id ? 'connecting' : ''} ${rn ? `run-${rn.toLowerCase()}` : ''}`}
+                style={{ left: n.x ?? 0, top: n.y ?? 0, width: NODE_W, height: NODE_H, borderLeft: `3px solid ${TYPE_COLOR[n.type]}` }}
+                onMouseDown={(e) => {
+                  if (!editable) return
+                  const rect = innerRef.current?.getBoundingClientRect()
+                  if (!rect) return
+                  dragRef.current = { id: n.id, dx: e.clientX - rect.left - (n.x ?? 0), dy: e.clientY - rect.top - (n.y ?? 0) }
+                  setSelected(n.id)
+                }}
+                onClick={(e) => { e.stopPropagation(); setSelected(n.id) }}
+              >
+                <div className="ge-node-head">
+                  <span className="ge-node-type" style={{ background: TYPE_COLOR[n.type] }}>{TYPE_LABEL[n.type]}</span>
+                  <span className="ge-node-id">{n.id}</span>
+                  {rn && (
+                    <span className={`ge-run-dot ${rn === 'DONE' ? 'ok' : rn === 'RUNNING' ? 'run' : rn === 'SKIPPED' ? 'skip' : 'err'}`}
+                      title={rn}>{rn === 'DONE' ? '✓' : rn === 'RUNNING' ? '▶' : rn === 'SKIPPED' ? '—' : '✗'}</span>
                   )}
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="ge-node-title">{n.title || n.id}</div>
+                {rn === 'DONE' && runStatusMap?.[n.id]?.output && (
+                  <div className="ge-run-output" title={runStatusMap[n.id].output ?? ''}>
+                    {runStatusMap[n.id].output}
+                  </div>
+                )}
+                {editable && (
+                  <div className="ge-node-actions">
+                    <button
+                      className="btn sm"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); setConnectingFrom(n.id) }}
+                    >
+                      连线
+                    </button>
+                    {connectingFrom && connectingFrom !== n.id && (
+                      <button
+                        className="btn sm primary"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); connectTo(n.id) }}
+                      >
+                        连到这里
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
           </div>
           {emptyGraph && (
             <div className="ge-empty">
@@ -706,6 +804,79 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
           )}
         </aside>
       </div>
+
+      {/* 画布整图试运行（v4.5，Dify Workflow Run 同款）：不进对话直接跑一次，节点实时染色 */}
+      {canvasRun && (
+        <Modal
+          title={canvasRun.phase === 'input' ? '画布试运行' : `试运行 · #${canvasRun.runId ?? ''}`}
+          onClose={() => {
+            if (canvasRun.phase !== 'running') setCanvasRun(null)
+          }}
+        >
+          {canvasRun.phase === 'input' && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                void onStartCanvasRun()
+              }}
+            >
+              <div className="field">
+                <label>测试输入（将以 custom 策略真实运行一次本图，产生运行记录）</label>
+                <textarea
+                  autoFocus
+                  value={canvasRun.input}
+                  onChange={(e) => setCanvasRun({ ...canvasRun, input: e.target.value })}
+                  rows={4}
+                  required
+                  style={{ width: '100%', border: '1px solid #d5d9e2', borderRadius: 7, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+                  placeholder="输入测试问题，如：计算 2 的 10 次方"
+                />
+              </div>
+              <div className="btns">
+                <button type="button" className="btn" onClick={() => setCanvasRun(null)}>取消</button>
+                <button type="submit" className="btn primary">开始运行</button>
+              </div>
+            </form>
+          )}
+          {canvasRun.phase === 'running' && (
+            <div className="note info" style={{ margin: '8px 0' }}>
+              ⏳ 运行中…画布节点会实时染色（绿=完成，蓝=执行中，灰=条件路由跳过）。
+            </div>
+          )}
+          {canvasRun.phase === 'done' && (
+            <div>
+              {canvasRun.error && <p className="note danger">{canvasRun.error}</p>}
+              {canvasRun.snapshot?.status === 'BLOCKED' && (
+                <p className="note" style={{ color: 'var(--warning, #b45309)' }}>
+                  🛡️ 运行在审批门挂起——画布试运行不处理审批，请到对话页继续该运行。
+                </p>
+              )}
+              {canvasRun.snapshot && (
+                <>
+                  <div className="rd-meta" style={{ margin: '8px 0' }}>
+                    <span>
+                      状态{' '}
+                      {canvasRun.snapshot.status === 'COMPLETED' ? <b className="tag ok">SUCCESS</b>
+                        : canvasRun.snapshot.status === 'FAILED' ? <b className="tag err">FAILED</b>
+                          : <b className="tag gray">{canvasRun.snapshot.status}</b>}
+                    </span>
+                    {canvasRun.snapshot.usage && (
+                      <span>Tokens：↑{canvasRun.snapshot.usage.inputTokens} ↓{canvasRun.snapshot.usage.outputTokens}</span>
+                    )}
+                    <span style={{ gridColumn: '1 / -1' }}>traceId：{canvasRun.snapshot.traceId}</span>
+                  </div>
+                  <h4>最终输出</h4>
+                  <pre className="rd-io">{canvasRun.snapshot.outputText || '（无输出）'}</pre>
+                </>
+              )}
+              <div className="btns" style={{ marginTop: 10 }}>
+                <button className="btn" onClick={() => setCanvasRun({ phase: 'input', input: canvasRun.input })}>再跑一次</button>
+                <button className="btn primary" onClick={() => setCanvasRun(null)}>关闭</button>
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
       <ToastHost />
     </>
   )
