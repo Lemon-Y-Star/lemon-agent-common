@@ -584,3 +584,8 @@ tr:hover td{background:#fafbfe}
 .row .field input,.row .field select{margin-top:auto}
 /* ---------- v4.5.3 工具描述截断：MCP 长描述不再撑爆弹窗（悬浮 title 看全文） ---------- */
 .tool-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.55}
+/* ---------- v4.5.3 工具列表内置滚动：工具增多不再把弹窗拉长 ---------- */
+.tools-box{max-height:340px;overflow-y:auto;padding-right:8px}
+.tools-box::-webkit-scrollbar{width:6px}
+.tools-box::-webkit-scrollbar-thumb{background:#c9cdd6;border-radius:3px}
+.tools-box::-webkit-scrollbar-track{background:transparent}
