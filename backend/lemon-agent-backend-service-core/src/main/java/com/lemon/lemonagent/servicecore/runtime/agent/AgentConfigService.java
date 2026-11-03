@@ -485,7 +485,9 @@ public class AgentConfigService {
     private static final int MAX_KB_DOCS = 20;
 
     /**
-     * 知识库绑定归一化：去重、限条数、校验文档归属（防止绑定别人的文档）；空列表归 null（= 不限定）。
+     * 知识库绑定归一化：去重、限条数、校验文档归属（防止绑定别人的文档）；
+     * 空列表/null 归 null（= 清除绑定，不限定范围）。与开场白/建议问题同为「无条件覆盖」语义，
+     * 调用方（前端表单）必须总是携带该字段。
      *
      * @param userId 入参：归属用户
      * @param docIds 入参：请求里的文档 ID 列表
