@@ -5,6 +5,7 @@ import {
   deleteAgent,
   fetchAgents,
   fetchTools,
+  optimizePrompt,
   updateAgent,
   type AgentConfig,
   type AgentPage,
@@ -37,6 +38,12 @@ interface FormState {
   strategy: string
   /** 短期记忆窗口轮数（1 轮=一问一答）；null = 默认 10 轮；0 = 不带历史 */
   historyTurns: number | null
+  /** 对话开场白（编辑态字符串；空 = 不展示，v4.5） */
+  openingStatement: string
+  /** 建议问题编辑态：一行一个（空 = 不展示，v4.5） */
+  suggestedQuestions: string
+  /** 提示词优化进行中（按钮转圈） */
+  optimizing?: boolean
   modelConnectionId: number | null
   /** 挂载的工作流；null = 用 Agent 自己的执行图 */
   workflowId: number | null
@@ -125,6 +132,8 @@ export default function Agents() {
         instruction: agent.instruction ?? '',
         tools: agent.tools,
         modelConnectionId: agent.modelConnectionId ?? 0,
+        openingStatement: agent.openingStatement ?? '',
+        suggestedQuestions: agent.suggestedQuestions ?? [],
         enabled,
       })
       toast(enabled ? 'Agent 已启用' : 'Agent 已停用（对话页不再可选）')
@@ -146,6 +155,12 @@ export default function Agents() {
       tools: form.tools,
       strategy: form.strategy,
       historyTurns: form.historyTurns,
+      openingStatement: form.openingStatement.trim(),
+      suggestedQuestions: form.suggestedQuestions
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 5),
     }
     setBusy(true)
     setError('')
@@ -189,6 +204,24 @@ export default function Agents() {
 
   function strategyLabel(agent: AgentConfig) {
     return STRATEGIES.find((s) => s.value === (agent.strategy ?? 'auto'))?.label ?? agent.strategy
+  }
+
+  /** 提示词 AI 优化（v4.5）：调模型改写 instruction，结果直接回填（未保存前可改回） */
+  async function onOptimize() {
+    if (!form || !form.instruction.trim()) {
+      setError('先写一版提示词再优化')
+      return
+    }
+    setForm({ ...form, optimizing: true })
+    setError('')
+    try {
+      const optimized = await optimizePrompt(form.instruction.trim())
+      setForm((prev) => (prev ? { ...prev, instruction: optimized, optimizing: false } : prev))
+      toast('提示词已优化，确认后记得保存')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '优化失败')
+      setForm((prev) => (prev ? { ...prev, optimizing: false } : prev))
+    }
   }
 
   function agentTable(list: AgentConfig[], readonly: boolean) {
@@ -256,6 +289,8 @@ export default function Agents() {
                           tools: a.tools,
                           strategy: a.strategy ?? 'auto',
                           historyTurns: a.historyTurns,
+                          openingStatement: a.openingStatement ?? '',
+                          suggestedQuestions: (a.suggestedQuestions ?? []).join('\n'),
                           modelConnectionId: a.modelConnectionId,
                           workflowId: a.workflowId,
                           workflowVersion: a.workflowVersion,
@@ -329,7 +364,8 @@ export default function Agents() {
               onClick={() => {
                 setForm({
                   id: null, name: '', description: '', instruction: '',
-                  tools: null, strategy: 'auto', historyTurns: null, modelConnectionId: null,
+                  tools: null, strategy: 'auto', historyTurns: null,
+                  openingStatement: '', suggestedQuestions: '', modelConnectionId: null,
                   workflowId: null, workflowVersion: null,
                 })
                 setWfVersions([])
@@ -360,7 +396,18 @@ export default function Agents() {
                 <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="一句话说明这个 Agent 干什么" />
               </div>
               <div className="field">
-                <label>系统提示词 *（1..4000 字符，定义人格与任务）</label>
+                <label>
+                  系统提示词 *（1..4000 字符，定义人格与任务）
+                  <button
+                    type="button"
+                    className="btn sm"
+                    style={{ marginLeft: 8, verticalAlign: 'middle' }}
+                    disabled={form.optimizing}
+                    onClick={() => void onOptimize()}
+                  >
+                    {form.optimizing ? 'AI 优化中…' : '✨ AI 优化'}
+                  </button>
+                </label>
                 <textarea
                   value={form.instruction}
                   onChange={(e) => setForm({ ...form, instruction: e.target.value })}
@@ -368,6 +415,35 @@ export default function Agents() {
                   required
                   style={{ width: '100%', border: '1px solid #d5d9e2', borderRadius: 7, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
                   placeholder="你是……助手。请用中文……需要创建工单时调用 create_ticket……"
+                />
+              </div>
+
+              <div className="field">
+                <label>
+                  对话开场白
+                  <span className="hint">会话开始时展示的欢迎语（v4.5）；留空 = 不展示，上限 500 字</span>
+                </label>
+                <textarea
+                  value={form.openingStatement}
+                  onChange={(e) => setForm({ ...form, openingStatement: e.target.value })}
+                  rows={2}
+                  maxLength={500}
+                  style={{ width: '100%', border: '1px solid #d5d9e2', borderRadius: 7, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+                  placeholder="你好！我是数据计算助手，任何需要精确计算的问题都可以交给我。"
+                />
+              </div>
+
+              <div className="field">
+                <label>
+                  建议问题
+                  <span className="hint">一行一个，至多 5 条；对话开始时渲染为可点击的引导按钮（v4.5）</span>
+                </label>
+                <textarea
+                  value={form.suggestedQuestions}
+                  onChange={(e) => setForm({ ...form, suggestedQuestions: e.target.value })}
+                  rows={3}
+                  style={{ width: '100%', border: '1px solid #d5d9e2', borderRadius: 7, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+                  placeholder={'帮我算 100 万房贷 30 年月供\n用 matplotlib 画一个正弦曲线'}
                 />
               </div>
 

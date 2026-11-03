@@ -9,6 +9,7 @@ import com.lemon.lemonagent.model.runtime.DeleteAgentResp;
 import com.lemon.lemonagent.model.runtime.UpdateAgentReq;
 import com.lemon.lemonagent.model.runtime.UpdateAgentResp;
 import com.lemon.lemonagent.servicecore.runtime.agent.AgentConfigService;
+import com.lemon.lemonagent.servicecore.runtime.agent.PromptOptimizeService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.architecture.service.util.opt.OptUtil;
 import com.lemon.architecture.util.validation.AssertUtils;
@@ -24,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
+
 /**
  * 我的 Agent 接口（PRD FR-6 最小充分版）：平台公共只读 + 个人自建增删改。
  */
@@ -38,6 +41,10 @@ public class AgentConfigController {
     /** Agent 配置领域服务。 */
     @Resource
     private AgentConfigService agentConfigService;
+
+    /** 提示词 AI 优化器（v4.5）。 */
+    @Resource
+    private PromptOptimizeService promptOptimizeService;
 
     /**
      * Agent 列表（平台公共在前，个人自建在后）。
@@ -92,6 +99,21 @@ public class AgentConfigController {
             AssertUtils.notBlank(req.getName(), "名称不能为空");
             AssertUtils.notBlank(req.getInstruction(), "系统提示词不能为空");
         });
+    }
+
+    /**
+     * 提示词 AI 优化（v4.5，Dify Prompt Generator 同款）：模型改写 instruction。
+     *
+     * @param body   入参：{"instruction": "原始提示词"}
+     * @param userId 归属用户
+     * @return 出参：{"optimized": "优化后提示词"}
+     */
+    @PostMapping("/optimize-prompt")
+    public BaseResult<Map<String, String>> optimizePrompt(@RequestBody Map<String, String> body,
+                                                          @RequestAttribute("lemon.userId") Long userId) {
+        String optimized = promptOptimizeService.optimize(userId,
+                body == null ? null : body.get("instruction"));
+        return BaseResult.success(Map.of("optimized", optimized));
     }
 
     /**

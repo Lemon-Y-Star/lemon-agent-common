@@ -32,6 +32,12 @@ public class CreateAgentReq extends BaseReq {
     /** 短期记忆窗口轮数（1 轮=用户+助手各 1 条；可空 = 默认 10 轮；0 = 不带历史；上限 50） */
     private Integer historyTurns;
 
+    /** 对话开场白（可空 = 不展示；v4.5） */
+    private String openingStatement;
+
+    /** 建议问题（至多 5 条；可空 = 不展示；v4.5） */
+    private java.util.List<String> suggestedQuestions;
+
     /** 绑定模型连接（可空） */
     private Long modelConnectionId;
 

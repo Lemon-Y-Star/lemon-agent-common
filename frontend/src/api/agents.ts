@@ -13,6 +13,10 @@ export interface AgentConfig {
   strategy: string
   /** 短期记忆窗口轮数（1 轮=一问一答）；null = 默认 10 轮；0 = 不带历史 */
   historyTurns: number | null
+  /** 对话开场白；null/空 = 不展示（v4.5） */
+  openingStatement: string | null
+  /** 建议问题（至多 5 条）；null = 不展示（v4.5） */
+  suggestedQuestions: string[] | null
   /** 当前执行图版本；0 = 还没有图 */
   graphVersion: number
   /** 挂载的工作流；null = 用 Agent 自己的执行图 */
@@ -64,6 +68,10 @@ export function createAgent(payload: {
   strategy?: string
   /** 短期记忆窗口轮数（可空 = 默认 10；0 = 不带历史；上限 50） */
   historyTurns?: number | null
+  /** 对话开场白（可空 = 不展示；v4.5） */
+  openingStatement?: string | null
+  /** 建议问题（可空 = 不展示；至多 5 条；v4.5） */
+  suggestedQuestions?: string[] | null
   modelConnectionId: number | null
   /** 挂载工作流（可空） */
   workflowId?: number | null
@@ -84,6 +92,10 @@ export function updateAgent(
     strategy?: string
     /** 短期记忆窗口轮数：null = 保持不变；0 = 不带历史；上限 50 */
     historyTurns?: number | null
+    /** 对话开场白（可空 = 清除；v4.5） */
+    openingStatement?: string | null
+    /** 建议问题（可空 = 清除；至多 5 条；v4.5） */
+    suggestedQuestions?: string[] | null
     /** null = 保持不变；0 = 清除绑定 */
     modelConnectionId?: number | null
     enabled?: boolean
@@ -98,4 +110,10 @@ export function updateAgent(
 
 export function deleteAgent(id: number): Promise<null> {
   return del<null>(`/workspace/agents/${id}`)
+}
+
+/** 提示词 AI 优化（v4.5，Dify Prompt Generator 同款）。 */
+export async function optimizePrompt(instruction: string): Promise<string> {
+  const data = await post<{ optimized: string }>('/workspace/agents/optimize-prompt', { instruction })
+  return data.optimized
 }

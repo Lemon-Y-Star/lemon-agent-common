@@ -677,6 +677,38 @@ export default function Chat() {
     toast('新会话已创建')
   }, [streaming, reloadSessions])
 
+  /** 回答操作条（v4.5）：复制正文（剥思考块后） */
+  async function copyAnswer(b: Bubble) {
+    const parts = b.content ? splitThink(b.content) : { answer: '' }
+    const text = (parts.answer || b.content || '').trim()
+    if (!text) {
+      toast('没有可复制的正文')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      toast('已复制')
+    } catch {
+      toast('复制失败（浏览器未授权剪贴板）')
+    }
+  }
+
+  /** 回答操作条（v4.5）：用该回答之前最后一条用户输入重新发起运行 */
+  function regenerateFrom(index: number) {
+    if (streaming) {
+      toast('运行进行中，先等待完成或取消')
+      return
+    }
+    for (let k = index - 1; k >= 0; k--) {
+      const prev = bubbles[k]
+      if (prev.kind === 'msg' && prev.role === 'USER' && prev.content) {
+        void doSend(prev.content, thinkingOn)
+        return
+      }
+    }
+    toast('找不到原始输入，无法重新生成')
+  }
+
   function renderBubble(b: Bubble, i: number) {
     if (b.kind === 'plan') {
       const done = (b.planSteps ?? []).filter((x) => x.status === 'DONE').length
@@ -712,6 +744,28 @@ export default function Chat() {
               </li>
             ))}
           </ol>
+          {/* 节点耗时瀑布（v4.5，Dify 工作流运行详情同款）：横向条形按耗时对比，瓶颈节点一眼可见 */}
+          {b.planSteps && b.planSteps.some((x) => x.durationMs != null) && (() => {
+            const timed = b.planSteps.filter((x) => x.durationMs != null && (x.durationMs as number) > 0)
+            if (timed.length === 0) return null
+            const max = Math.max(...timed.map((x) => x.durationMs as number))
+            return (
+              <div className="waterfall">
+                {timed.map((x, k) => (
+                  <div key={k} className="wf-row">
+                    <span className="wf-name" title={x.title}>{x.title}</span>
+                    <span className="wf-bar-wrap">
+                      <span
+                        className={`wf-bar ${x.status === 'SKIPPED' ? 'skip' : ''}`}
+                        style={{ width: `${Math.max(3, ((x.durationMs as number) / max) * 100)}%` }}
+                      />
+                    </span>
+                    <span className="wf-ms">{(x.durationMs as number / 1000).toFixed(1)}s</span>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
         </div>
       )
     }
@@ -843,6 +897,13 @@ export default function Chat() {
             {b.role === 'ASSISTANT' && b.usage && (b.usage.input > 0 || b.usage.output > 0) && (
               <div className="note gray" style={{ marginTop: 2 }}>Tokens ↑{b.usage.input} ↓{b.usage.output}</div>
             )}
+            {/* 回答操作条（v4.5，Dify 同款）：复制正文 / 按原输入重新生成 */}
+            {b.role === 'ASSISTANT' && b.content && (b.usage || !streaming || b.runId !== activeRunId) && (
+              <div className="msg-actions">
+                <button className="btn xs" onClick={() => void copyAnswer(b)}>📋 复制</button>
+                <button className="btn xs" disabled={streaming} onClick={() => regenerateFrom(i)}>🔄 重新生成</button>
+              </div>
+            )}
             {/* 耗时 + traceId 溯源（v4.1.3）：traceId 带一键复制，排查问题贴给后端即可对上全链路日志 */}
             {b.role === 'ASSISTANT' && !streaming && (b.durationMs || b.traceId) && (
               <div className="note gray" style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -938,12 +999,31 @@ export default function Chat() {
             </div>
           )}
           <div className="chat-body" ref={bodyRef}>
-            {bubbles.length === 0 && (
+            {bubbles.length === 0 && (selectedAgent?.openingStatement || (selectedAgent?.suggestedQuestions?.length ?? 0) > 0) ? (
+              // 开场白 + 建议问题（v4.5，Dify Opening Statement / Suggested Questions 同款）
+              <div className="chat-welcome">
+                {selectedAgent?.openingStatement && (
+                  <div className="msg ai">
+                    <div className="mk">🤖</div>
+                    <div className="msg-body"><div className="bubble md-bubble">{selectedAgent.openingStatement}</div></div>
+                  </div>
+                )}
+                {(selectedAgent?.suggestedQuestions?.length ?? 0) > 0 && (
+                  <div className="suggestions">
+                    {selectedAgent!.suggestedQuestions!.map((q, k) => (
+                      <button key={k} className="suggestion-chip" disabled={streaming} onClick={() => void doSend(q, thinkingOn)}>
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : bubbles.length === 0 ? (
               <div className="note gray">
                 选择左侧会话或直接在下方输入发起对话。试试说「帮我创建一个工单，标题是 xxx，优先级 P1」——
                 高风险写操作会弹出审批卡。
               </div>
-            )}
+            ) : null}
             {bubbles.map((b, i) => renderBubble(b, i))}
           </div>
           <div className="chat-input">

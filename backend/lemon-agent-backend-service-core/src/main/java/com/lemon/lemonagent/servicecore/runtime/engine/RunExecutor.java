@@ -1021,10 +1021,11 @@ public class RunExecutor {
                 String output;
                 try {
                     output = execInSandbox(run, node, upstreamOutputs(graph, state, node.getId()));
-                } catch (Exception e) {
-                    failIfStillRunning(runId, "SANDBOX_ERROR", "代码节点执行失败：" + e.getMessage());
-                    return;
-                }
+        } catch (Exception e) {
+            failIfStillRunning(runId, "SANDBOX_ERROR", "代码节点执行失败："
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            return;
+        }
                 done.add(node.getId());
                 markNodeDone(run, state, node, output, stepIndex);
                 continue;
@@ -1247,7 +1248,8 @@ public class RunExecutor {
             return new NodeOutcome(node, stepIndex, output, 0, 0, null, true, null, null, null);
         } catch (Exception e) {
             return new NodeOutcome(node, stepIndex, "", 0, 0, null, false, null,
-                    "SANDBOX_ERROR", "代码节点执行失败：" + e.getMessage());
+                    "SANDBOX_ERROR", "代码节点执行失败："
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }
 

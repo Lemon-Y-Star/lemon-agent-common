@@ -30,6 +30,12 @@ public class AgentConfigData {
     /** 短期记忆窗口轮数（1 轮=用户+助手各 1 条；null = 默认 10 轮；0 = 不带历史） */
     private Integer historyTurns;
 
+    /** 对话开场白；null/空 = 不展示（v4.5，Dify Opening Statement 同款） */
+    private String openingStatement;
+
+    /** 建议问题（至多 5 条）；null = 不展示（v4.5，Dify Suggested Questions 同款） */
+    private java.util.List<String> suggestedQuestions;
+
     /** 当前执行图版本；0 = 还没有图（前端据此决定是否显示「执行图」入口） */
     private Integer graphVersion;
 

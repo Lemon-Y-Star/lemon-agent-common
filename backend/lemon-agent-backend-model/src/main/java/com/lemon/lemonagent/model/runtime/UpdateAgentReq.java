@@ -35,6 +35,12 @@ public class UpdateAgentReq extends BaseReq {
     /** 短期记忆窗口轮数（null = 保持不变；0 = 不带历史；上限 50） */
     private Integer historyTurns;
 
+    /** 对话开场白（null = 保持不变；v4.5） */
+    private String openingStatement;
+
+    /** 建议问题（至多 5 条；null = 保持不变；v4.5） */
+    private java.util.List<String> suggestedQuestions;
+
     /** 绑定模型连接（null = 保持不变；0 = 清除绑定，回落用户最新启用连接） */
     private Long modelConnectionId;
 

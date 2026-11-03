@@ -13,6 +13,8 @@ import com.lemon.architecture.model.BusinessException;
 import com.lemon.architecture.model.ResultCodes;
 import org.springframework.stereotype.Service;
 
+import tools.jackson.databind.ObjectMapper;
+
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -93,7 +95,7 @@ public class AgentConfigService {
      */
     public AgentConfigData create(Long userId, String name, String description,
                                   String instruction, List<String> tools, String strategy,
-                                  Integer historyTurns,
+                                  Integer historyTurns, String openingStatement, List<String> suggestedQuestions,
                                   Long modelConnectionId, Long workflowId, Integer workflowVersion) {
         validate(name, instruction);
         AgentConfigEntity entity = new AgentConfigEntity();
@@ -104,6 +106,8 @@ public class AgentConfigService {
         entity.setToolsJson(normalizeTools(tools));
         entity.setStrategy(normalizeStrategy(strategy));
         entity.setHistoryTurns(normalizeHistoryTurns(historyTurns));
+        entity.setOpeningStatement(normalizeOpening(openingStatement));
+        entity.setSuggestedQuestions(normalizeSuggestions(suggestedQuestions));
         entity.setModelConnectionId(requireModelConnection(userId, modelConnectionId));
         Long wf = requireWorkflow(userId, workflowId);
         entity.setWorkflowId(wf);
@@ -123,7 +127,7 @@ public class AgentConfigService {
      */
     public AgentConfigData update(Long userId, Long agentId, String name, String description,
                                   String instruction, List<String> tools, String strategy,
-                                  Integer historyTurns,
+                                  Integer historyTurns, String openingStatement, List<String> suggestedQuestions,
                                   Long modelConnectionId, Boolean enabled,
                                   Long workflowId, Integer workflowVersion) {
         validate(name, instruction);
@@ -139,6 +143,9 @@ public class AgentConfigService {
         // historyTurns 无条件覆盖：前端表单总是携带该字段（清空 = null = 恢复默认 10 轮），
         // 与 strategy 的「null = 保持不变」不同——这里 null 是一个合法的目标状态
         entity.setHistoryTurns(normalizeHistoryTurns(historyTurns));
+        // 开场白/建议问题无条件覆盖（同 historyTurns 语义：清空 = null = 不展示）
+        entity.setOpeningStatement(normalizeOpening(openingStatement));
+        entity.setSuggestedQuestions(normalizeSuggestions(suggestedQuestions));
         if (modelConnectionId != null) {
             entity.setModelConnectionId(modelConnectionId == CLEAR_MODEL_CONNECTION
                     ? null : requireModelConnection(userId, modelConnectionId));
@@ -291,6 +298,83 @@ public class AgentConfigService {
         return AgentToolCodec.encode(new ArrayList<>(unique));
     }
 
+    /** 建议问题条数与单条长度上限。 */
+    private static final int MAX_SUGGESTIONS = 5;
+
+    private static final int MAX_SUGGESTION_LEN = 100;
+
+    private static final int MAX_OPENING_LEN = 500;
+
+    /** 建议问题 JSON 编解码器（与 AgentToolCodec 同款 Jackson 3 用法）。 */
+    private static final ObjectMapper SUGGESTION_MAPPER = new ObjectMapper();
+
+    /**
+     * 开场白归一化：去首尾空白、限长；空串归 null（= 不展示）。
+     *
+     * @param opening 入参：请求里的开场白
+     * @return 出参：落库字符串
+     */
+    private String normalizeOpening(String opening) {
+        if (opening == null || opening.isBlank()) {
+            return null;
+        }
+        String trimmed = opening.trim();
+        if (trimmed.length() > MAX_OPENING_LEN) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "开场白不能超过 " + MAX_OPENING_LEN + " 字");
+        }
+        return trimmed;
+    }
+
+    /**
+     * 建议问题归一化：去空行、去重、限条数与单条长度；空列表归 null（= 不展示）。
+     *
+     * @param suggestions 入参：请求里的建议问题列表
+     * @return 出参：落库 JSON 字符串
+     */
+    private String normalizeSuggestions(List<String> suggestions) {
+        if (suggestions == null) {
+            return null;
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String raw : suggestions) {
+            String q = raw == null ? "" : raw.trim();
+            if (q.isEmpty()) {
+                continue;
+            }
+            if (q.length() > MAX_SUGGESTION_LEN) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                        "建议问题单条不能超过 " + MAX_SUGGESTION_LEN + " 字");
+            }
+            unique.add(q);
+            if (unique.size() >= MAX_SUGGESTIONS) {
+                break;
+            }
+        }
+        if (unique.isEmpty()) {
+            return null;
+        }
+        return SUGGESTION_MAPPER.writeValueAsString(new ArrayList<>(unique));
+    }
+
+    /**
+     * 落库 JSON 解回建议问题列表（坏数据静默降级为不展示）。
+     *
+     * @param json 入参：落库字符串
+     * @return 出参：列表；解析失败/空返回 null
+     */
+    private List<String> decodeSuggestions(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            List<String> list = SUGGESTION_MAPPER.readValue(json,
+                    SUGGESTION_MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
+            return list == null || list.isEmpty() ? null : list;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /**
      * 绑定连接校验：必须属于本人且已启用。
      *
@@ -366,6 +450,8 @@ public class AgentConfigService {
         // NULL = auto：对外统一回显具体策略，前端不用判空
         data.setStrategy(entity.getStrategy() == null ? "auto" : entity.getStrategy());
         data.setHistoryTurns(entity.getHistoryTurns());
+        data.setOpeningStatement(entity.getOpeningStatement());
+        data.setSuggestedQuestions(decodeSuggestions(entity.getSuggestedQuestions()));
         data.setModelConnectionId(entity.getModelConnectionId());
         boolean enabled = entity.getStatus() != null && entity.getStatus() == 1;
         data.setEnabled(enabled);

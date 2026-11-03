@@ -22,7 +22,7 @@ import java.util.List;
 public class AgentConfigJdbcRepository implements AgentConfigRepository {
 
     private static final String COLUMNS =
-            "id, user_id, name, description, instruction, tools_json, strategy, history_turns, model_connection_id, "
+            "id, user_id, name, description, instruction, tools_json, strategy, history_turns, opening_statement, suggested_questions, model_connection_id, "
                     + "workflow_id, workflow_version, status, version, "
                     + "created_at, updated_at";
 
@@ -42,6 +42,8 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
             e.setStrategy(rs.getString("strategy"));
             int historyTurns = rs.getInt("history_turns");
             e.setHistoryTurns(rs.wasNull() ? null : historyTurns);
+            e.setOpeningStatement(rs.getString("opening_statement"));
+            e.setSuggestedQuestions(rs.getString("suggested_questions"));
             long connId = rs.getLong("model_connection_id");
             e.setModelConnectionId(rs.wasNull() ? null : connId);
             long wfId = rs.getLong("workflow_id");
@@ -102,9 +104,9 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO agent_config (user_id, name, description, instruction, tools_json, strategy, "
-                            + "history_turns, model_connection_id, workflow_id, workflow_version, status, version, "
+                            + "history_turns, opening_statement, suggested_questions, model_connection_id, workflow_id, workflow_version, status, version, "
                             + "created_at, updated_at) "
-                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     Statement.RETURN_GENERATED_KEYS);
             if (e.getUserId() == null) {
                 ps.setNull(1, Types.BIGINT);
@@ -121,25 +123,27 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
             } else {
                 ps.setInt(7, e.getHistoryTurns());
             }
+            ps.setString(8, e.getOpeningStatement());
+            ps.setString(9, e.getSuggestedQuestions());
             if (e.getModelConnectionId() == null) {
-                ps.setNull(8, Types.BIGINT);
+                ps.setNull(10, Types.BIGINT);
             } else {
-                ps.setLong(8, e.getModelConnectionId());
+                ps.setLong(10, e.getModelConnectionId());
             }
             if (e.getWorkflowId() == null) {
-                ps.setNull(9, Types.BIGINT);
+                ps.setNull(11, Types.BIGINT);
             } else {
-                ps.setLong(9, e.getWorkflowId());
+                ps.setLong(11, e.getWorkflowId());
             }
             if (e.getWorkflowVersion() == null) {
-                ps.setNull(10, Types.INTEGER);
+                ps.setNull(12, Types.INTEGER);
             } else {
-                ps.setInt(10, e.getWorkflowVersion());
+                ps.setInt(12, e.getWorkflowVersion());
             }
-            ps.setInt(11, e.getStatus());
-            ps.setInt(12, e.getVersion());
-            ps.setTimestamp(13, Timestamp.from(now));
-            ps.setTimestamp(14, Timestamp.from(now));
+            ps.setInt(13, e.getStatus());
+            ps.setInt(14, e.getVersion());
+            ps.setTimestamp(15, Timestamp.from(now));
+            ps.setTimestamp(16, Timestamp.from(now));
             return ps;
         }, keys);
         e.setId(keys.getKey().longValue());
@@ -152,10 +156,10 @@ public class AgentConfigJdbcRepository implements AgentConfigRepository {
     public int update(AgentConfigEntity e) {
         return jdbcTemplate.update(
                 "UPDATE agent_config SET name = ?, description = ?, instruction = ?, tools_json = ?, strategy = ?, "
-                        + "history_turns = ?, model_connection_id = ?, workflow_id = ?, workflow_version = ?, status = ?, "
+                        + "history_turns = ?, opening_statement = ?, suggested_questions = ?, model_connection_id = ?, workflow_id = ?, workflow_version = ?, status = ?, "
                         + "version = version + 1 WHERE id = ? AND user_id = ?",
                 e.getName(), e.getDescription(), e.getInstruction(), e.getToolsJson(), e.getStrategy(),
-                e.getHistoryTurns(), e.getModelConnectionId(), e.getWorkflowId(), e.getWorkflowVersion(), e.getStatus(),
+                e.getHistoryTurns(), e.getOpeningStatement(), e.getSuggestedQuestions(), e.getModelConnectionId(), e.getWorkflowId(), e.getWorkflowVersion(), e.getStatus(),
                 e.getId(), e.getUserId());
     }
 

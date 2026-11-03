@@ -37,6 +37,12 @@ public class AgentConfigEntity {
     /** 短期记忆窗口轮数（1 轮=用户+助手各 1 条）；NULL = 默认 10 轮；0 = 不带历史 */
     private Integer historyTurns;
 
+    /** 对话开场白；NULL/空 = 不展示（v4.5，Dify Opening Statement 同款） */
+    private String openingStatement;
+
+    /** 建议问题（JSON 数组字符串，至多 5 条）；NULL = 不展示（v4.5，Dify Suggested Questions 同款） */
+    private String suggestedQuestions;
+
     /** 绑定模型连接；NULL = 用户最新启用连接 */
     private Long modelConnectionId;
 
