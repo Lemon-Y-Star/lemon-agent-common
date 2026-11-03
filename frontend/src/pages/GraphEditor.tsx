@@ -383,6 +383,65 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
     return n ? n.status : null
   }
 
+  /** 输入变量绑定区（v4.5.3，Dify 变量选择器同款）：LLM/CODE 节点声明引用哪些节点的产出与别名 */
+  function renderInputVars(node: GraphNode) {
+    const refs = node.inputRefs ?? []
+    const refOf = (nid: string) => refs.find((r) => r.from === nid)
+    const candidates = (graph?.nodes ?? []).filter(
+      (n) => n.id !== node.id && (n.type === 'LLM' || n.type === 'TOOL' || n.type === 'CODE'),
+    )
+    if (candidates.length === 0) return null
+    return (
+      <div className="field">
+        <label>
+          输入变量
+          <span className="hint">
+            勾选要引用的节点并起别名；LLM 节点按「【变量:别名】」注入上下文，CODE 节点在代码里读
+            vars['别名']（不勾选时保持默认：拼全部直接上游）
+          </span>
+        </label>
+        <div className="kb-checks" style={{ maxHeight: 150, overflow: 'auto', border: '1px solid #d5d9e2', borderRadius: 7, padding: '6px 10px' }}>
+          {candidates.map((n) => {
+            const ref = refOf(n.id)
+            return (
+              <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
+                  <input
+                    type="checkbox"
+                    disabled={!editable}
+                    checked={!!ref}
+                    onChange={(e) => {
+                      const next = e.target.checked
+                        ? [...refs, { from: n.id, alias: n.title || n.id }]
+                        : refs.filter((r) => r.from !== n.id)
+                      updateNode(node.id, { inputRefs: next.length > 0 ? next : undefined })
+                    }}
+                  />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {n.title || n.id}（{n.type}）
+                  </span>
+                </label>
+                {ref && (
+                  <input
+                    value={ref.alias}
+                    disabled={!editable}
+                    maxLength={20}
+                    placeholder="别名"
+                    style={{ width: 90, flex: 'none' }}
+                    onChange={(e) => {
+                      const alias = e.target.value
+                      updateNode(node.id, { inputRefs: refs.map((r) => (r.from === n.id ? { ...r, alias } : r)) })
+                    }}
+                  />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="page-head">
@@ -601,6 +660,7 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
 
               {selectedNode.type === 'LLM' && (
                 <>
+                  {renderInputVars(selectedNode)}
                   <div className="field">
                     <label>节点指令（本步做什么）</label>
                     <textarea
@@ -683,6 +743,7 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
 
               {selectedNode.type === 'CODE' && (
                 <>
+                  {renderInputVars(selectedNode)}
                   <div className="field">
                     <label>Python 代码（隔离沙箱执行：禁网、限内存/超时；已预装 numpy/pandas）</label>
                     <textarea
@@ -691,7 +752,7 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
                       disabled={!editable}
                       onChange={(e) => updateNode(selectedNode.id, { code: e.target.value })}
                       className="ge-code"
-                      placeholder={"# 用 print() 输出结果；上游节点产出在 upstream 列表里\nimport math\nprint('圆周率:', math.pi)"}
+                      placeholder={"# 用 print() 输出结果；未绑定输入变量时上游产出在 upstream 列表，绑定后在 vars['别名'] 里\nimport math\nprint('圆周率:', math.pi)"}
                       spellCheck={false}
                     />
                   </div>

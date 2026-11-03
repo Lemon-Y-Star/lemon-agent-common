@@ -44,7 +44,7 @@ public class SandboxController {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "代码不能为空");
         }
         try {
-            CodeSandboxPort.ExecResult r = codeSandbox.exec(code, List.of(), 10);
+            CodeSandboxPort.ExecResult r = codeSandbox.exec(code, List.of(), null, 10);
             List<String> images = (r.files() == null ? List.<CodeSandboxPort.ExecResult.FileRef>of() : r.files()).stream()
                     .filter(f -> f.contentType() != null && f.contentType().startsWith("image/"))
                     .map(f -> "data:" + f.contentType() + ";base64," + f.contentB64())

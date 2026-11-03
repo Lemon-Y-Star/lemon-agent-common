@@ -99,6 +99,28 @@ public final class GraphValidator {
                 throw new BusinessException(ResultCodes.VALIDATION_ERROR,
                         "LLM 节点 " + node.getId() + " 需要指令（prompt）");
             }
+            // 输入变量绑定校验（v4.5.3）：引用存在、非自身、别名非空且节点内不重复
+            if (node.getInputRefs() != null && !node.getInputRefs().isEmpty()) {
+                java.util.Set<String> aliases = new java.util.HashSet<>();
+                for (GraphNode.InputRef ref : node.getInputRefs()) {
+                    if (ref.getFrom() == null || !byId.containsKey(ref.getFrom())) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "节点 " + node.getId() + " 的输入变量引用了不存在的节点：" + ref.getFrom());
+                    }
+                    if (ref.getFrom().equals(node.getId())) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "节点 " + node.getId() + " 不能引用自身");
+                    }
+                    if (ref.getAlias() == null || ref.getAlias().isBlank()) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "节点 " + node.getId() + " 的输入变量别名不能为空");
+                    }
+                    if (!aliases.add(ref.getAlias())) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "节点 " + node.getId() + " 的输入变量别名重复：" + ref.getAlias());
+                    }
+                }
+            }
         }
         if (starts != 1) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "执行图必须有且只有一个 START 节点");

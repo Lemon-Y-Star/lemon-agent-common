@@ -1025,7 +1025,8 @@ public class RunExecutor {
                 recordNodeInput(state, node, node.getCode());
                 String output;
                 try {
-                    output = execInSandbox(run, node, upstreamOutputs(graph, state, node.getId()));
+                    output = execInSandbox(run, node, upstreamOutputs(graph, state, node.getId()),
+                            boundVarMap(graph, state, node));
         } catch (Exception e) {
             failIfStillRunning(runId, "SANDBOX_ERROR", "代码节点执行失败："
                     + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
@@ -1154,7 +1155,7 @@ public class RunExecutor {
                 }
                 List<ModelPort.Msg> context = historyContext(run, agent);
                 final List<ModelPort.Msg> ctx = context == null ? new ArrayList<>() : context;
-                for (String upstream : upstreamOutputs(graph, state, node.getId())) {
+                for (String upstream : boundOutputs(graph, state, node)) {
                     ctx.add(new ModelPort.Msg("ASSISTANT", upstream));
                 }
                 // 输入摘要在主线程记（state 只在主线程改），并发线程只做模型调用
@@ -1249,7 +1250,8 @@ public class RunExecutor {
                                     List<GraphNode> all, GraphNode node) {
         int stepIndex = all.indexOf(node);
         try {
-            String output = execInSandbox(run, node, upstreamOutputs(graph, state, node.getId()));
+            String output = execInSandbox(run, node, upstreamOutputs(graph, state, node.getId()),
+                    boundVarMap(graph, state, node));
             return new NodeOutcome(node, stepIndex, output, 0, 0, null, true, null, null, null);
         } catch (Exception e) {
             return new NodeOutcome(node, stepIndex, "", 0, 0, null, false, null,
@@ -1267,14 +1269,15 @@ public class RunExecutor {
      * @return 出参：stdout（+stderr/超时标记）文本
      * @throws Exception 沙箱服务不可用等异常（调用方折算为 SANDBOX_ERROR）
      */
-    private String execInSandbox(AgentRunEntity run, GraphNode node, List<String> upstream) throws Exception {
+    private String execInSandbox(AgentRunEntity run, GraphNode node, List<String> upstream,
+                                 java.util.LinkedHashMap<String, String> vars) throws Exception {
         if (codeSandbox == null) {
             throw new IllegalStateException("沙箱服务未就绪（LEMON_SANDBOX_URL 未配置或沙箱容器未启动）");
         }
         if (node.getCode() == null || node.getCode().isBlank()) {
             throw new IllegalArgumentException("节点 " + node.getId() + " 没有可执行的代码");
         }
-        CodeSandboxPort.ExecResult r = codeSandbox.exec(node.getCode(), upstream, 15);
+        CodeSandboxPort.ExecResult r = codeSandbox.exec(node.getCode(), upstream, vars, 15);
         // CODE 节点产物落库（v4.4.4）：图片不进正文（数据 URI 会炸 token），文件统一入产物可下载
         if (artifactService != null && r.files() != null && !r.files().isEmpty()) {
             for (CodeSandboxPort.ExecResult.FileRef f : r.files()) {
@@ -1377,6 +1380,46 @@ public class RunExecutor {
     }
 
     /**
+     * 节点实际注入的上游上下文（v4.5.3 输入变量绑定）：
+     * 有 inputRefs 时按声明引用任意节点的产出（【变量:别名】块，不限于直接上游）；
+     * 无则回落默认的直接上游拼接。LLM 上下文与输入摘要同源共用。
+     */
+    private List<String> boundOutputs(AgentGraphData graph, GraphStateData state, GraphNode node) {
+        if (node.getInputRefs() == null || node.getInputRefs().isEmpty()) {
+            return upstreamOutputs(graph, state, node.getId());
+        }
+        List<String> result = new ArrayList<>();
+        for (GraphNode.InputRef ref : node.getInputRefs()) {
+            String output = stripThink(state.getOutputs().get(ref.getFrom()));
+            if (output == null || output.isBlank()) {
+                output = "（该节点尚未产出或输出为空）";
+            }
+            result.add("【变量: " + ref.getAlias() + "】\n" + output);
+        }
+        return result;
+    }
+
+    /**
+     * 输入变量绑定的字典形态（v4.5.3）：CODE 节点绑定时 upstream 传 {别名: 产出}。
+     *
+     * @param graph 入参：图
+     * @param state 入参：运行状态（各节点产出）
+     * @param node  入参：CODE 节点
+     * @return 出参：绑定字典；无绑定时返回 null（调用方回落列表语义）
+     */
+    private java.util.LinkedHashMap<String, String> boundVarMap(AgentGraphData graph, GraphStateData state, GraphNode node) {
+        if (node.getInputRefs() == null || node.getInputRefs().isEmpty()) {
+            return null;
+        }
+        java.util.LinkedHashMap<String, String> vars = new java.util.LinkedHashMap<>();
+        for (GraphNode.InputRef ref : node.getInputRefs()) {
+            String output = stripThink(state.getOutputs().get(ref.getFrom()));
+            vars.put(ref.getAlias(), output == null ? "" : output);
+        }
+        return vars;
+    }
+
+    /**
      * 记录节点输入摘要（限 4000 字防 graph_state_json 膨胀），供运行历史的图例视图查看。
      * 只在主线程调用——与 done/outputs 一样落 {@code graph_state_json}，审批恢复/重启后仍在。
      */
@@ -1395,7 +1438,7 @@ public class RunExecutor {
     /** LLM 节点的输入摘要：节点任务 + 用户原始请求 + 上游产出（与发给模型的输入同源）。 */
     private String llmNodeInput(AgentGraphData graph, GraphStateData state, GraphNode node, String userInput) {
         StringBuilder sb = new StringBuilder(nodeInput(node, userInput));
-        List<String> ups = upstreamOutputs(graph, state, node.getId());
+        List<String> ups = boundOutputs(graph, state, node);
         if (!ups.isEmpty()) {
             sb.append("\n【上游产出】\n").append(String.join("\n---\n", ups));
         }

@@ -46,8 +46,10 @@ SANDBOX_TOKEN = os.environ.get("LEMON_SANDBOX_TOKEN", "").strip()
 class ExecReq(BaseModel):
     code: str = Field(min_length=1, max_length=32 * 1024)
     timeoutSeconds: int = Field(default=10, ge=1, le=MAX_TIMEOUT)
-    # 上游节点产出（执行图 CODE 节点用）：以 JSON 数组注入代码内的 upstream 变量
+    # 上游节点产出（执行图 CODE 节点用）：以 JSON 注入代码内的 upstream 变量（v4.5.3 起兼容字典形态）
     upstream: list[str] = Field(default_factory=list, max_length=20)
+    # 输入变量绑定（v4.5.3）：{别名: 产出}，注入代码内的 vars 字典变量；空 = 不注入
+    vars: dict[str, str] = Field(default_factory=dict)
 
 
 class ExecResp(BaseModel):
@@ -81,6 +83,9 @@ def execute(req: ExecReq, x_sandbox_token: str = Header(default="")) -> ExecResp
             # upstream 变量恒注入（含空列表）：只在非空时注入会让代码引用到未定义变量（体检 C5/C6 实测）
             f.write("import json\nupstream = json.loads(%r)\n\n"
                     % json.dumps(req.upstream, ensure_ascii=False))
+            # vars 字典恒注入（v4.5.3 输入变量绑定）：绑定模式下代码读 vars["别名"]
+            f.write("vars = json.loads(%r)\n\n"
+                    % json.dumps(req.vars, ensure_ascii=False))
             f.write(req.code)
         start = time.monotonic()
         proc = subprocess.Popen(

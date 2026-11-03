@@ -49,13 +49,18 @@ public class HttpCodeSandboxClient implements CodeSandboxPort {
     }
 
     @Override
-    public ExecResult exec(String code, List<String> upstream, int timeoutSeconds) throws Exception {
+    public ExecResult exec(String code, List<String> upstream, java.util.Map<String, String> vars,
+                           int timeoutSeconds) throws Exception {
         // 调用等待 = 执行超时 + 连接与序列化余量
         Duration callTimeout = Duration.ofSeconds(Math.max(timeoutSeconds, 1) + 10L);
-        Map<String, Object> payload = Map.of(
-                "code", code == null ? "" : code,
-                "timeoutSeconds", Math.min(Math.max(timeoutSeconds, 1), 15),
-                "upstream", upstream == null ? List.of() : upstream);
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("code", code == null ? "" : code);
+        payload.put("timeoutSeconds", Math.min(Math.max(timeoutSeconds, 1), 15));
+        // v4.5.3 输入变量绑定：绑定时 upstream 传 null（沙箱端默认空列表），vars 传绑定字典
+        payload.put("upstream", upstream == null ? List.of() : upstream);
+        if (vars != null && !vars.isEmpty()) {
+            payload.put("vars", vars);
+        }
         HttpRequest.Builder rb = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/execute"))
                 .timeout(callTimeout)

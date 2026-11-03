@@ -40,6 +40,24 @@ public class GraphNode {
     /** 节点级工具白名单（PRD FR-6.5 三态）：null = 继承 Agent；[] = 不装配；数组 = 精确授权 */
     private List<String> tools;
 
+    /**
+     * 输入变量绑定（v4.5.3，Dify 变量选择器同款）：声明本节点引用哪些节点的产出与别名。
+     * null/空 = 默认行为（LLM 拼 [上游 nX] / CODE 注入 upstream 列表）；
+     * 非空 = LLM 注入「【变量:别名】产出」块、CODE 的 upstream 变量为 {别名: 产出} 字典。
+     */
+    private List<InputRef> inputRefs;
+
+    /** 输入变量绑定项。 */
+    @Data
+    public static class InputRef {
+
+        /** 被引用节点 ID（须在图内且非自身；按拓扑序执行时其产出已就绪） */
+        private String from;
+
+        /** 别名（注入变量名，如 code / 结果） */
+        private String alias;
+    }
+
     /** 画布坐标 X（仅前端排版用，调度不读；null = 由前端自动布局） */
     private Integer x;
 

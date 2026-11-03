@@ -15,6 +15,8 @@ export interface GraphNode {
   code?: string
   approvalPrompt?: string
   tools?: string[] | null
+  /** 输入变量绑定（v4.5.3，Dify 变量选择器同款）：声明引用哪些节点的产出与别名；空 = 默认上游拼接 */
+  inputRefs?: { from: string; alias: string }[] | null
   x?: number | null
   y?: number | null
 }

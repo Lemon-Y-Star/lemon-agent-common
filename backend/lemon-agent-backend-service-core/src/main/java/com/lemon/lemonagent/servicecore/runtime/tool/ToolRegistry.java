@@ -213,7 +213,7 @@ public class ToolRegistry {
                     }
                     String code = String.valueOf(args.getOrDefault("code", ""));
                     try {
-                        CodeSandboxPort.ExecResult r = codeSandbox.exec(code, List.of(), 15);
+                        CodeSandboxPort.ExecResult r = codeSandbox.exec(code, List.of(), null, 15);
                         if (r.timedOut()) {
                             return Map.of("error", "代码执行超时（超过 15 秒被强制终止）", "stdout", r.stdout());
                         }
