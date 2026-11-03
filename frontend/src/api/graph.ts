@@ -4,6 +4,22 @@ import { get, put } from './client'
 
 export type GraphNodeType = 'START' | 'LLM' | 'TOOL' | 'CODE' | 'APPROVAL' | 'END'
 
+/** START 节点输入表单字段（v4.5.4，Dify 开始节点同款）。 */
+export interface GraphFormField {
+  /** 字段名（变量名，英文标识符，图内唯一） */
+  name: string
+  /** 显示名称 */
+  label: string
+  /** 注释（占位说明） */
+  description?: string | null
+  /** 是否必填 */
+  required?: boolean
+  /** 默认值（表单预填） */
+  defaultValue?: string | null
+  /** 类型：text / number */
+  type?: 'text' | 'number'
+}
+
 export interface GraphNode {
   id: string
   type: GraphNodeType
@@ -17,6 +33,8 @@ export interface GraphNode {
   tools?: string[] | null
   /** 输入变量绑定（v4.5.3，Dify 变量选择器同款）：声明引用哪些节点的产出与别名；空 = 默认上游拼接 */
   inputRefs?: { from: string; alias: string }[] | null
+  /** 输入表单（v4.5.4，仅 START）：对话/试运行发送前弹出收集，运行时注入 START 产出 */
+  formSchema?: GraphFormField[] | null
   x?: number | null
   y?: number | null
 }

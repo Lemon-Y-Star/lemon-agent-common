@@ -71,6 +71,9 @@ public class AgentRunEntity {
     /** 执行图进度 JSON（done / outputs / current） */
     private String graphStateJson;
 
+    /** 开始节点表单值（v4.5.4，JSON {字段: 值}）；无表单运行时为 null */
+    private String formValuesJson;
+
     /** 输入 tokens */
     private Integer inputTokens;
 

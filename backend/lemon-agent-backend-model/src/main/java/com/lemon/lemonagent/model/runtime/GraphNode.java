@@ -47,6 +47,35 @@ public class GraphNode {
      */
     private List<InputRef> inputRefs;
 
+    /**
+     * 输入表单定义（v4.5.4，Dify 开始节点表单同款）：仅 START 节点可配。
+     * 非空时运行触发端渲染表单收集输入，图执行时 START 节点产出 = 变量表文本。
+     */
+    private List<FormField> formSchema;
+
+    /** 输入表单字段定义。 */
+    @Data
+    public static class FormField {
+
+        /** 字段名（变量名，英文标识符，图内唯一） */
+        private String name;
+
+        /** 显示名称 */
+        private String label;
+
+        /** 注释（占位说明） */
+        private String description;
+
+        /** 是否必填 */
+        private Boolean required;
+
+        /** 默认值（表单预填） */
+        private String defaultValue;
+
+        /** 类型：text / number */
+        private String type;
+    }
+
     /** 输入变量绑定项。 */
     @Data
     public static class InputRef {

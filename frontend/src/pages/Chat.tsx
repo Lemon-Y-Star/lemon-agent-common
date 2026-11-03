@@ -16,6 +16,7 @@ import {
   type RuntimeEvent,
 } from '../api/runtime'
 import { fetchAgents, type AgentConfig } from '../api/agents'
+import { fetchGraph, type GraphFormField } from '../api/graph'
 import { ApiError } from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
@@ -127,6 +128,10 @@ export default function Chat() {
   const [imgPreview, setImgPreview] = useState<string | null>(null)
   /** 运行详情弹窗（v4.5，Dify 对话日志同款）：要查看的 runId */
   const [detailRunId, setDetailRunId] = useState<number | null>(null)
+  /** START 输入表单（v4.5.4）：custom Agent 图里 START 配了 formSchema 时，发送前先弹表单收集 */
+  const [startForm, setStartForm] = useState<GraphFormField[]>([])
+  /** 表单收集弹窗：待发送的输入文本 + 思考开关 + 已填的表单值 */
+  const [formAsk, setFormAsk] = useState<{ text: string; thinking: boolean; values: Record<string, string> } | null>(null)
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
@@ -145,6 +150,20 @@ export default function Chat() {
     && (selectedAgent.graphVersion ?? 0) === 0 && !selectedAgent.workflowId
   // 反向提示：挂载了工作流但策略不是 custom——工作流不会被执行（auto / plan 不走图路由）
   const workflowHint = strategy !== 'custom' && selectedAgent !== null && !!selectedAgent.workflowId
+
+  // START 输入表单（v4.5.4）：选中的 custom Agent（有执行图、没挂工作流）时拉图取 START 的 formSchema
+  useEffect(() => {
+    setStartForm([])
+    if (!selectedAgent || selectedAgent.strategy !== 'custom'
+      || !(selectedAgent.graphVersion) || selectedAgent.workflowId) return
+    let alive = true
+    void fetchGraph(selectedAgent.id).then((g) => {
+      if (!alive) return
+      const start = g.nodes.find((n) => n.type === 'START')
+      setStartForm(start?.formSchema ?? [])
+    }).catch(() => { /* 图加载失败不阻塞对话，只是没有表单 */ })
+    return () => { alive = false }
+  }, [selectedAgent])
 
   const reloadSessions = useCallback(async () => {
     try {
@@ -618,8 +637,8 @@ export default function Chat() {
     }
   }, [deleting, activeSession, reloadSessions, navigate])
 
-  /** 发送本体：输入文本 + 是否深度思考。普通发送与失败重试共用（v3.9.1）。 */
-  const doSend = useCallback(async (text: string, thinking: boolean) => {
+  /** 发送本体：输入文本 + 是否深度思考 + START 表单值（v4.5.4）。普通发送与失败重试共用（v3.9.1）。 */
+  const doSend = useCallback(async (text: string, thinking: boolean, formValues?: Record<string, string>) => {
     if (!text || streaming) return
     if (customNotReady) {
       pushNotice(activeSession ?? undefined, '该 Agent 还没有执行图、也没挂载工作流，custom 模式跑不了——先画一张执行图或挂载工作流')
@@ -635,6 +654,7 @@ export default function Chat() {
         input: text,
         strategy,
         thinking: thinking || undefined,
+        formValues: formValues && Object.keys(formValues).length > 0 ? formValues : undefined,
         clientRequestId: crypto.randomUUID(),
       })
       if (!activeSession) {
@@ -664,9 +684,19 @@ export default function Chat() {
   const onSend = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
+    if (startForm.length > 0) {
+      // START 配了表单（v4.5.4）：先弹表单收集（默认值预填），提交后才真正发送
+      const defaults: Record<string, string> = {}
+      for (const f of startForm) {
+        if (f.defaultValue != null && f.defaultValue !== '') defaults[f.name] = f.defaultValue
+      }
+      setFormAsk({ text, thinking: thinkingOn, values: defaults })
+      setInput('')
+      return
+    }
     setInput('')
     await doSend(text, thinkingOn)
-  }, [input, streaming, thinkingOn, doSend])
+  }, [input, streaming, thinkingOn, doSend, startForm])
 
   const onNewSession = useCallback(async () => {
     if (streaming) {
@@ -1124,6 +1154,56 @@ export default function Chat() {
       )}
       <ToastHost />
       {detailRunId != null && <RunDetailModal runId={detailRunId} onClose={() => setDetailRunId(null)} />}
+
+      {/* START 输入表单（v4.5.4，Dify 开始节点同款）：发送前收集表单值再真正发起运行 */}
+      {formAsk && (
+        <Modal title="输入表单" onClose={() => setFormAsk(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const values = { ...formAsk.values }
+              for (const f of startForm) {
+                values[f.name] = (values[f.name] ?? '').trim()
+                if (f.required && !values[f.name]) {
+                  toast(`「${f.label}」必填`)
+                  return
+                }
+                if (values[f.name] && (f.type ?? 'text') === 'number' && Number.isNaN(Number(values[f.name]))) {
+                  toast(`「${f.label}」必须是数字`)
+                  return
+                }
+              }
+              const text = formAsk.text
+              const thinking = formAsk.thinking
+              setFormAsk(null)
+              void doSend(text, thinking, values)
+            }}
+          >
+            <p className="note gray" style={{ marginTop: 0 }}>
+              该 Agent 的执行图配置了开始节点表单，本次发送将携带以下表单值；上面的输入文本仍照常作为对话内容。
+            </p>
+            {startForm.map((f) => (
+              <div key={f.name} className="field">
+                <label>
+                  {f.label}{f.required && <span style={{ color: 'var(--danger)' }}> *</span>}
+                  <span className="hint">{f.name}（{f.type ?? 'text'}）</span>
+                </label>
+                <input
+                  autoFocus
+                  type={(f.type ?? 'text') === 'number' ? 'number' : 'text'}
+                  value={formAsk.values[f.name] ?? ''}
+                  placeholder={f.description || (f.required ? '必填' : '选填')}
+                  onChange={(e) => setFormAsk({ ...formAsk, values: { ...formAsk.values, [f.name]: e.target.value } })}
+                />
+              </div>
+            ))}
+            <div className="modal-btns">
+              <button type="button" className="btn" onClick={() => setFormAsk(null)}>取消</button>
+              <button type="submit" className="btn primary">发送</button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </>
   )
 }

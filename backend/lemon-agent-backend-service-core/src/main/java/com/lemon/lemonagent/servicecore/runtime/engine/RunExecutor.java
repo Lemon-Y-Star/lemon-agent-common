@@ -988,8 +988,14 @@ public class RunExecutor {
             }
 
             if ("START".equals(node.getType()) || "END".equals(node.getType())) {
-                done.add(node.getId());
-                markNodeDone(run, state, node, "", stepIndex);
+                // 开始节点表单（v4.5.4）：有 formSchema 时产出 = 变量表文本，下游按普通上游/变量引用取用
+                if ("START".equals(node.getType()) && node.getFormSchema() != null && !node.getFormSchema().isEmpty()) {
+                    done.add(node.getId());
+                    markNodeDone(run, state, node, formTableText(node, run.getFormValuesJson()), stepIndex);
+                } else {
+                    done.add(node.getId());
+                    markNodeDone(run, state, node, "", stepIndex);
+                }
                 continue;
             }
 
@@ -1362,6 +1368,37 @@ public class RunExecutor {
                 "outputText", output == null ? "" : output,
                 "usage", Map.of("inputTokens", state.getInputTokens(), "outputTokens", state.getOutputTokens()),
                 "ts", System.currentTimeMillis())));
+    }
+
+    /**
+     * 开始节点表单的变量表文本（v4.5.4）：按 formSchema 顺序逐行「label（name）：值」。
+     * 表单值缺失（旧 run/重试场景）用默认值回填；formValuesJson 解析失败按空表处理。
+     *
+     * @param node           入参：START 节点（含 formSchema）
+     * @param formValuesJson 入参：创建时落库的表单值 JSON
+     * @return 出参：变量表文本（至少一行）
+     */
+    private String formTableText(GraphNode node, String formValuesJson) {
+        java.util.Map<String, String> values = new java.util.LinkedHashMap<>();
+        if (formValuesJson != null && !formValuesJson.isBlank()) {
+            try {
+                java.util.Map<?, ?> parsed = objectMapper.readValue(formValuesJson, java.util.Map.class);
+                for (java.util.Map.Entry<?, ?> e : parsed.entrySet()) {
+                    values.put(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
+                }
+            } catch (Exception e) {
+                log.warn("run 表单值解析失败，按默认值回填：{}", e.getMessage());
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (GraphNode.FormField f : node.getFormSchema()) {
+            String v = values.get(f.getName());
+            if (v == null || v.isBlank()) {
+                v = f.getDefaultValue() == null ? "" : f.getDefaultValue();
+            }
+            sb.append(f.getLabel()).append("（").append(f.getName()).append("）：").append(v).append("\n");
+        }
+        return sb.toString().stripTrailing();
     }
 
     /** 上游节点产出（用于拼下游上下文）：取所有指向本节点的边的来源节点输出（净文，剥思考块）。 */

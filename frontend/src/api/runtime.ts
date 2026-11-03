@@ -85,6 +85,8 @@ export async function createRun(params: {
   strategy: string
   /** 深度思考（CoT）：true = 执行器追加 <think> 推理指令 */
   thinking?: boolean
+  /** START 节点表单值（v4.5.4）：{字段名: 值}，custom 策略 + 图配了表单时提交 */
+  formValues?: Record<string, string>
   clientRequestId: string
 }): Promise<RunData> {
   const { post } = await import('./client')

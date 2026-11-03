@@ -121,6 +121,38 @@ public final class GraphValidator {
                     }
                 }
             }
+            // 输入表单校验（v4.5.4）：仅 START 可配；字段名标识符唯一、label 非空、number 默认值必须是数字
+            if (node.getFormSchema() != null && !node.getFormSchema().isEmpty()) {
+                if (!"START".equals(type)) {
+                    throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                            "输入表单只能配置在开始节点（节点 " + node.getId() + " 是 " + type + "）");
+                }
+                java.util.Set<String> names = new java.util.HashSet<>();
+                for (GraphNode.FormField f : node.getFormSchema()) {
+                    if (f.getName() == null || !f.getName().matches("[a-zA-Z][a-zA-Z0-9_]{0,29}")) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "表单字段名必须是字母开头的标识符（≤30 字符）：" + f.getName());
+                    }
+                    if (!names.add(f.getName())) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "表单字段名重复：" + f.getName());
+                    }
+                    if (f.getLabel() == null || f.getLabel().isBlank()) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "表单字段 " + f.getName() + " 的显示名称不能为空");
+                    }
+                    String t = f.getType() == null || f.getType().isBlank() ? "text" : f.getType();
+                    if (!"text".equals(t) && !"number".equals(t)) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "表单字段 " + f.getName() + " 的类型只支持 text/number");
+                    }
+                    if ("number".equals(t) && f.getDefaultValue() != null && !f.getDefaultValue().isBlank()
+                            && !f.getDefaultValue().matches("-?\\d+(\\.\\d+)?")) {
+                        throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                                "表单字段 " + f.getName() + " 是数字类型，默认值必须是数字");
+                    }
+                }
+            }
         }
         if (starts != 1) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "执行图必须有且只有一个 START 节点");

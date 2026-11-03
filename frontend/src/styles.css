@@ -589,3 +589,20 @@ tr:hover td{background:#fafbfe}
 .tools-box::-webkit-scrollbar{width:6px}
 .tools-box::-webkit-scrollbar-thumb{background:#c9cdd6;border-radius:3px}
 .tools-box::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- v4.5.4 START 输入表单设计器（检查器）与表单收集（试运行/对话） ---------- */
+/* 设计器一行 = 六列网格（字段名/名称/注释/类型/默认值/必填）+ 删除按钮 */
+.ff-row{display:flex;align-items:flex-start;gap:6px;margin-bottom:8px}
+.ff-grid{display:grid;grid-template-columns:1.1fr 1fr 1.2fr 66px 1fr;gap:6px;flex:1;min-width:0}
+.ff-grid input,.ff-grid select{width:100%;font-size:12px;padding:5px 7px}
+.ff-req{display:inline-flex!important;align-items:center;gap:4px;margin:0!important;font-weight:400!important;font-size:12px;color:var(--muted);white-space:nowrap;padding:6px 0 0}
+.ff-req input[type=checkbox]{width:auto!important;flex:none!important;accent-color:var(--primary,#4f46e5)}
+/* 试运行弹窗内的表单项 */
+.ff-ask{margin-bottom:10px}
+.ff-ask-label{display:block;font-weight:600;font-size:13px;margin-bottom:4px}
+.ff-ask-label .hint{display:inline;margin-left:6px;font-weight:400}
+/* 对话页表单弹窗复用 .field；窄屏下设计器网格允许横向滚动 */
+@media (max-width: 960px){
+  .ff-row{flex-wrap:wrap}
+  .ff-grid{grid-template-columns:1fr 1fr}
+}

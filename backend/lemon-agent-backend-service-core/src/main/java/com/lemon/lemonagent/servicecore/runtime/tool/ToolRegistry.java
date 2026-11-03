@@ -414,7 +414,7 @@ public class ToolRegistry {
         String input = String.valueOf(args.getOrDefault("input", ""));
         String clientRequestId = "wftool_" + parentRunId + "_" + UUID.randomUUID().toString().substring(0, 8);
         var child = agentRuntimeProvider.getObject().createRun(userId, null, parent.getAgentId(),
-                input, "custom", clientRequestId, null);
+                input, "custom", clientRequestId, null, null);
         long childRunId = child.getRunId();
         long deadline = System.currentTimeMillis() + 120_000L;
         AgentRunEntity done = null;

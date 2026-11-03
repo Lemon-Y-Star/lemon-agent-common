@@ -5,6 +5,7 @@ import {
   saveGraph,
   type AgentGraph,
   type GraphEdge,
+  type GraphFormField,
   type GraphNode,
   type GraphNodeType,
 } from '../api/graph'
@@ -103,6 +104,8 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
   const [canvasRun, setCanvasRun] = useState<{
     phase: 'input' | 'running' | 'done'
     input: string
+    /** START 表单值（v4.5.4）：{字段名: 值}，未配表单为空对象 */
+    formValues: Record<string, string>
     runId?: number
     snapshot?: RunSnapshot | null
     error?: string
@@ -162,6 +165,21 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
   }, [selectedNode?.id])
 
   const editable = graph?.editable ?? false
+
+  /** START 节点的输入表单（v4.5.4）：试运行发送前要弹出收集；空数组 = 未配表单 */
+  const startFormSchema = useMemo<GraphFormField[]>(
+    () => graph?.nodes.find((n) => n.type === 'START')?.formSchema ?? [],
+    [graph],
+  )
+
+  /** 表单默认值预填（v4.5.4）：{字段名: 默认值}，无默认值的字段不出现 */
+  function formDefaults(schema: GraphFormField[]): Record<string, string> {
+    const out: Record<string, string> = {}
+    for (const f of schema) {
+      if (f.defaultValue != null && f.defaultValue !== '') out[f.name] = f.defaultValue
+    }
+    return out
+  }
 
   function updateNode(nodeId: string, patch: Partial<GraphNode>) {
     setGraph((g) => (g ? { ...g, nodes: g.nodes.map((n) => (n.id === nodeId ? { ...n, ...patch } : n)) } : g))
@@ -305,6 +323,118 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
     return '__custom__'
   }
 
+  // ---------- START 输入表单设计器（v4.5.4，Dify 开始节点同款） ----------
+
+  function updateFormField(node: GraphNode, idx: number, patch: Partial<GraphFormField>) {
+    const cur = [...(node.formSchema ?? [])]
+    if (!cur[idx]) return
+    cur[idx] = { ...cur[idx], ...patch }
+    updateNode(node.id, { formSchema: cur })
+  }
+
+  function addFormField(node: GraphNode) {
+    const cur = node.formSchema ?? []
+    if (cur.length >= 10) {
+      setError('表单最多 10 个字段')
+      return
+    }
+    const seq = cur.length + 1
+    updateNode(node.id, {
+      formSchema: [...cur, { name: `field_${seq}`, label: `字段 ${seq}`, required: false, type: 'text' }],
+    })
+  }
+
+  function removeFormField(node: GraphNode, idx: number) {
+    const cur = [...(node.formSchema ?? [])]
+    cur.splice(idx, 1)
+    updateNode(node.id, { formSchema: cur.length > 0 ? cur : undefined })
+  }
+
+  /** 表单设计器（检查器内嵌）：字段名/名称/注释/必填/默认值/类型 六列一行 */
+  function renderFormDesigner(node: GraphNode) {
+    const schema = node.formSchema ?? []
+    return (
+      <div className="field">
+        <label>
+          输入表单（{schema.length}/10）
+          <span className="hint">
+            对话与试运行发送前会弹出此表单；字段名是变量名（英文标识符），运行时整表注入开始节点产出供下游引用。
+          </span>
+        </label>
+        {schema.length === 0 && <div className="note gray">未配置表单：开始节点直接使用对话输入文本。</div>}
+        {schema.map((f, i) => (
+          <div key={i} className="ff-row">
+            <div className="ff-grid">
+              <input
+                value={f.name}
+                disabled={!editable}
+                maxLength={31}
+                placeholder="字段名(英文)"
+                title="变量名：字母开头，可含数字/下划线，图内唯一"
+                onChange={(e) => updateFormField(node, i, { name: e.target.value })}
+              />
+              <input
+                value={f.label}
+                disabled={!editable}
+                maxLength={30}
+                placeholder="名称（必填）"
+                onChange={(e) => updateFormField(node, i, { label: e.target.value })}
+              />
+              <input
+                value={f.description ?? ''}
+                disabled={!editable}
+                maxLength={100}
+                placeholder="注释（占位提示）"
+                onChange={(e) => updateFormField(node, i, { description: e.target.value })}
+              />
+              <select
+                value={f.type ?? 'text'}
+                disabled={!editable}
+                onChange={(e) => updateFormField(node, i, {
+                  type: e.target.value as 'text' | 'number',
+                  // 切到 number 时把非数字默认值清掉，避免保存被拒
+                  defaultValue: e.target.value === 'number' && f.defaultValue && Number.isNaN(Number(f.defaultValue))
+                    ? undefined
+                    : f.defaultValue,
+                })}
+              >
+                <option value="text">文本</option>
+                <option value="number">数字</option>
+              </select>
+              <input
+                value={f.defaultValue ?? ''}
+                disabled={!editable}
+                maxLength={100}
+                placeholder="默认值"
+                onChange={(e) => updateFormField(node, i, { defaultValue: e.target.value })}
+              />
+              <label className="ff-req" title="必填：发送时留空会被拒绝">
+                <input
+                  type="checkbox"
+                  disabled={!editable}
+                  checked={!!f.required}
+                  onChange={(e) => updateFormField(node, i, { required: e.target.checked })}
+                />
+                必填
+              </label>
+            </div>
+            <button
+              type="button"
+              className="btn sm danger"
+              disabled={!editable}
+              onClick={() => removeFormField(node, i)}
+            >
+              删除
+            </button>
+          </div>
+        ))}
+        {editable && (
+          <button type="button" className="btn sm" onClick={() => addFormField(node)}>＋ 添加字段</button>
+        )}
+      </div>
+    )
+  }
+
   const nodeById = new Map((graph?.nodes ?? []).map((n) => [n.id, n]))
   const emptyGraph = (graph?.nodes.length ?? 0) === 0
   const contentW = emptyGraph ? 0 : Math.max(320, ...(graph?.nodes ?? []).map((n) => (n.x ?? 0) + NODE_W + 40))
@@ -357,18 +487,33 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
     }
   }
 
-  /** 开始画布试运行：custom 策略发一次真实运行，节点按快照染色。 */
+  /** 开始画布试运行：custom 策略发一次真实运行，节点按快照染色；START 配了表单先过必填校验。 */
   async function onStartCanvasRun() {
     if (!canvasRun || !canvasRun.input.trim()) return
+    for (const f of startFormSchema) {
+      const v = (canvasRun.formValues[f.name] ?? '').trim()
+      if (f.required && !v) {
+        setError(`表单字段「${f.label}」必填`)
+        return
+      }
+      if (v && (f.type ?? 'text') === 'number' && Number.isNaN(Number(v))) {
+        setError(`表单字段「${f.label}」必须是数字`)
+        return
+      }
+    }
+    setError('')
     setRunStatusMap(null)
     try {
       const created = await createRun({
         agentId: id,
         input: canvasRun.input.trim(),
         strategy: 'custom',
+        formValues: startFormSchema.length > 0
+          ? Object.fromEntries(startFormSchema.map((f) => [f.name, (canvasRun.formValues[f.name] ?? '').trim()]))
+          : undefined,
         clientRequestId: `canvas_run_${Date.now()}`,
       })
-      setCanvasRun({ phase: 'running', input: canvasRun.input, runId: created.runId, snapshot: null })
+      setCanvasRun({ phase: 'running', input: canvasRun.input, formValues: canvasRun.formValues, runId: created.runId, snapshot: null })
       void pollCanvasRun(created.runId)
     } catch (err) {
       setCanvasRun((prev) => (prev
@@ -461,7 +606,7 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
             <button
               className="btn"
               disabled={canvasRun?.phase === 'running'}
-              onClick={() => setCanvasRun({ phase: 'input', input: '' })}
+              onClick={() => setCanvasRun({ phase: 'input', input: '', formValues: formDefaults(startFormSchema) })}
             >
               ▶ 试运行
             </button>
@@ -802,6 +947,8 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
                 </div>
               )}
 
+              {selectedNode.type === 'START' && renderFormDesigner(selectedNode)}
+
               <div className="field">
                 <label>出边（{graph?.edges.filter((e) => e.from === selectedNode.id).length ?? 0}）</label>
                 <div className="ge-edges">
@@ -893,6 +1040,29 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
                   placeholder="输入测试问题，如：计算 2 的 10 次方"
                 />
               </div>
+              {startFormSchema.length > 0 && (
+                <div className="field">
+                  <label>开始节点表单</label>
+                  {startFormSchema.map((f) => (
+                    <div key={f.name} className="ff-ask">
+                      <label className="ff-ask-label">
+                        {f.label}
+                        {f.required && <span style={{ color: 'var(--danger)' }}> *</span>}
+                        <span className="hint">{f.name}（{f.type ?? 'text'}）</span>
+                      </label>
+                      <input
+                        type={(f.type ?? 'text') === 'number' ? 'number' : 'text'}
+                        value={canvasRun.formValues[f.name] ?? ''}
+                        placeholder={f.description || (f.required ? '必填' : '选填')}
+                        onChange={(e) => setCanvasRun({
+                          ...canvasRun,
+                          formValues: { ...canvasRun.formValues, [f.name]: e.target.value },
+                        })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="btns">
                 <button type="button" className="btn" onClick={() => setCanvasRun(null)}>取消</button>
                 <button type="submit" className="btn primary">开始运行</button>
@@ -931,7 +1101,7 @@ export default function GraphEditor({ workflowId }: { workflowId?: number } = {}
                 </>
               )}
               <div className="btns" style={{ marginTop: 10 }}>
-                <button className="btn" onClick={() => setCanvasRun({ phase: 'input', input: canvasRun.input })}>再跑一次</button>
+                <button className="btn" onClick={() => setCanvasRun({ phase: 'input', input: canvasRun.input, formValues: canvasRun.formValues })}>再跑一次</button>
                 <button className="btn primary" onClick={() => setCanvasRun(null)}>关闭</button>
               </div>
             </div>

@@ -28,6 +28,7 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 | v4.0（本版） | 运行策略前置到 Agent（`agent_config.strategy`，对话页不再手选；请求显式指定 > Agent 配置 > auto）· 知识库关键词检索分词降级（整串 LIKE 落空后拆词 OR 匹配 + 命中数排序，snippet 取命中词附近窗口） | ✅ |
 | v4.0.1（本版） | 等待可感知：流式气泡显示「等待模型响应 · Ns / ⏳ 生成中 · Ns」运行秒数（替代黑盒等待）；thinking 开着但运行结束没等到 `<think>` 时气泡尾注提示「渠道未返回思考内容」（带 tools 中转丢 system 的已知问题有了页面级可见信号） | ✅ |
 | v4.1（本版） | 市面对比优化包（对标 Dify v1.15 / FastGPT 4.17）：**P0** 原生 reasoning_content 透出（integration 识别 delta 扩展字段，无原生回落 CoT 指令）· 回答引用溯源（tool_result.refs → 气泡「📚 依据」）· 知识库未命中队列（kb_miss 去重计数 + 页面 Top N）· 气泡 token 用量直出。**P1** 重排序（/rerank 精排 + 检索测试页重排前后对比，未配置跳过）· 模型连接 fallback 链（连接级失败按顺位回落，model_name 回填）。**P2** ngram 全文索引（BOOLEAN MODE 短语替代 LIKE 全表扫）· 版本 diff/回滚（工作流 + 执行图，非破坏式另存）· 模型健康定时探测（GET /models 探活 + 时延落库 + 页面健康列/立即检测）· 多模态知识库（markdown 图链入 kb_image，检索命中随文带出） | ✅ |
+| v4.5（本版） | 抄 Dify 功能包：开场白+建议问题（V019）· 工具调用瘦身芯片 · 节点耗时瀑布 · 回答操作栏（复制/重试/详情）· 运行详情弹窗 + 画布整图试运行（节点实时染色）· Agent 运营三件套（日志页/指标看板/Agent 级知识库绑定 V020）· LLM/CODE 节点输入变量绑定（inputRefs + 【变量:别名】注入 / vars 注入）· **START 节点输入表单（v4.5.4，V021 `agent_run.form_values_json`：字段/名称/注释/必填/默认值/类型 设计器，创建时服务端校验必填与数字、默认值回填落库，START 产出=表单表格，对话与试运行发送前弹表单收集，重试回放原表单值）** | ✅ |
 | 待排期 | （无——PRD 明确「不做」的除外：插件市场 / 多租户 / A2A / 触发器 / 7 类节点中的 branch+http 等规格项） | — |
 
 ## 结构

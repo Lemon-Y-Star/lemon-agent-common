@@ -32,6 +32,9 @@ public class CreateRunReq extends BaseReq {
     /** 深度思考（CoT）：true = 执行器追加 <think> 推理指令，前端拆分「思考 / 结论」 */
     private Boolean thinking;
 
+    /** 开始节点表单值（v4.5.4，{字段名: 值}）；仅图 START 配置了表单时有效 */
+    private java.util.Map<String, String> formValues;
+
     /** 填充路由三元组。 */
     public void fillRoute(String source) {
         PlatformRoute.fill(this, source, Operations.RUN_CREATE);

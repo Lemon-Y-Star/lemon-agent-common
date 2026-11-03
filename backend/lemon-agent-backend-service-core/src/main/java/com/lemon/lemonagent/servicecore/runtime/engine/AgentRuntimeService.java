@@ -228,7 +228,7 @@ public class AgentRuntimeService {
      * @return 出参：运行数据（duplicated=true 时为原 run）
      */
     public RunData createRun(Long userId, Long sessionId, Long agentId, String input, String strategyRaw,
-                             String clientRequestId, Boolean thinking) {
+                             String clientRequestId, Boolean thinking, java.util.Map<String, String> formValues) {
         if (input == null || input.isBlank() || input.length() > MAX_INPUT_LENGTH) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "输入不能为空且不超过 4000 字符");
         }
@@ -278,6 +278,7 @@ public class AgentRuntimeService {
         // custom（执行图）：提交时冻结图快照并校验，改图不影响在跑的运行；图非法则直接拒绝，不分配 seq
         String graphSnapshot = null;
         String graphStateSnapshot = null;
+        String formValuesJson = null;
         if (strategy == Strategy.CUSTOM) {
             // v3.7：挂载了工作流就跑工作流的版本快照，否则跑 Agent 自己的执行图
             String rawGraphJson;
@@ -306,6 +307,8 @@ public class AgentRuntimeService {
             graph.setVersion(rawVersion);
             graphSnapshot = GraphCodec.encodeGraph(graph);
             graphStateSnapshot = GraphCodec.encodeState(new com.lemon.lemonagent.model.runtime.GraphStateData());
+            // 开始节点表单（v4.5.4）：必填校验 + 默认值回填，序列化落库（创建时即报错，优于运行中失败）
+            formValuesJson = resolveFormValues(graph, formValues);
         }
 
         AgentRunEntity run = new AgentRunEntity();
@@ -318,6 +321,7 @@ public class AgentRuntimeService {
         run.setStatus(RunStatus.RUNNING.name());
         run.setStrategy(strategy.wireName());
         run.setInput(input);
+        run.setFormValuesJson(formValuesJson);
         run.setTraceId(newTraceId());
         run.setLastSeq(0);
         runRepository.insert(run);
@@ -355,6 +359,40 @@ public class AgentRuntimeService {
     }
 
     /**
+     * 开始节点表单解析（v4.5.4）：按 START 节点 formSchema 校验必填、回填默认值、忽略未声明字段。
+     *
+     * @param graph      入参：已校验的图快照
+     * @param formValues 入参：请求携带的表单值
+     * @return 出参：{字段名: 值} 的 JSON；START 未配表单返回 null
+     */
+    private String resolveFormValues(com.lemon.lemonagent.model.runtime.AgentGraphData graph,
+                                     java.util.Map<String, String> formValues) {
+        com.lemon.lemonagent.model.runtime.GraphNode start = graph.getNodes().stream()
+                .filter(n -> "START".equals(n.getType())).findFirst().orElse(null);
+        if (start == null || start.getFormSchema() == null || start.getFormSchema().isEmpty()) {
+            return null;
+        }
+        java.util.LinkedHashMap<String, String> resolved = new java.util.LinkedHashMap<>();
+        for (com.lemon.lemonagent.model.runtime.GraphNode.FormField f : start.getFormSchema()) {
+            String v = formValues == null ? null : formValues.get(f.getName());
+            if (v == null || v.isBlank()) {
+                v = f.getDefaultValue() == null ? "" : f.getDefaultValue();
+            }
+            boolean required = f.getRequired() != null && f.getRequired();
+            if (required && v.isBlank()) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                        "表单字段「" + f.getLabel() + "（" + f.getName() + "）」为必填项");
+            }
+            if ("number".equals(f.getType()) && !v.isBlank() && !v.matches("-?\\d+(\\.\\d+)?")) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                        "表单字段「" + f.getLabel() + "（" + f.getName() + "）」必须是数字");
+            }
+            resolved.put(f.getName(), v);
+        }
+        return objectMapper.writeValueAsString(resolved);
+    }
+
+    /**
      * 重试失败运行（v3.9.1）：复用原始输入 / 策略 / 深度思考 / Agent，在**原会话**里发起新运行——
      * 会话上下文不丢，多轮对话可以接着聊。仅 FAILED / TIMEOUT 可重试（幂等键独立生成，与原 run 无关）。
      *
@@ -375,9 +413,29 @@ public class AgentRuntimeService {
         if (origin.getInput() == null || origin.getInput().isBlank()) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "该运行没有记录原始输入（旧数据），无法重试");
         }
+        // v4.5.4：重试时回放原运行的表单值（再走一遍 resolveFormValues 校验，口径与首次提交一致）
         return createRun(userId, origin.getSessionId(), origin.getAgentId(), origin.getInput(),
                 origin.getStrategy(), "retry_" + runId + "_" + UUID.randomUUID().toString().substring(0, 8),
-                origin.getThinking() != null && origin.getThinking() == 1);
+                origin.getThinking() != null && origin.getThinking() == 1,
+                parseFormValues(origin.getFormValuesJson()));
+    }
+
+    /**
+     * 表单值 JSON 反序列化（v4.5.4）：重试路径复用原运行的 {字段名: 值}。
+     *
+     * @param json 入参：agent_run.form_values_json（可空）
+     * @return 出参：表单值 Map；空/非法 JSON 返回 null（表示无表单）
+     */
+    @SuppressWarnings("unchecked")
+    private java.util.Map<String, String> parseFormValues(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, Map.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
