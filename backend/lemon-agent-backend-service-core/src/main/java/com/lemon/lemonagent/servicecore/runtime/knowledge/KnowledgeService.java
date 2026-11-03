@@ -56,25 +56,50 @@ public class KnowledgeService {
     }
 
     /**
-     * 文档列表。
+     * 文档列表（v4.5.6 分页版）：列表页不再一次拉全量（全量限检索内部使用）。
      *
      * @param userId 入参：用户
-     * @return 出参：列表 + 是否启用向量检索
+     * @param page   入参：页码（1 起）
+     * @param size   入参：页大小（1-100）
+     * @return 出参：当前页 + 总数 + 是否启用向量检索
      */
-    public KbDocsData list(Long userId) {
+    public KbDocsData list(Long userId, int page, int size) {
+        int p = Math.max(page, 1);
+        int s = Math.min(Math.max(size, 1), 100);
         List<KbDocumentData> docs = new ArrayList<>();
-        for (KbDocumentEntity e : repository.listDocs(userId)) {
-            KbDocumentData d = new KbDocumentData();
-            d.setId(e.getId());
-            d.setTitle(e.getTitle());
-            d.setContent(e.getContent());
-            d.setCreatedAt(e.getCreatedAt() == null ? null : e.getCreatedAt().atOffset(ZoneOffset.UTC).format(ISO));
-            docs.add(d);
+        for (KbDocumentEntity e : repository.listDocsPage(userId, (p - 1) * s, s)) {
+            docs.add(toDocData(e));
         }
         KbDocsData data = new KbDocsData();
         data.setDocs(docs);
         data.setVectorEnabled(retrievalPort.available());
+        data.setTotal(repository.countDocs(userId));
         return data;
+    }
+
+    /** 实体 → 出参转换（createdAt 统一 UTC ISO）。 */
+    private KbDocumentData toDocData(KbDocumentEntity e) {
+        KbDocumentData d = new KbDocumentData();
+        d.setId(e.getId());
+        d.setTitle(e.getTitle());
+        d.setContent(e.getContent());
+        d.setCreatedAt(e.getCreatedAt() == null ? null : e.getCreatedAt().atOffset(ZoneOffset.UTC).format(ISO));
+        return d;
+    }
+
+    /**
+     * 文档详情（v4.5.6）：弹窗看全文；归属校验不通过按不存在处理（不泄露他人文档）。
+     *
+     * @param userId 入参：用户
+     * @param docId  入参：文档
+     * @return 出参：文档全文
+     */
+    public KbDocumentData detail(Long userId, Long docId) {
+        KbDocumentEntity e = repository.findById(docId);
+        if (e == null || !e.getUserId().equals(userId)) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "文档不存在");
+        }
+        return toDocData(e);
     }
 
     /**
@@ -98,8 +123,7 @@ public class KnowledgeService {
         e.setContent(content);
         repository.insertDoc(e);
         repository.replaceImages(userId, e.getId(), extractImages(userId, content));
-        return list(userId).getDocs().stream()
-                .filter(d -> d.getId().equals(e.getId())).findFirst().orElse(null);
+        return detail(userId, e.getId());
     }
 
     /**
@@ -249,15 +273,18 @@ public class KnowledgeService {
     }
 
     /**
-     * 未命中队列 Top N（v4.1）。
+     * 未命中队列（v4.1 → v4.5.6 分页）：按频次降序。
      *
      * @param userId 入参：用户
-     * @param limit  入参：条数
-     * @return 出参：队列 + 总数
+     * @param page   入参：页码（1 起）
+     * @param size   入参：页大小（1-100）
+     * @return 出参：当前页 + 总数
      */
-    public KbMissesData misses(Long userId, int limit) {
+    public KbMissesData misses(Long userId, int page, int size) {
+        int p = Math.max(page, 1);
+        int s = Math.min(Math.max(size, 1), 100);
         List<KbMissesData.MissItem> items = new ArrayList<>();
-        for (KbMissEntity e : repository.listMisses(userId, Math.min(Math.max(limit, 1), 50))) {
+        for (KbMissEntity e : repository.listMissesPage(userId, (p - 1) * s, s)) {
             items.add(new KbMissesData.MissItem(e.getQuery(),
                     e.getHits() == null ? 0 : e.getHits(),
                     e.getLastSeenAt() == null ? null : e.getLastSeenAt().atOffset(ZoneOffset.UTC).format(ISO)));

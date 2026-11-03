@@ -12,6 +12,8 @@ export interface KbDoc {
 export interface KbDocs {
   docs: KbDoc[]
   vectorEnabled: boolean
+  /** 文档总数（v4.5.6 分页配套） */
+  total: number
 }
 
 export interface KbHit {
@@ -40,9 +42,15 @@ export interface KbMisses {
   total: number
 }
 
-export const fetchKbDocs = () => get<KbDocs>('/workspace/knowledge')
+/** 文档列表（v4.5.6 分页，页码 1 起）。 */
+export const fetchKbDocs = (page = 1, size = 8) =>
+  get<KbDocs>(`/workspace/knowledge?page=${page}&size=${size}`)
+/** 文档详情（v4.5.6）：弹窗看全文。 */
+export const fetchKbDocDetail = (id: number) => get<KbDoc>(`/workspace/knowledge/${id}`)
 export const createKbDoc = (title: string, content: string) => post<KbDoc>('/workspace/knowledge', { title, content })
 export const deleteKbDoc = (id: number) => del<null>(`/workspace/knowledge/${id}`)
 export const searchKb = (q: string, topK = 5) =>
   get<KbSearchResult>(`/workspace/knowledge/search?q=${encodeURIComponent(q)}&topK=${topK}`)
-export const fetchKbMisses = (limit = 20) => get<KbMisses>(`/workspace/knowledge/misses?limit=${limit}`)
+/** 未命中队列（v4.5.6 分页，页码 1 起）。 */
+export const fetchKbMisses = (page = 1, size = 10) =>
+  get<KbMisses>(`/workspace/knowledge/misses?page=${page}&size=${size}`)

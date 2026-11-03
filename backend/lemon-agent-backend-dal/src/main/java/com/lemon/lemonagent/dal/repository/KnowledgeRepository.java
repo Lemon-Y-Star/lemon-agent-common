@@ -13,6 +13,12 @@ public interface KnowledgeRepository {
     /** 文档列表（倒序）。 */
     List<KbDocumentEntity> listDocs(Long userId);
 
+    /** 文档分页列表（v4.5.6，倒序）：列表页不再一次拉全量。 */
+    List<KbDocumentEntity> listDocsPage(Long userId, int offset, int limit);
+
+    /** 文档总数（v4.5.6 分页配套）。 */
+    int countDocs(Long userId);
+
     /** 插入文档。 */
     int insertDoc(KbDocumentEntity entity);
 
@@ -27,6 +33,9 @@ public interface KnowledgeRepository {
 
     /** 未命中队列 Top N（按次数降序）。 */
     List<KbMissEntity> listMisses(Long userId, int limit);
+
+    /** 未命中队列分页（v4.5.6，按次数降序）。 */
+    List<KbMissEntity> listMissesPage(Long userId, int offset, int limit);
 
     /** 未命中总数。 */
     int countMisses(Long userId);

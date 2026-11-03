@@ -606,3 +606,13 @@ tr:hover td{background:#fafbfe}
   .ff-row{flex-wrap:wrap}
   .ff-grid{grid-template-columns:1fr 1fr}
 }
+
+/* ---------- v4.5.6 知识库：文档/命中/未命中容器内置滚动（数据多不再无限拉长页面） ---------- */
+.kb-scroll{max-height:420px;overflow-y:auto;padding-right:8px}
+.kb-scroll::-webkit-scrollbar{width:6px}
+.kb-scroll::-webkit-scrollbar-thumb{background:#c9cdd6;border-radius:3px}
+.kb-scroll::-webkit-scrollbar-track{background:transparent}
+/* 文档详情弹窗正文：全文 Markdown 渲染，超长内滚 */
+.kb-detail-body{max-height:52vh;overflow-y:auto;padding-right:8px;border-top:1px solid #eef1f6;padding-top:10px}
+.kb-detail-body::-webkit-scrollbar{width:6px}
+.kb-detail-body::-webkit-scrollbar-thumb{background:#c9cdd6;border-radius:3px}

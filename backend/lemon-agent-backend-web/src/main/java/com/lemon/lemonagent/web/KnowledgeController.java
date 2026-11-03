@@ -4,6 +4,7 @@ import com.lemon.lemonagent.model.runtime.CreateKbDocReq;
 import com.lemon.lemonagent.model.runtime.CreateKbDocResp;
 import com.lemon.lemonagent.model.runtime.DeleteKbDocReq;
 import com.lemon.lemonagent.model.runtime.DeleteKbDocResp;
+import com.lemon.lemonagent.model.runtime.KbDocumentData;
 import com.lemon.lemonagent.model.runtime.KbDocsData;
 import com.lemon.lemonagent.model.runtime.KbMissesData;
 import com.lemon.lemonagent.model.runtime.KbSearchData;
@@ -41,14 +42,31 @@ public class KnowledgeController {
     private KnowledgeService knowledgeService;
 
     /**
-     * 文档列表 + 检索能力。
+     * 文档列表（v4.5.6 分页）。
      *
      * @param userId 当前用户
-     * @return 列表
+     * @param page   页码（1 起）
+     * @param size   页大小（默认 20）
+     * @return 当前页 + 总数
      */
     @GetMapping
-    public BaseResult<KbDocsData> list(@RequestAttribute("lemon.userId") Long userId) {
-        return BaseResult.success(knowledgeService.list(userId));
+    public BaseResult<KbDocsData> list(@RequestAttribute("lemon.userId") Long userId,
+                                       @RequestParam(value = "page", defaultValue = "1") int page,
+                                       @RequestParam(value = "size", defaultValue = "20") int size) {
+        return BaseResult.success(knowledgeService.list(userId, page, size));
+    }
+
+    /**
+     * 文档详情（v4.5.6）：弹窗看全文（Markdown 渲染，多模态图链随文展示）。
+     *
+     * @param docId  文档 ID
+     * @param userId 当前用户
+     * @return 文档全文
+     */
+    @GetMapping("/{docId}")
+    public BaseResult<KbDocumentData> detail(@PathVariable Long docId,
+                                             @RequestAttribute("lemon.userId") Long userId) {
+        return BaseResult.success(knowledgeService.detail(userId, docId));
     }
 
     /**
@@ -106,15 +124,18 @@ public class KnowledgeController {
     }
 
     /**
-     * 检索未命中队列（v4.1 运营闭环）：0 命中 query 按频次 Top N 展示，指导补文档。
+     * 检索未命中队列（v4.1 运营闭环；v4.5.6 分页）：0 命中 query 按频次降序，指导补文档。
      *
      * @param userId 当前用户
-     * @return 队列
+     * @param page   页码（1 起）
+     * @param size   页大小（默认 10）
+     * @return 队列 + 总数
      */
     @GetMapping("/misses")
     public BaseResult<KbMissesData> misses(@RequestAttribute("lemon.userId") Long userId,
-                                           @RequestParam(value = "limit", defaultValue = "20") int limit) {
-        return BaseResult.success(knowledgeService.misses(userId, limit));
+                                           @RequestParam(value = "page", defaultValue = "1") int page,
+                                           @RequestParam(value = "size", defaultValue = "10") int size) {
+        return BaseResult.success(knowledgeService.misses(userId, page, size));
     }
 
 }

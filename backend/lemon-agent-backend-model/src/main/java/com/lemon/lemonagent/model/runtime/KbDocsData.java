@@ -13,4 +13,7 @@ public class KbDocsData {
 
     /** 是否已配置向量检索（false = 关键词降级） */
     private boolean vectorEnabled;
+
+    /** 文档总数（v4.5.6 分页配套） */
+    private int total;
 }

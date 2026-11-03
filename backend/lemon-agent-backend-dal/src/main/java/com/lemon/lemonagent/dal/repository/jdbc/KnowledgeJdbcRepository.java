@@ -97,6 +97,20 @@ public class KnowledgeJdbcRepository implements KnowledgeRepository {
     }
 
     @Override
+    public List<KbDocumentEntity> listDocsPage(Long userId, int offset, int limit) {
+        return jdbcTemplate.query(
+                "SELECT id, user_id, title, content, created_at, updated_at FROM kb_document "
+                        + "WHERE user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?", docMapper, userId, limit, offset);
+    }
+
+    @Override
+    public int countDocs(Long userId) {
+        Integer n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM kb_document WHERE user_id = ?", Integer.class, userId);
+        return n == null ? 0 : n;
+    }
+
+    @Override
     public int insertDoc(KbDocumentEntity e) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
@@ -146,6 +160,14 @@ public class KnowledgeJdbcRepository implements KnowledgeRepository {
                 "SELECT id, user_id, query, hits, last_seen_at, created_at FROM kb_miss "
                         + "WHERE user_id = ? ORDER BY hits DESC, last_seen_at DESC LIMIT ?",
                 missMapper, userId, limit);
+    }
+
+    @Override
+    public List<KbMissEntity> listMissesPage(Long userId, int offset, int limit) {
+        return jdbcTemplate.query(
+                "SELECT id, user_id, query, hits, last_seen_at, created_at FROM kb_miss "
+                        + "WHERE user_id = ? ORDER BY hits DESC, last_seen_at DESC LIMIT ? OFFSET ?",
+                missMapper, userId, limit, offset);
     }
 
     @Override
