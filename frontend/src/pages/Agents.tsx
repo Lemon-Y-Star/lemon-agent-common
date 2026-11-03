@@ -434,7 +434,7 @@ export default function Agents() {
               <div className="field">
                 <label>
                   对话开场白
-                  <span className="hint">会话开始时展示的欢迎语（v4.5）；留空 = 不展示，上限 500 字</span>
+                  <span className="hint">会话开始时展示的欢迎语；留空 = 不展示，上限 500 字</span>
                 </label>
                 <textarea
                   value={form.openingStatement}
@@ -449,7 +449,7 @@ export default function Agents() {
               <div className="field">
                 <label>
                   建议问题
-                  <span className="hint">一行一个，至多 5 条；对话开始时渲染为可点击的引导按钮（v4.5）</span>
+                  <span className="hint">一行一个，至多 5 条；开局渲染为可点击引导按钮</span>
                 </label>
                 <textarea
                   value={form.suggestedQuestions}
@@ -463,7 +463,7 @@ export default function Agents() {
               <div className="field">
                 <label>
                   AGENT 知识库
-                  <span className="hint">勾选后 search_docs 只检索勾选文档（v4.5.2，Dify 同款隔离）；不勾 = 搜全部</span>
+                  <span className="hint">勾选后 search_docs 只检索勾选文档；不勾 = 搜全部</span>
                 </label>
                 {kbDocs.length === 0 ? (
                   <div className="note gray">知识库还没有文档，去「知识库」页上传后即可绑定</div>
@@ -492,7 +492,7 @@ export default function Agents() {
                 <div className="field">
                   <label>
                     短期记忆轮数
-                    <span className="hint">最近对话轮数（1 轮 = 一问一答）；0 = 只看本轮；留空 = 默认 10 轮</span>
+                    <span className="hint">1 轮 = 一问一答；0 = 只看本轮；留空 = 默认 10 轮</span>
                   </label>
                   <input
                     type="number"
@@ -512,7 +512,7 @@ export default function Agents() {
                 <div className="field">
                   <label>
                     运行策略
-                    <span className="hint">对话页按此策略发起运行；custom 需要执行图或挂载工作流</span>
+                    <span className="hint">对话页按此策略发起运行</span>
                   </label>
                   <select
                     value={form.strategy}
@@ -541,7 +541,7 @@ export default function Agents() {
                 <div className="field">
                   <label>
                     挂载工作流
-                    <span className="hint">挂载后 custom 跑工作流的图；不挂载则跑自己的执行图（v3.7）</span>
+                    <span className="hint">custom 跑工作流的图（v3.7）</span>
                   </label>
                   <select
                     value={form.workflowId ?? ''}
@@ -599,7 +599,7 @@ export default function Agents() {
                         <span className="tool-name" title={t.description}>{t.label || t.name}</span>
                         {t.needsApproval && <span className="tag warn">需审批</span>}
                         {!t.available && <span className="tag gray">不可用</span>}
-                        <span className="tool-desc">{t.description}</span>
+                        <span className="tool-desc" title={t.description}>{t.description}</span>
                       </span>
                     </label>
                   ))}

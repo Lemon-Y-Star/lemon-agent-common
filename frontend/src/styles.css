@@ -577,3 +577,10 @@ tr:hover td{background:#fafbfe}
 .kb-checks input[type=checkbox]{width:auto!important;flex:none!important;accent-color:var(--primary,#4f46e5)}
 /* 弹窗表单底部按钮统一 */
 .modal .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+/* ---------- v4.5.3 弹窗两列对齐：控件贴底（hint 行数不同时左右输入框仍对齐） ---------- */
+.row{align-items:stretch}
+.row .field{display:flex;flex-direction:column}
+.row .field input,.row .field select{margin-top:auto}
+/* ---------- v4.5.3 工具描述截断：MCP 长描述不再撑爆弹窗（悬浮 title 看全文） ---------- */
+.tool-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.55}
