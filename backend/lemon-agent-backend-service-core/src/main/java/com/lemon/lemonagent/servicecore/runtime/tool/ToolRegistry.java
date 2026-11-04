@@ -125,6 +125,9 @@ public class ToolRegistry {
     /** 代码沙箱端口（可空：沙箱服务缺席时工具仍注册，执行时返回明确错误）。 */
     private final CodeSandboxPort codeSandbox;
 
+    /** 工作流工具同步等待子运行的上限（秒，v4.5.9 可配；超时返回 RUNNING，主 Agent 用 check_workflow_run 跟进）。 */
+    private final long toolWaitSeconds;
+
     public ToolRegistry(JdbcTemplate jdbcTemplate,
                         RetrievalPort retrievalPort,
                         KnowledgeService knowledgeService,
@@ -134,11 +137,13 @@ public class ToolRegistry {
                         ObjectProvider<McpToolPort> mcpToolPortProvider,
                         McpConnectionRepository mcpConnectionRepository,
                         ObjectProvider<CodeSandboxPort> codeSandboxProvider,
-                        @Value("${agent.tools.approval-required:create_ticket}") String approvalList) {
+                        @Value("${agent.tools.approval-required:create_ticket}") String approvalList,
+                        @Value("${lemon.workflow.tool-wait-seconds:120}") long toolWaitSeconds) {
         this.jdbcTemplate = jdbcTemplate;
         this.workflowRepository = workflowRepository;
         this.agentRunRepository = agentRunRepository;
         this.agentRuntimeProvider = agentRuntimeProvider;
+        this.toolWaitSeconds = toolWaitSeconds;
         List<String> needsApproval = List.of(approvalList.split(",")).stream()
                 .map(String::trim).toList();
         this.approvalList = needsApproval;
@@ -194,7 +199,22 @@ public class ToolRegistry {
                                 + "\"priority\":{\"type\":\"string\",\"enum\":[\"P0\",\"P1\",\"P2\"]}},"
                                 + "\"required\":[\"title\",\"priority\"]}"),
                         needsApproval.contains("create_ticket"),
-                        this::createTicket));
+                        this::createTicket),
+                // v4.5.9 异步跟进：run_wf_* 同步等待超时返回 RUNNING 后，主 Agent 用本工具继续查询
+                // 子运行状态直到拿到终态产出——waitSeconds 阻塞等待（模型没有"稍等再查"的能力，
+                // run 256 实测它拿到 RUNNING 后直接写报告放弃跟进；把等待做进工具内才闭环）
+                "check_workflow_run", new ToolHandler(new ModelPort.ToolSpec(
+                        "check_workflow_run",
+                        "查询并等待一个工作流子运行（run_wf_* 工具发起的子任务）产出（只读工具）。"
+                                + "当 run_wf_* 返回 status=RUNNING 时，调用本工具并传回其 runId；"
+                                + "waitSeconds 表示愿意等待的最长时间（建议 60），工具会阻塞到子运行完成或超时后返回最新状态。"
+                                + "如仍为 RUNNING 可再次调用（加大 waitSeconds）。不要重复调用 run_wf_* 本身。",
+                        "{\"type\":\"object\",\"properties\":{"
+                                + "\"runId\":{\"type\":\"integer\",\"description\":\"run_wf_* 返回的子运行 runId\"},"
+                                + "\"waitSeconds\":{\"type\":\"integer\",\"description\":\"阻塞等待秒数，0-90，默认 30\"}},"
+                                + "\"required\":[\"runId\"]}"),
+                        false,
+                        this::checkWorkflowRun));
         // run_python 常驻（v4.4）：代码在隔离沙箱执行（禁网 + rlimit + 超时），写操作风险由沙箱吸收
         this.runPythonTool = new ToolHandler(new ModelPort.ToolSpec(
                 "run_python",
@@ -244,7 +264,9 @@ public class ToolRegistry {
                         return Map.of("error", "沙箱调用失败：" + e.getMessage());
                     }
                 });
-        // 启动回放：把库里全部启用中的工作流发布为工具（run_wf_<id>）
+        // 启动回放：把库里全部启用中的工作流发布为工具（run_wf_<id>）。同步执行，MySQL 不可达时启动即失败（fail-fast）；
+        // v4.5.9 修正认知：fb272c5 曾加过 @EventListener 异步回放，实为冗余——本行自 v3.9 起就存在，
+        // 当时"重启后工具失效"的误判源于验证脚本用错了接口路径（/workspace/agents/tools 并不存在）
         workflowRepository.findAllEnabled().forEach(this::bindWorkflow);
     }
 
@@ -260,7 +282,8 @@ public class ToolRegistry {
         String desc = "调用已发布的工作流「" + wf.getName() + "」"
                 + (wf.getDescription() == null || wf.getDescription().isBlank() ? "" : "：" + wf.getDescription())
                 + "。工具按该工作流的编排（大模型 / 工具 / 审批节点）完成 input 描述的任务并返回最终产出；"
-                + "只读编排，除工作流自身节点外不改变外部状态。不要在工作流或其它工具里嵌套调用本工具。";
+                + "只读编排，除工作流自身节点外不改变外部状态。不要在工作流或其它工具里嵌套调用本工具。"
+                + "若返回 status=RUNNING（同步等待超时），请用 check_workflow_run 工具传回 runId 跟进查询。";
         workflowTools.put(toolName, new ToolHandler(new ModelPort.ToolSpec(
                 toolName, desc,
                 "{\"type\":\"object\",\"properties\":{"
@@ -295,20 +318,6 @@ public class ToolRegistry {
                 if (c.getStatus() != null && c.getStatus() == 1) {
                     bindMcp(c);
                 }
-            }
-        });
-    }
-
-    /**
-     * 启动回放（v4.5.7）：全部启用中的工作流重新注册为 run_wf_* 工具——
-     * 此前 bindWorkflow 只在创建时执行，后端重启后工作流工具全部失效
-     * （主 Agent 授权里还挂着工具名但目录里没有定义），必须与 MCP 同款启动回放。
-     */
-    @EventListener(ApplicationReadyEvent.class)
-    public void bindAllWorkflow() {
-        Thread.ofVirtual().name("wf-bind").start(() -> {
-            for (WorkflowEntity wf : workflowRepository.findAllEnabled()) {
-                bindWorkflow(wf);
             }
         });
     }
@@ -431,13 +440,27 @@ public class ToolRegistry {
             return Map.of("error", "工作流工具不支持嵌套调用：当前已在子工作流内，请先完成本工作流");
         }
         String input = String.valueOf(args.getOrDefault("input", ""));
-        String clientRequestId = "wftool_" + parentRunId + "_" + UUID.randomUUID().toString().substring(0, 8);
+        // v4.5.9 幂等防重：幂等键含 parent+workflow+input 摘要——模型重复发起同一子任务时
+        // 命中 createRun 幂等返回同一个子运行（duplicated=true），不再每次都新建造成浪费。
+        // 实测：run 252 中模型连续重调 run_wf_12 三次建了三个子运行，全部 RUNNING 无人认领。
+        String clientRequestId = "wftool_" + parentRunId + "_wf" + workflowId + "_"
+                + Integer.toHexString(input.hashCode());
         // v4.5.7 主 Agent 协同：按目标工作流的生效版本直接起子运行（工具名与执行目标对齐），
         // 不再复用宿主 Agent 的 custom 图源——同一宿主可协同多个 run_wf_* 工具各跑各的工作流
         var child = agentRuntimeProvider.getObject().createWorkflowChildRun(userId, parent.getAgentId(),
                 workflowId, input, clientRequestId);
         long childRunId = child.getRunId();
-        long deadline = System.currentTimeMillis() + 120_000L;
+        // v4.5.9：等待上限可配（lemon.workflow.tool-wait-seconds）；超时返回 RUNNING 并教主 Agent
+        // 用 check_workflow_run 跟进查询，复杂子工作流不再拿不到产出。
+        // 重复发起（duplicated）不重复等待：直接返回子运行当前状态——重调 run_wf 语义退化为查询
+        if (child.isDuplicated()) {
+            AgentRunEntity cur = agentRunRepository.findByIdAndUser(childRunId, userId);
+            if (cur != null) {
+                return childStatusResult(cur, wf.getName());
+            }
+            // 实体查不到（理论上不会：幂等命中即已落库）——落到下方正常等待逻辑兜底
+        }
+        long deadline = System.currentTimeMillis() + toolWaitSeconds * 1000;
         AgentRunEntity done = null;
         while (System.currentTimeMillis() < deadline) {
             AgentRunEntity e = agentRunRepository.findByIdAndUser(childRunId, userId);
@@ -454,33 +477,110 @@ public class ToolRegistry {
         }
         if (done == null) {
             return Map.of("workflow", wf.getName(), "runId", childRunId, "status", "RUNNING",
-                    "note", "工作流仍在执行（超过 120s），可在运行历史查看后续产出");
+                "note", "工作流仍在执行（超过 " + toolWaitSeconds + "s）。禁止重新调用本工具（同一任务会返回同一子运行），"
+                    + "请调用 check_workflow_run 工具（runId=" + childRunId
+                    + "，waitSeconds=60）阻塞等待其完成，直到拿到终态产出。",
+                "hint", "用 check_workflow_run 工具跟进查询本子运行");
         }
-        String output = done.getOutputText() == null ? "" : done.getOutputText();
-        // v4.5.7：子运行产出先剥 <think> 块再截断——思考原文挤占工具结果额度，导致正文被截
-        // （运行 228 实测：诊断报告 4000 字额度被 think 吃掉，正文断在半句）
-        int thinkStart = output.indexOf("<think>");
-        if (thinkStart >= 0) {
-            int thinkEnd = output.indexOf("</think>");
-            output = (thinkEnd >= 0 ? output.substring(thinkEnd + "</think>".length()) : "").trim();
-        }
-        if (output.length() > 4000) {
-            output = output.substring(0, 4000) + "…（已截断）";
-        }
+        return childStatusResult(done, wf.getName());
+    }
+
+    /**
+     * 子运行状态 → 工具结果（v4.5.9）：runWorkflowTool 与 checkWorkflowRun 共用的产出格式。
+     * 终态剥 think 再截断；RUNNING 教主 Agent 用 check_workflow_run 跟进；BLOCKED 给审批指引。
+     *
+     * @param child  入参：子运行实体
+     * @param wfName 入参：工作流名（可空——check 路径不重复带）
+     * @return 出参：工具结果
+     */
+    private Map<String, Object> childStatusResult(AgentRunEntity child, String wfName) {
         Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("workflow", wf.getName());
-        result.put("runId", childRunId);
-        result.put("status", done.getStatus());
-        result.put("output", output);
+        if (wfName != null) {
+            result.put("workflow", wfName);
+        }
+        result.put("runId", child.getId());
+        result.put("status", child.getStatus());
+        boolean terminal = RunStatus.valueOf(child.getStatus()).terminal();
+        if (!terminal) {
+            result.put("note", "子运行仍在执行。禁止重新调用 run_wf_*（同一任务会返回本子运行），"
+                    + "请再次调用 check_workflow_run（runId=" + child.getId()
+                    + "，waitSeconds=60）阻塞等待其完成。");
+            return result;
+        }
+        result.put("output", stripThinkAndClip(child.getOutputText(), 4000));
         // v4.5.7：审批门挂起时给主 Agent 明确的处置指引，而不是让它对着 BLOCKED 状态码猜
-        if ("BLOCKED".equals(done.getStatus())) {
+        if ("BLOCKED".equals(child.getStatus())) {
             result.put("note", "子运行在审批门挂起（工作流含审批节点），需要用户在对话页批准后才能继续；"
                     + "请告知用户前往对话页处理该审批，当前先基于已有信息给出阶段性结论。");
         }
-        if (done.getErrorCode() != null) {
-            result.put("errorCode", done.getErrorCode());
+        if (child.getErrorCode() != null) {
+            result.put("errorCode", child.getErrorCode());
         }
         return result;
+    }
+
+    /**
+     * 子运行产出净化（v4.5.7/v4.5.9）：先剥 <think> 块（思考原文挤占工具结果额度）再截断。
+     * runWorkflowTool 与 checkWorkflowRun 共用。
+     *
+     * @param output  入参：子运行 outputText（可空）
+     * @param maxLen  入参：截断上限
+     * @return 出参：净化后的产出
+     */
+    private String stripThinkAndClip(String output, int maxLen) {
+        String text = output == null ? "" : output;
+        int thinkStart = text.indexOf("<think>");
+        if (thinkStart >= 0) {
+            int thinkEnd = text.indexOf("</think>");
+            text = (thinkEnd >= 0 ? text.substring(thinkEnd + "</think>".length()) : "").trim();
+        }
+        if (text.length() > maxLen) {
+            text = text.substring(0, maxLen) + "…（已截断）";
+        }
+        return text;
+    }
+
+    /**
+     * 工作流子运行跟进查询（v4.5.9）：run_wf_* 同步等待超时返回 RUNNING 后，主 Agent 用本工具
+     * 继续查询子运行状态——拿到终态产出前不放弃。只读工具，不改变任何外部状态。
+     */
+    private Map<String, Object> checkWorkflowRun(Map<String, Object> args) {
+        Long userId = Long.valueOf(String.valueOf(args.getOrDefault("__userId", "0")));
+        long childRunId;
+        try {
+            childRunId = Long.parseLong(String.valueOf(args.getOrDefault("runId", "0").toString().trim()));
+        } catch (NumberFormatException e) {
+            return Map.of("error", "runId 必须是数字");
+        }
+        AgentRunEntity child = agentRunRepository.findByIdAndUser(childRunId, userId);
+        if (child == null || child.getClientRequestId() == null
+                || !child.getClientRequestId().startsWith("wftool_")) {
+            return Map.of("error", "子运行不存在（或不是工作流子运行）");
+        }
+        // v4.5.9 阻塞等待（0-90s，默认 30）：模型没有"稍等再查"的能力（run 256 实测拿到 RUNNING
+        // 后直接写报告放弃跟进），把等待做进工具执行内（虚拟线程 sleep，不占平台线程）才闭环
+        long waitMs = 30_000L;
+        try {
+            long requested = Long.parseLong(String.valueOf(args.getOrDefault("waitSeconds", "30")).trim());
+            waitMs = Math.min(Math.max(requested, 0), 90) * 1000L;
+        } catch (NumberFormatException ignore) {
+            // 非法参数按默认 30s
+        }
+        long deadline = System.currentTimeMillis() + waitMs;
+        while (!RunStatus.valueOf(child.getStatus()).terminal()
+                && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            AgentRunEntity latest = agentRunRepository.findByIdAndUser(childRunId, userId);
+            if (latest != null) {
+                child = latest;
+            }
+        }
+        return childStatusResult(child, null);
     }
 
     /**

@@ -42,6 +42,12 @@ lemon:
     url: ${LEMON_SANDBOX_URL:http://127.0.0.1:17770}
     # 沙箱访问令牌（v4.4.1）：与沙箱容器 LEMON_SANDBOX_TOKEN 一致；空 = 沙箱侧未启用校验
     token: ${LEMON_SANDBOX_TOKEN:}
+  workflow:
+    # 工作流工具（run_wf_*）同步等待子运行的上限（秒，v4.5.9 可配）。超时返回 RUNNING，
+    # 主 Agent 可用 check_workflow_run 工具（waitSeconds 阻塞等待）跟进查询产出。
+    # 默认 240：虚拟线程内 sleep 不占平台线程；实测 3 节点子工作流 40-70s、5 节点约 100-160s，
+    # 240s 覆盖绝大多数场景——跟进决策不可靠（run 256/258 实测模型拿到 RUNNING 后直接收尾），等待做足才是正解
+    tool-wait-seconds: ${LEMON_WF_TOOL_WAIT_SECONDS:240}
   health:
     # 模型连接健康探测（v4.1）：间隔与首延迟（毫秒）
     probe-interval-ms: ${LEMON_HEALTH_PROBE_INTERVAL_MS:300000}

@@ -66,7 +66,9 @@ public class RunExecutor {
     private static final int DEFAULT_HISTORY_TURNS = 10;
     /** 短期记忆轮数上限：与 AgentConfigService 同口径，防 prompt 无界膨胀。 */
     private static final int MAX_HISTORY_TURNS = 50;
-    private static final int MAX_TOOL_ROUNDS = 5;
+    /** 工具轮次上限（v4.5.9 5→8）：主 Agent 协同场景 2 个子工作流 × (发起+跟进) 就要 4 轮，
+     *  叠加自主知识库检索 5 轮必爆——模型被迫中途收尾，产出缺子工作流细节。 */
+    private static final int MAX_TOOL_ROUNDS = 8;
 
     /** 工具轮次用尽后的提示（run158 实测：不明说，DeepSeek 会把调用标记当正文吐出来）。 */
     private static final String TOOL_CUT_NOTE = "[系统] 工具调用轮次已达上限，无法再调用任何工具。"
