@@ -69,8 +69,9 @@ public class AgentSessionController {
     @GetMapping
     public BaseResult<SessionListData> list(@RequestAttribute("lemon.userId") Long userId,
                                             @RequestParam(defaultValue = "1") int page,
-                                            @RequestParam(defaultValue = "20") int size) {
-        return BaseResult.success(agentRuntimeService.listSessions(userId, page, Math.min(size, 100)));
+                                            @RequestParam(defaultValue = "20") int size,
+                                            @RequestParam(required = false) String q) {
+        return BaseResult.success(agentRuntimeService.listSessions(userId, page, Math.min(size, 100), q));
     }
 
     /**

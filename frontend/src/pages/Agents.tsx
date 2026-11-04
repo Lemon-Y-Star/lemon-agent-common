@@ -118,6 +118,52 @@ export default function Agents() {
     }
   }
 
+  /** 克隆 Agent（v4.6.0）：成功后刷新列表并提示。 */
+  async function onClone(agentId: number, name: string) {
+    try {
+      const { request } = await import('../api/client')
+      await request(`/workspace/agents/${agentId}/clone`, {
+        method: 'POST',
+        body: JSON.stringify({ name: `${name} 副本` }),
+      })
+      toast('已克隆')
+      await reload()
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '克隆失败')
+    }
+  }
+
+  /** 导出 Agent 配置 JSON（v4.6.0）：blob 下载。 */
+  async function onExport(agentId: number, name: string) {
+    try {
+      const { request } = await import('../api/client')
+      const data = await request<Record<string, unknown>>(`/workspace/agents/${agentId}/export`)
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `agent-${agentId}-${name}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '导出失败')
+    }
+  }
+
+  /** 导入 Agent 配置 JSON（v4.6.0）：绑定类 ID 不迁移，导入后手动重绑。 */
+  async function onImportFile(file: File) {
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      const { request } = await import('../api/client')
+      await request('/workspace/agents/import', { method: 'POST', body: JSON.stringify(data) })
+      toast('导入成功（绑定类配置请在编辑页重绑）')
+      await reload()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '导入失败（JSON 格式或字段缺失）')
+    }
+  }
+
   const reload = useCallback(async () => {
     try {
       setPage(await fetchAgents())
@@ -353,6 +399,16 @@ export default function Agents() {
                       编辑
                     </button>{' '}
                     <button className="btn sm danger" onClick={() => setDeleting(a)}>删除</button>
+                    <button
+                      className="btn sm"
+                      title="全字段复制为新 Agent"
+                      onClick={() => void onClone(a.id, a.name)}
+                    >
+                      克隆
+                    </button>
+                    <button className="btn sm" title="下载配置 JSON" onClick={() => void onExport(a.id, a.name)}>
+                      导出
+                    </button>{' '}
                     <button className="btn sm" onClick={() => navigate(`/agents/${a.id}/ops`)}>
                       运营
                     </button>{' '}
@@ -424,6 +480,19 @@ export default function Agents() {
             >
               ＋ 创建 Agent
             </button>
+            <label className="btn" style={{ cursor: 'pointer' }}>
+              导入 Agent
+              <input
+                type="file"
+                accept=".json,application/json"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  e.target.value = ''
+                  if (file) void onImportFile(file)
+                }}
+              />
+            </label>
           </span>
         </h3>
         <p className="status-line" role="status">{error}</p>

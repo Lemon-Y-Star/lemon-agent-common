@@ -127,6 +127,9 @@ export default function Chat() {
   const [agents, setAgents] = useState<AgentConfig[]>([])
   const [agentId, setAgentId] = useState<number | null>(null)
   const [renaming, setRenaming] = useState<{ sessionId: number; title: string } | null>(null)
+  /** 会话搜索（v4.6.0）：标题/内容关键字，空 = 全量最近列表 */
+  const [sessionQuery, setSessionQuery] = useState('')
+  const [sessionResults, setSessionResults] = useState<SessionItem[] | null>(null)
   const [deleting, setDeleting] = useState<SessionItem | null>(null)
   /** 图表灯箱（v4.4.4）：data URI 不能顶层导航，点击改页内预览 */
   const [imgPreview, setImgPreview] = useState<string | null>(null)
@@ -177,10 +180,25 @@ export default function Chat() {
     try {
       const list = await fetchSessions()
       setSessions(list.items)
+      setSessionResults(null)
       return list.items
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '会话列表加载失败')
       return []
+    }
+  }, [])
+
+  /** 会话搜索（v4.6.0）：关键字命中标题或消息内容；空串恢复全量列表。 */
+  const searchSessions = useCallback(async (kw: string) => {
+    if (!kw.trim()) {
+      setSessionResults(null)
+      return
+    }
+    try {
+      const list = await fetchSessions(1, 50, kw.trim())
+      setSessionResults(list.items)
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '会话搜索失败')
     }
   }, [])
 
@@ -1135,7 +1153,17 @@ export default function Chat() {
             会话
             <button className="btn sm" onClick={onNewSession}>＋ 新建</button>
           </h4>
-          {sessions.map((s) => (
+          <input
+            className="session-search"
+            value={sessionQuery}
+            placeholder="搜标题 / 消息内容"
+            onChange={(e) => {
+              setSessionQuery(e.target.value)
+              void searchSessions(e.target.value)
+            }}
+            style={{ width: '100%', marginBottom: 6 }}
+          />
+          {(sessionResults ?? sessions).map((s) => (
             <div
               key={s.sessionId}
               className={`sess-item ${activeSession === s.sessionId ? 'active' : ''}`}
@@ -1157,7 +1185,9 @@ export default function Chat() {
               </span>
             </div>
           ))}
-          {sessions.length === 0 && <div className="note gray">暂无会话</div>}
+          {(sessionResults ?? sessions).length === 0 && (
+            <div className="note gray">{sessionResults ? '无匹配会话' : '暂无会话'}</div>
+          )}
         </div>
       </div>
       {renaming && (

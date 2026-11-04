@@ -54,3 +54,6 @@ export const searchKb = (q: string, topK = 5) =>
 /** 未命中队列（v4.5.6 分页，页码 1 起）。 */
 export const fetchKbMisses = (page = 1, size = 10) =>
   get<KbMisses>(`/workspace/knowledge/misses?page=${page}&size=${size}`)
+/** AI 补文档草稿（v4.6.0）：kb_miss/标注查询 → LLM 生成候选答案（同步 ~20s）。 */
+export const aiDraftKb = (query: string) =>
+  post<{ draft: string }>('/workspace/knowledge/ai-draft', { query })

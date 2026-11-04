@@ -4,6 +4,10 @@ import com.lemon.lemonagent.dal.entity.KbDocumentEntity;
 import com.lemon.lemonagent.dal.entity.KbImageEntity;
 import com.lemon.lemonagent.dal.entity.KbMissEntity;
 import com.lemon.lemonagent.dal.repository.KnowledgeRepository;
+import com.lemon.lemonagent.dal.repository.ModelConnectionRepository;
+import com.lemon.lemonagent.dal.entity.ModelConnectionEntity;
+import com.lemon.lemonagent.model.runtime.ModelPort;
+import com.lemon.lemonagent.util.crypto.CryptoUtil;
 import com.lemon.lemonagent.model.runtime.KbDocumentData;
 import com.lemon.lemonagent.model.runtime.KbDocsData;
 import com.lemon.lemonagent.model.runtime.KbMissesData;
@@ -50,9 +54,31 @@ public class KnowledgeService {
 
     private final RetrievalPort retrievalPort;
 
-    public KnowledgeService(KnowledgeRepository repository, RetrievalPort retrievalPort) {
+    /** 模型端口（v4.6.0 AI 补文档草稿用；可空 = integration 未装配时报错） */
+    private final ModelPort modelPort;
+
+    private final ModelConnectionRepository modelConnectionRepository;
+
+    public KnowledgeService(KnowledgeRepository repository, RetrievalPort retrievalPort,
+                            ModelPort modelPort, ModelConnectionRepository modelConnectionRepository) {
         this.repository = repository;
         this.retrievalPort = retrievalPort;
+        this.modelPort = modelPort;
+        this.modelConnectionRepository = modelConnectionRepository;
+    }
+
+    /** 连接的首选模型名（与 PromptOptimizeService 同款口径）。 */
+    private String firstModel(ModelConnectionEntity conn) {
+        try {
+            List<?> models = new tools.jackson.databind.ObjectMapper()
+                    .readValue(conn.getModelsJson(), List.class);
+            if (models != null && !models.isEmpty()) {
+                return String.valueOf(models.get(0));
+            }
+        } catch (Exception ignored) {
+            // modelsJson 为空/非法时回退 provider
+        }
+        return conn.getProvider();
     }
 
     /**
@@ -290,6 +316,82 @@ public class KnowledgeService {
                     e.getLastSeenAt() == null ? null : e.getLastSeenAt().atOffset(ZoneOffset.UTC).format(ISO)));
         }
         return new KbMissesData(items, repository.countMisses(userId));
+    }
+
+    /**
+     * AI 补文档草稿（v4.6.0 标注闭环延伸）：kb_miss/差评标注的查询 → LLM 生成候选答案草稿，
+     * 人工确认/编辑后经 create 入库——「AI 自我改进」闭环的最后一块。
+     * 模型取用户最新启用连接（与 PromptOptimizeService 同款口径），同步等待 60s。
+     *
+     * @param userId 入参：用户
+     * @param query  入参：未命中查询 / 标注问题
+     * @return 出参：草稿（Markdown 文本）
+     */
+    public String aiDraft(Long userId, String query) {
+        if (query == null || query.isBlank()) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "查询不能为空");
+        }
+        if (modelPort == null) {
+            throw new BusinessException(ResultCodes.SYSTEM_ERROR, "模型端口未就绪");
+        }
+        ModelConnectionEntity conn = modelConnectionRepository.findByUser(userId).stream()
+                .filter(c -> c.getStatus() != null && c.getStatus() == 1)
+                .reduce((first, second) -> second)
+                .orElse(null);
+        if (conn == null) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "没有可用的模型连接，请先在模型连接页启用一个");
+        }
+        String apiKey = CryptoUtil.decrypt(conn.getApiKeyCipher());
+        String system = "你是知识库运营助手。用户会给你一条「检索未命中的问题」，请给出这个问题应有的标准答案草稿，"
+                + "用于补充进知识库。要求：准确、自包含（不引用上下文）、Markdown 格式、200-500 字；"
+                + "如果问题涉及具体系统/服务的内部细节缺乏依据，明确标注「待人工补充」的占位段落。只输出答案正文。";
+        ModelPort.ModelRequest request = new ModelPort.ModelRequest(
+                conn.getBaseUrl(), apiKey, firstModel(conn),
+                system, List.of(), query.trim(), List.of());
+        StringBuilder output = new StringBuilder();
+        java.util.concurrent.atomic.AtomicReference<Throwable> error = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        modelPort.stream(request, new ModelPort.Listener() {
+            @Override
+            public void onChunk(String delta) {
+                if (output.length() < 4000) {
+                    output.append(delta);
+                }
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                error.set(t);
+                done.countDown();
+            }
+
+            @Override
+            public void onComplete() {
+                done.countDown();
+            }
+        });
+        try {
+            if (!done.await(60, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw new BusinessException(ResultCodes.SYSTEM_ERROR, "AI 生成草稿超时，请稍后重试");
+            }
+        } catch (java.lang.InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ResultCodes.SYSTEM_ERROR, "AI 生成草稿被中断");
+        }
+        if (error.get() != null) {
+            throw new BusinessException(ResultCodes.SYSTEM_ERROR, "AI 生成草稿失败：" + error.get().getMessage());
+        }
+        String draft = output.toString().trim();
+        // 剥思考块（与 PromptOptimizeService 同款）
+        int thinkStart = draft.indexOf("<think>");
+        if (thinkStart >= 0) {
+            int thinkEnd = draft.indexOf("</think>");
+            draft = (thinkEnd >= 0 ? draft.substring(thinkEnd + "</think>".length()) : "").trim();
+        }
+        if (draft.isEmpty()) {
+            throw new BusinessException(ResultCodes.SYSTEM_ERROR, "模型没有返回草稿，请换一个模型连接重试");
+        }
+        return draft;
     }
 
     /** 分词检索：文档表是用户私有小集合（列表页 LIMIT 200），直接内存打分。 */

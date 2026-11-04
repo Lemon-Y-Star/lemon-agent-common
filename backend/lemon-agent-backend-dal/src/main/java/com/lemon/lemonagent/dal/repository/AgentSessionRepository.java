@@ -31,6 +31,12 @@ public interface AgentSessionRepository {
      */
     AgentSessionEntity findByIdAndUser(Long id, Long userId);
 
+    /** 会话搜索（v4.6.0）：标题或消息内容 LIKE 匹配，按 lastActiveAt 倒序，DISTINCT 去重。 */
+    List<AgentSessionEntity> search(Long userId, String keyword, int offset, int limit);
+
+    /** 会话搜索总数（v4.6.0）。 */
+    long countSearch(Long userId, String keyword);
+
     /**
      * 用户的会话列表（按 lastActiveAt 倒序，带消息条数）。
      *

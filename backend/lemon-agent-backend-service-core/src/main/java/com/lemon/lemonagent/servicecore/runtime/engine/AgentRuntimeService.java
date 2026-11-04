@@ -137,10 +137,15 @@ public class AgentRuntimeService {
     /**
      * 会话列表（契约 4.3，lastActiveAt 倒序 + 消息条数）。
      */
-    public SessionListData listSessions(Long userId, int page, int size) {
+    public SessionListData listSessions(Long userId, int page, int size, String query) {
+        boolean searching = query != null && !query.isBlank();
         SessionListData data = new SessionListData();
-        data.setTotal(sessionRepository.countByUser(userId));
-        data.setItems(sessionRepository.findByUser(userId, (page - 1) * size, size).stream()
+        data.setTotal(searching
+                ? sessionRepository.countSearch(userId, query.trim())
+                : sessionRepository.countByUser(userId));
+        data.setItems((searching
+                ? sessionRepository.search(userId, query.trim(), (page - 1) * size, size)
+                : sessionRepository.findByUser(userId, (page - 1) * size, size)).stream()
                 .map(s -> {
                     SessionListItem item = new SessionListItem();
                     item.setSessionId(s.getId());

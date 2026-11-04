@@ -75,6 +75,29 @@ public class AgentSessionJdbcRepository implements AgentSessionRepository {
     }
 
     @Override
+    public List<AgentSessionEntity> search(Long userId, String keyword, int offset, int limit) {
+        // 标题或消息内容命中（LEFT JOIN agent_message 后 DISTINCT 去重）；个人会话量级，LIKE 够用
+        String like = "%" + keyword + "%";
+        return jdbcTemplate.query(
+                "SELECT DISTINCT " + COLUMNS + " FROM agent_session s LEFT JOIN agent_message m "
+                        + "ON m.session_id = s.id "
+                        + "WHERE s.user_id = ? AND (s.title LIKE ? OR m.content LIKE ?) "
+                        + "ORDER BY s.last_active_at DESC LIMIT ? OFFSET ?",
+                mapper, userId, like, like, limit, offset);
+    }
+
+    @Override
+    public long countSearch(Long userId, String keyword) {
+        String like = "%" + keyword + "%";
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(DISTINCT s.id) FROM agent_session s LEFT JOIN agent_message m "
+                        + "ON m.session_id = s.id "
+                        + "WHERE s.user_id = ? AND (s.title LIKE ? OR m.content LIKE ?)",
+                Long.class, userId, like, like);
+        return n == null ? 0 : n;
+    }
+
+    @Override
     public List<AgentSessionEntity> findByUser(Long userId, int offset, int limit) {
         // v4.5.7：子运行会话（工具子运行 · 前缀）对用户侧栏隐藏——产出经工具结果回传主运行
         return jdbcTemplate.query(

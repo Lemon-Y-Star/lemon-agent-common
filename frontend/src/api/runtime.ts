@@ -53,9 +53,10 @@ export interface RunData {
   startedAt: string | null
 }
 
-export async function fetchSessions(page = 1, size = 50): Promise<SessionList> {
+export async function fetchSessions(page = 1, size = 50, q = ''): Promise<SessionList> {
   const { request } = await import('./client')
-  return request<SessionList>(`/agent/sessions?page=${page}&size=${size}`)
+  const suffix = q ? `&q=${encodeURIComponent(q)}` : ''
+  return request<SessionList>(`/agent/sessions?page=${page}&size=${size}${suffix}`)
 }
 
 export async function createSession(title?: string): Promise<{ sessionId: number }> {

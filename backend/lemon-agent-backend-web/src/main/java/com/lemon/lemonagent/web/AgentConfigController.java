@@ -1,6 +1,7 @@
 package com.lemon.lemonagent.web;
 
 import com.lemon.lemonagent.model.runtime.AgentConfigData;
+import com.lemon.lemonagent.model.runtime.AgentExportData;
 import com.lemon.lemonagent.model.runtime.AgentConfigsData;
 import com.lemon.lemonagent.model.runtime.AgentLogsData;
 import com.lemon.lemonagent.model.runtime.AgentMetricsData;
@@ -82,6 +83,48 @@ public class AgentConfigController {
             AssertUtils.notBlank(req.getName(), "名称不能为空");
             AssertUtils.notBlank(req.getInstruction(), "系统提示词不能为空");
         });
+    }
+
+    /**
+     * 克隆 Agent（v4.6.0）：全字段复制，绑定原样保留（同用户合法）。
+     *
+     * @param agentId 源 Agent
+     * @param body    入参：{"name": "新名称（可空 = 原名副本）"}
+     * @param userId  归属用户
+     * @return 新 Agent
+     */
+    @PostMapping("/{agentId}/clone")
+    public BaseResult<AgentConfigData> clone(@PathVariable Long agentId,
+                                             @RequestBody(required = false) Map<String, String> body,
+                                             @RequestAttribute("lemon.userId") Long userId) {
+        String newName = body == null ? null : body.get("name");
+        return BaseResult.success(agentConfigService.cloneAgent(userId, agentId, newName));
+    }
+
+    /**
+     * 导出 Agent 配置（v4.6.0）：返回 JSON 数据（前端落盘下载）。
+     *
+     * @param agentId Agent
+     * @param userId  归属用户
+     * @return 导出数据
+     */
+    @GetMapping("/{agentId}/export")
+    public BaseResult<AgentExportData> export(@PathVariable Long agentId,
+                                              @RequestAttribute("lemon.userId") Long userId) {
+        return BaseResult.success(agentConfigService.exportAgent(userId, agentId));
+    }
+
+    /**
+     * 导入 Agent 配置（v4.6.0）：绑定类 ID（模型连接/工作流/知识库）不迁移，导入后手动重绑。
+     *
+     * @param data   导出数据
+     * @param userId 归属用户
+     * @return 新 Agent
+     */
+    @PostMapping("/import")
+    public BaseResult<AgentConfigData> importAgent(@RequestBody AgentExportData data,
+                                                   @RequestAttribute("lemon.userId") Long userId) {
+        return BaseResult.success(agentConfigService.importAgent(userId, data));
     }
 
     /**

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
 import {
-  createKbDoc, deleteKbDoc, fetchKbDocDetail, fetchKbDocs, fetchKbMisses, searchKb,
+  aiDraftKb, createKbDoc, deleteKbDoc, fetchKbDocDetail, fetchKbDocs, fetchKbMisses, searchKb,
   type KbDoc, type KbHit, type KbMissItem, type KbSearchResult,
 } from '../api/knowledge'
 import Modal from '../components/Modal'
@@ -29,6 +29,9 @@ export default function Knowledge() {
   const [error, setError] = useState('')
   /** 文档详情弹窗（v4.5.6）：null=关闭；loading=拉取中；doc 拉到后渲染全文 */
   const [detail, setDetail] = useState<{ doc: KbDoc | null; loading: boolean } | null>(null)
+  /** AI 补文档草稿弹窗（v4.6.0）：query = 待补问题；draft = 生成中/已生成的草稿 */
+  const [aiDraft, setAiDraft] = useState<{ query: string; draft: string; generating: boolean } | null>(null)
+  const streamingDraft = aiDraft?.generating === true
   const docPages = Math.max(1, Math.ceil(docTotal / DOC_SIZE))
   const missPages = Math.max(1, Math.ceil(missTotal / MISS_SIZE))
 
@@ -104,6 +107,18 @@ export default function Knowledge() {
       setResult(await searchKb(query.trim(), 5))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '检索失败')
+    }
+  }
+
+  /** AI 补文档（v4.6.0）：LLM 生成草稿 → 人工编辑 → 入库。 */
+  async function onAiDraft(query: string) {
+    setAiDraft({ query, draft: '', generating: true })
+    try {
+      const r = await aiDraftKb(query)
+      setAiDraft({ query, draft: r.draft, generating: false })
+    } catch (err) {
+      setAiDraft(null)
+      toast(err instanceof ApiError ? err.message : 'AI 生成草稿失败')
     }
   }
 
@@ -211,13 +226,54 @@ export default function Knowledge() {
             <div key={i} className="kb-doc" style={{ padding: '6px 0' }}>
               <div className="kb-doc-head">
                 <span>{m.query}</span>
-                <span className="tag warn">未命中 {m.hits} 次</span>
+                <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span className="tag warn">未命中 {m.hits} 次</span>
+                  <button className="btn sm" disabled={streamingDraft} onClick={() => void onAiDraft(m.query)}>
+                    AI 补文档
+                  </button>
+                </span>
               </div>
             </div>
           ))}
         </div>
         <Pager page={missPage} pages={missPages} total={missTotal} onJump={setMissPage} />
       </div>
+      {/* AI 补文档草稿（v4.6.0）：生成 → 编辑 → 入库 */}
+      {aiDraft && (
+        <Modal title={`AI 补文档 · ${aiDraft.query}`} onClose={() => setAiDraft(null)}>
+          {aiDraft.generating ? (
+            <div className="note gray">AI 正在生成候选答案草稿（约 10-30 秒）…</div>
+          ) : (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                try {
+                  await createKbDoc(`【AI 补】${aiDraft.query.slice(0, 40)}`, aiDraft.draft)
+                  toast('已入库，可用同一问题检索验证')
+                  setAiDraft(null)
+                  await loadDocs(docPage)
+                } catch (err) {
+                  toast(err instanceof ApiError ? err.message : '入库失败')
+                }
+              }}
+            >
+              <div className="field">
+                <label>候选答案草稿（可编辑后入库）</label>
+                <textarea
+                  rows={14}
+                  value={aiDraft.draft}
+                  onChange={(e) => setAiDraft({ ...aiDraft, draft: e.target.value })}
+                  style={{ fontFamily: 'monospace', fontSize: 12.5 }}
+                />
+              </div>
+              <div className="modal-btns">
+                <button type="button" className="btn" onClick={() => setAiDraft(null)}>取消</button>
+                <button type="submit" className="btn primary">入库（【AI 补】前缀）</button>
+              </div>
+            </form>
+          )}
+        </Modal>
+      )}
       <ToastHost />
 
       {/* 文档详情（v4.5.6）：标题/时间 + 全文 Markdown（多模态图链随文渲染） */}

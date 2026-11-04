@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 我的知识库（v3.6）：文档 CRUD + 检索测试。
@@ -136,6 +137,21 @@ public class KnowledgeController {
                                            @RequestParam(value = "page", defaultValue = "1") int page,
                                            @RequestParam(value = "size", defaultValue = "10") int size) {
         return BaseResult.success(knowledgeService.misses(userId, page, size));
+    }
+
+    /**
+     * AI 补文档草稿（v4.6.0 标注闭环延伸）：kb_miss/标注查询 → LLM 生成候选答案草稿，
+     * 前端展示可编辑，确认后走 POST /workspace/knowledge 入库。
+     *
+     * @param body   入参：{"query": "未命中查询/标注问题"}
+     * @param userId 归属用户
+     * @return 出参：{"draft": "Markdown 草稿"}
+     */
+    @PostMapping("/ai-draft")
+    public BaseResult<Map<String, String>> aiDraft(@RequestBody Map<String, String> body,
+                                                   @RequestAttribute("lemon.userId") Long userId) {
+        String draft = knowledgeService.aiDraft(userId, body.get("query"));
+        return BaseResult.success(Map.of("draft", draft));
     }
 
 }

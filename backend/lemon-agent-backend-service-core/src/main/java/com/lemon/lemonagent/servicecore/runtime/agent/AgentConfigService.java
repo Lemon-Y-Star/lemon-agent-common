@@ -8,6 +8,7 @@ import com.lemon.lemonagent.dal.repository.AgentConfigRepository;
 import com.lemon.lemonagent.dal.repository.ModelConnectionRepository;
 import com.lemon.lemonagent.dal.repository.WorkflowRepository;
 import com.lemon.lemonagent.model.runtime.AgentConfigData;
+import com.lemon.lemonagent.model.runtime.AgentExportData;
 import com.lemon.lemonagent.model.runtime.AgentConfigsData;
 import com.lemon.architecture.model.BusinessException;
 import com.lemon.architecture.model.ResultCodes;
@@ -535,6 +536,75 @@ public class AgentConfigService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * 克隆 Agent（v4.6.0）：全字段复制（同用户，绑定类 ID 全部合法），名称默认「原名副本」。
+     *
+     * @param userId  入参：当前用户（须为源 Agent 归属者）
+     * @param agentId 入参：源 Agent
+     * @param newName 入参：新名称（可空 = 原名 + "副本"）
+     * @return 出参：新 Agent
+     */
+    public AgentConfigData cloneAgent(Long userId, Long agentId, String newName) {
+        AgentConfigEntity src = repository.findById(agentId);
+        if (src == null || src.getUserId() == null || !src.getUserId().equals(userId)) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "Agent 不存在");
+        }
+        String name = newName == null || newName.isBlank()
+                ? src.getName() + " 副本" : newName.trim();
+        return create(userId, name, src.getDescription(), src.getInstruction(),
+                AgentToolCodec.decode(src.getToolsJson()), src.getStrategy(), src.getHistoryTurns(),
+                src.getOpeningStatement(), decodeSuggestions(src.getSuggestedQuestions()),
+                decodeKbDocIds(src.getKnowledgeDocIds()),
+                src.getModelConnectionId(), src.getWorkflowId(), src.getWorkflowVersion());
+    }
+
+    /**
+     * 导出 Agent 配置（v4.6.0）：全字段 + 留档绑定 ID；instruction/tools 明文（本人导出）。
+     *
+     * @param userId  入参：当前用户（须为 Agent 归属者）
+     * @param agentId 入参：Agent
+     * @return 出参：导出数据
+     */
+    public AgentExportData exportAgent(Long userId, Long agentId) {
+        AgentConfigEntity src = repository.findById(agentId);
+        if (src == null || src.getUserId() == null || !src.getUserId().equals(userId)) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "Agent 不存在");
+        }
+        AgentExportData data = new AgentExportData();
+        data.setExportedAt(java.time.Instant.now().toString());
+        data.setName(src.getName());
+        data.setDescription(src.getDescription());
+        data.setInstruction(src.getInstruction());
+        data.setTools(AgentToolCodec.decode(src.getToolsJson()));
+        data.setStrategy(src.getStrategy());
+        data.setHistoryTurns(src.getHistoryTurns());
+        data.setOpeningStatement(src.getOpeningStatement());
+        data.setSuggestedQuestions(decodeSuggestions(src.getSuggestedQuestions()));
+        data.setKnowledgeDocIds(decodeKbDocIds(src.getKnowledgeDocIds()));
+        data.setModelConnectionId(src.getModelConnectionId());
+        data.setWorkflowId(src.getWorkflowId());
+        data.setWorkflowVersion(src.getWorkflowVersion());
+        return data;
+    }
+
+    /**
+     * 导入 Agent 配置（v4.6.0）：只取文本性字段，绑定类 ID（模型连接/工作流/知识库）一律置空——
+     * 跨环境的 ID 不可用，导入后由使用者在编辑页手动重绑。
+     *
+     * @param userId 入参：当前用户
+     * @param data   入参：导出数据
+     * @return 出参：新 Agent
+     */
+    public AgentConfigData importAgent(Long userId, AgentExportData data) {
+        if (data == null || data.getName() == null || data.getName().isBlank()) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "导入数据缺少名称");
+        }
+        return create(userId, data.getName().trim(), data.getDescription(), data.getInstruction(),
+                data.getTools(), data.getStrategy(), data.getHistoryTurns(),
+                data.getOpeningStatement(), data.getSuggestedQuestions(),
+                null, null, null, null);
     }
 
     /**
