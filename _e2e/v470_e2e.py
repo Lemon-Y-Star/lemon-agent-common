@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """v4.7.0 E2E：Agent 克隆/导出/导入 round-trip + 会话搜索 + AI 补文档。"""
 import json
+import os
 import time
 import urllib.request
 import urllib.error
 
-BASE = 'http://localhost:18090/api/v1'
+BASE = os.environ.get('LEMON_BASE', 'http://localhost:18090/api/v1')
 PASS = []
 FAIL = []
 
@@ -17,6 +18,8 @@ def req(path, data=None, token=None, method=None, timeout=120, raw=False):
     body = json.dumps(data).encode() if data is not None else None
     r = urllib.request.Request(BASE + path, data=body, method=method or ('POST' if body else 'GET'))
     r.add_header('Content-Type', 'application/json')
+    # 线上过 Cloudflare：默认 Python-urllib UA 会 403/1010
+    r.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0')
     if token:
         r.add_header('Authorization', 'Bearer ' + token)
     try:
@@ -95,13 +98,16 @@ st, miss = req('/agent/sessions?page=1&size=20&q=' + urllib.request.quote('绝�
 total_miss = (miss.get('data') or {}).get('total')
 ok('5) 无关键词返回空', st == 200 and (total_miss or 0) == 0, 'total_miss=%s' % total_miss)
 
-# ============ 6) AI 补文档草稿 ============
-st, draft = req('/workspace/knowledge/ai-draft', {'query': '2PC 阻塞问题的成因与解法'}, token=tk, timeout=180)
-draft_text = ((draft.get('data') or {}).get('draft') or '')
-ok('6) AI 补文档草稿生成', st == 200 and draft.get('code') == CODE_OK and len(draft_text) > 50,
-   'http=%s code=%s len=%s' % (st, draft.get('code'), len(draft_text)))
-if draft_text:
-    print('   草稿前 160 字:', draft_text[:160].replace('\n', ' '))
+# ============ 6) AI 补文档草稿（线上设 LEMON_SKIP_DRAFT=1 跳过，省 LLM 调用） ============
+if os.environ.get('LEMON_SKIP_DRAFT') == '1':
+    print('6) AI 补文档草稿：线上跳过（LEMON_SKIP_DRAFT=1）')
+else:
+    st, draft = req('/workspace/knowledge/ai-draft', {'query': '2PC 阻塞问题的成因与解法'}, token=tk, timeout=180)
+    draft_text = ((draft.get('data') or {}).get('draft') or '')
+    ok('6) AI 补文档草稿生成', st == 200 and draft.get('code') == CODE_OK and len(draft_text) > 50,
+       'http=%s code=%s len=%s' % (st, draft.get('code'), len(draft_text)))
+    if draft_text:
+        print('   草稿前 160 字:', draft_text[:160].replace('\n', ' '))
 
 # ============ 汇总 ============
 print('\n===== v4.7.0 E2E 汇总: PASS=%d FAIL=%d =====' % (len(PASS), len(FAIL)))
