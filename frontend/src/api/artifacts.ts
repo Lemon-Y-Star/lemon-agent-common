@@ -24,6 +24,7 @@ export async function submitFeedback(
   runId: number,
   rating: 'UP' | 'DOWN',
   comment: string,
-): Promise<unknown> {
-  return post(`/workspace/artifacts/${runId}/feedback`, { rating, comment })
+  expectedAnswer?: string,
+): Promise<{ rating: string; comment: string | null; updatedAt: string | null; createdDocId?: number | null } | unknown> {
+  return post(`/workspace/artifacts/${runId}/feedback`, { rating, comment, expectedAnswer })
 }

@@ -25,5 +25,7 @@ public class AgentSessionEntity {
 
     /** 更新时间 */
     private Instant updatedAt;
+    /** 分享会话标记（v4.6.0：关联 agent_share；NULL = 普通会话） */
+    private Long shareId;
 
 }

@@ -33,6 +33,9 @@ public interface AgentRunRepository {
      */
     AgentRunEntity findByIdAndUser(Long id, Long userId);
 
+    /** 按主键查运行（v4.6.0 分享 SSE 用，不做归属校验——归属由调用方另行校验）。 */
+    AgentRunEntity findById(Long id);
+
     /**
      * 会话下是否存在活跃 run（RUNNING/BLOCKED）——会话互斥检查。
      *

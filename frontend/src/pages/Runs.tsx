@@ -44,6 +44,10 @@ export default function Runs() {
     lastSeq: number
     startedAt: string | null
     endedAt: string | null
+    /** 运行角色（v4.5.10）：main = 主运行；child = 工作流子运行 */
+    runKind?: string
+    /** 父运行 ID（仅 child） */
+    parentRunId?: number | null
   }
   const [items, setItems] = useState<RunListItem[]>([])
   const [total, setTotal] = useState(0)
@@ -56,6 +60,8 @@ export default function Runs() {
   const [agents, setAgents] = useState<AgentConfig[]>([])
   const [agentId, setAgentId] = useState('')
   const [thinkOpen, setThinkOpen] = useState(false)
+  // v4.5.10 主/子运行标记：子运行（run_wf_* 发起）可隐藏，避免协同场景下列表被淹没
+  const [hideChildren, setHideChildren] = useState(false)
 
   const reload = useCallback(async (filterStatus: string, filterSession: string, filterTrace: string, filterAgent: string, filterPage: number, filterSize: number) => {
     try {
@@ -158,6 +164,14 @@ export default function Runs() {
             />
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--muted)', paddingBottom: 7, whiteSpace: 'nowrap' }}>
+              <input
+                type="checkbox"
+                checked={hideChildren}
+                onChange={(e) => setHideChildren(e.target.checked)}
+              />
+              隐藏子运行
+            </label>
             <button className="btn sm" onClick={() => void reload(status, sessionId, traceId, agentId, page, pageSize)}>查询</button>
             <button className="btn sm" onClick={() => { setTraceId(''); void reload(status, sessionId, '', '', 1, pageSize) }}>清除</button>
           </div>
@@ -181,7 +195,7 @@ export default function Runs() {
               </tr>
             </thead>
             <tbody>
-              {items.map((r) => {
+              {items.filter((r) => !hideChildren || r.runKind !== 'child').map((r) => {
                 const tag = statusTag(r.status)
                 return (
                   <tr
@@ -189,7 +203,14 @@ export default function Runs() {
                     style={{ cursor: 'pointer' }}
                     onClick={() => void openDetail(r.runId)}
                   >
-                    <td>#{r.runId}</td>
+                    <td>
+                      #{r.runId}
+                      {r.runKind === 'child' && (
+                        <span className="tag gray" style={{ marginLeft: 6 }} title={r.parentRunId ? `由主运行 #${r.parentRunId} 通过 run_wf_* 发起` : '由主运行通过 run_wf_* 发起'}>
+                          子运行{r.parentRunId ? ` · 父 #${r.parentRunId}` : ''}
+                        </span>
+                      )}
+                    </td>
                     <td><span className={`tag ${tag.cls}`}>{tag.text}</span></td>
                     <td>{r.strategy}</td>
                     <td>{r.agentName ?? '平台默认'}{r.agentId ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> #{r.agentId}</span> : null}</td>

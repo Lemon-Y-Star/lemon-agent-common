@@ -7,6 +7,7 @@ import com.lemon.lemonagent.dal.repository.RunFeedbackRepository;
 import com.lemon.lemonagent.model.runtime.ArtifactData;
 import com.lemon.lemonagent.model.runtime.ArtifactsData;
 import com.lemon.lemonagent.model.runtime.FeedbackData;
+import com.lemon.lemonagent.servicecore.runtime.knowledge.KnowledgeService;
 import com.lemon.architecture.model.BusinessException;
 import com.lemon.architecture.model.ResultCodes;
 import org.springframework.stereotype.Service;
@@ -31,9 +32,14 @@ public class ArtifactService {
 
     private final RunFeedbackRepository feedbackRepository;
 
-    public ArtifactService(AgentRunRepository runRepository, RunFeedbackRepository feedbackRepository) {
+    /** 知识库服务（v4.5.10 标注回复闭环：差评 + 标准答案 → 自动沉淀知识库文档）。 */
+    private final KnowledgeService knowledgeService;
+
+    public ArtifactService(AgentRunRepository runRepository, RunFeedbackRepository feedbackRepository,
+                           KnowledgeService knowledgeService) {
         this.runRepository = runRepository;
         this.feedbackRepository = feedbackRepository;
+        this.knowledgeService = knowledgeService;
     }
 
     /**
@@ -80,7 +86,7 @@ public class ArtifactService {
      * @param comment 入参：评论（可空）
      * @return 出参：落库后的反馈
      */
-    public FeedbackData submit(Long userId, Long runId, String rating, String comment) {
+    public FeedbackData submit(Long userId, Long runId, String rating, String comment, String expectedAnswer) {
         String value = rating == null ? "" : rating.trim().toUpperCase();
         if (!"UP".equals(value) && !"DOWN".equals(value)) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "rating 只能是 UP 或 DOWN");
@@ -94,6 +100,8 @@ public class ArtifactService {
         entity.setUserId(userId);
         entity.setRating(value);
         entity.setComment(comment == null ? null : comment.trim());
+        entity.setExpectedAnswer(expectedAnswer == null || expectedAnswer.isBlank()
+                ? null : expectedAnswer.trim());
         feedbackRepository.upsert(entity);
 
         RunFeedbackEntity saved = feedbackRepository.findByRunAndUser(runId, userId);
@@ -102,6 +110,17 @@ public class ArtifactService {
         data.setComment(saved == null ? entity.getComment() : saved.getComment());
         data.setUpdatedAt(saved == null ? null
                 : saved.getUpdatedAt().atOffset(ZoneOffset.UTC).format(ISO));
+        // v4.5.10 标注回复闭环：差评 + 标准答案 → 自动沉淀知识库文档（【标注】前缀，
+        // 与未命中队列/评测回归串成运营闭环；文档归运行主人所有，Agent 下次检索即可命中）
+        if ("DOWN".equals(value) && entity.getExpectedAnswer() != null) {
+            String question = run.getInput() == null ? "" : run.getInput().trim();
+            String title = "【标注】" + (question.length() > 30 ? question.substring(0, 30) + "…" : question);
+            String content = entity.getExpectedAnswer()
+                    + "\n\n---\n原问题：\n" + question;
+            com.lemon.lemonagent.model.runtime.KbDocumentData doc =
+                    knowledgeService.create(userId, title, content);
+            data.setCreatedDocId(doc.getId());
+        }
         return data;
     }
 

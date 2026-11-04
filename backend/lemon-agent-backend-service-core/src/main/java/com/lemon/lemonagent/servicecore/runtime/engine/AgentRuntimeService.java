@@ -557,6 +557,31 @@ public class AgentRuntimeService {
     }
 
     /**
+     * 分享页 SSE 订阅（v4.6.0）：归属校验改为「run 的会话必须关联该分享配置」——
+     * 匿名访问者没有 userId，凭 shareCode 链路即可安全订阅自己的运行事件流。
+     *
+     * @param runId       入参：运行 ID
+     * @param afterQuery  入参：afterEventId 游标（可空）
+     * @param lastEventId 入参：Last-Event-ID 头（可空）
+     * @param shareId     入参：分享配置 ID（ShareService 已校验 enabled/口令）
+     * @return 出参：SSE emitter
+     */
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter subscribeShared(
+            Long runId, Long afterQuery, String lastEventId, Long shareId) {
+        AgentRunEntity run = runRepository.findById(runId);
+        if (run == null) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "运行不存在");
+        }
+        AgentSessionEntity session = sessionRepository.findByIdAndUser(run.getSessionId(), run.getUserId());
+        if (session == null || session.getShareId() == null || !session.getShareId().equals(shareId)) {
+            throw new BusinessException(ResultCodes.NOT_FOUND, "运行不存在");
+        }
+        RunStatus status = RunStatus.valueOf(run.getStatus());
+        long cursor = Math.max(afterQuery == null ? 0 : afterQuery, parseLastEventId(lastEventId));
+        return eventPublisher.subscribe(runId, cursor, status.terminal(), e -> { });
+    }
+
+    /**
      * 取消运行（契约 4.9）：仅 RUNNING/BLOCKED 可取消；已是 CANCELLED 幂等返回；其他终态 409。
      */
     public RunStatusData cancel(Long userId, Long runId) {
@@ -849,6 +874,21 @@ public class AgentRuntimeService {
                     item.setErrorCode(r.getErrorCode());
                     item.setTraceId(r.getTraceId());
                     item.setLastSeq(r.getLastSeq());
+                    // v4.5.10 运行角色：子运行从幂等键 wftool_<parentRunId>_wf<wid>_<hash> 解析父子关系
+                    String crid = r.getClientRequestId();
+                    if (crid != null && crid.startsWith("wftool_")) {
+                        item.setRunKind("child");
+                        String[] parts = crid.split("_");
+                        if (parts.length >= 2) {
+                            try {
+                                item.setParentRunId(Long.parseLong(parts[1]));
+                            } catch (NumberFormatException ignore) {
+                                // 幂等键格式异常时不填父 ID，仅标记 child
+                            }
+                        }
+                    } else {
+                        item.setRunKind("main");
+                    }
                     item.setStartedAt(format(r.getStartedAt()));
                     item.setEndedAt(format(r.getEndedAt()));
                     item.setModelName(r.getModelName());

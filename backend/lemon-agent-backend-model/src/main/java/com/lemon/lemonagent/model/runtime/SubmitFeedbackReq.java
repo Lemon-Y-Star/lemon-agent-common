@@ -22,6 +22,8 @@ public class SubmitFeedbackReq extends BaseReq {
 
     /** 文字反馈（可空） */
     private String comment;
+    /** 标准答案（v4.5.10 可空；差评时填写 → 自动沉淀知识库文档） */
+    private String expectedAnswer;
 
     /** 填充路由三元组。 */
     public void fillRoute(String source) {

@@ -17,6 +17,7 @@ import {
 } from '../api/runtime'
 import { fetchAgents, type AgentConfig } from '../api/agents'
 import { fetchGraph, type GraphFormField } from '../api/graph'
+import { submitFeedback } from '../api/artifacts'
 import { ApiError } from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
@@ -135,6 +136,10 @@ export default function Chat() {
   const [startForm, setStartForm] = useState<GraphFormField[]>([])
   /** 表单收集弹窗：待发送的输入文本 + 思考开关 + 已填的表单值 */
   const [formAsk, setFormAsk] = useState<{ text: string; thinking: boolean; values: Record<string, string> } | null>(null)
+  /** 差评标注弹窗（v4.5.10 标注回复闭环）：可选填标准答案，自动沉淀知识库 */
+  const [fbAsk, setFbAsk] = useState<{ runId: number; comment: string; expectedAnswer: string } | null>(null)
+  /** 已提交过反馈的 runId 集合（防重复，本会话内） */
+  const fbDoneRef = useRef<Set<number>>(new Set())
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
@@ -950,6 +955,36 @@ export default function Chat() {
                 {b.runId != null && (
                   <button className="btn xs" onClick={() => setDetailRunId(b.runId!)}>🔍 详情</button>
                 )}
+                {/* v4.5.10 标注回复闭环：点赞/差评，差评可附标准答案自动沉淀知识库 */}
+                {b.runId != null && !streaming && (
+                  <>
+                    <button
+                      className="btn xs"
+                      title="有帮助"
+                      disabled={fbDoneRef.current.has(b.runId!)}
+                      onClick={async () => {
+                        if (b.runId == null || fbDoneRef.current.has(b.runId!)) return
+                        try {
+                          await submitFeedback(b.runId, 'UP', '')
+                          fbDoneRef.current.add(b.runId!)
+                          toast('已收到反馈，谢谢！')
+                        } catch (err) {
+                          toast(err instanceof ApiError ? err.message : '反馈提交失败')
+                        }
+                      }}
+                    >
+                      👍
+                    </button>
+                    <button
+                      className="btn xs"
+                      title="没帮助——可附标准答案自动沉淀进知识库"
+                      disabled={fbDoneRef.current.has(b.runId!)}
+                      onClick={() => setFbAsk({ runId: b.runId!, comment: '', expectedAnswer: '' })}
+                    >
+                      👎
+                    </button>
+                  </>
+                )}
               </div>
             )}
             {/* 耗时 + traceId 溯源（v4.1.3）：traceId 带一键复制，排查问题贴给后端即可对上全链路日志 */}
@@ -1169,8 +1204,7 @@ export default function Chat() {
 
       {/* START 输入表单（v4.5.4，Dify 开始节点同款）：发送前收集表单值再真正发起运行 */}
       {formAsk && (
-        <Modal title="输入表单" onClose={() => setFormAsk(null)}>
-          <form
+        <Modal title="输入表单" onClose={() => setFormAsk(null)}>          <form
             onSubmit={(e) => {
               e.preventDefault()
               const values = { ...formAsk.values }
@@ -1212,6 +1246,55 @@ export default function Chat() {
             <div className="modal-btns">
               <button type="button" className="btn" onClick={() => setFormAsk(null)}>取消</button>
               <button type="submit" className="btn primary">发送</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* 差评标注（v4.5.10 标注回复闭环）：可附标准答案，自动沉淀知识库 + 供评测回归 */}
+      {fbAsk && (
+        <Modal title="这条回答没帮上忙？" onClose={() => setFbAsk(null)}>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              try {
+                const resp = (await submitFeedback(fbAsk.runId, 'DOWN', fbAsk.comment.trim(), fbAsk.expectedAnswer.trim())) as {
+                  createdDocId?: number | null
+                }
+                fbDoneRef.current.add(fbAsk.runId)
+                toast(resp?.createdDocId
+                  ? `已标注，标准答案已沉淀进知识库（文档 #${resp.createdDocId}，Agent 下次检索即可命中）`
+                  : '已标注')
+                setFbAsk(null)
+              } catch (err) {
+                toast(err instanceof ApiError ? err.message : '标注提交失败')
+              }
+            }}
+          >
+            <div className="field">
+              <label>哪里没帮上忙？（可选）</label>
+              <input
+                value={fbAsk.comment}
+                onChange={(e) => setFbAsk({ ...fbAsk, comment: e.target.value })}
+                placeholder="例如：根因方向不对 / 缺少具体命令"
+                maxLength={200}
+              />
+            </div>
+            <div className="field">
+              <label>
+                标准答案（可选，推荐填写）
+                <span className="hint">填写后自动沉淀进知识库（【标注】前缀文档），Agent 下次检索即可命中；也可在评测页用作回归用例。</span>
+              </label>
+              <textarea
+                rows={6}
+                value={fbAsk.expectedAnswer}
+                onChange={(e) => setFbAsk({ ...fbAsk, expectedAnswer: e.target.value })}
+                placeholder="写下这个问题应有的正确回答…"
+              />
+            </div>
+            <div className="modal-btns">
+              <button type="button" className="btn" onClick={() => setFbAsk(null)}>取消</button>
+              <button type="submit" className="btn primary">提交标注</button>
             </div>
           </form>
         </Modal>

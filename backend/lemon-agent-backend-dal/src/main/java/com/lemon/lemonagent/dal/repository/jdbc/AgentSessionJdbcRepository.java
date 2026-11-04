@@ -20,7 +20,7 @@ import java.util.List;
 @Repository
 public class AgentSessionJdbcRepository implements AgentSessionRepository {
 
-    private static final String COLUMNS = "id, user_id, title, last_active_at, created_at, updated_at";
+    private static final String COLUMNS = "id, user_id, title, last_active_at, created_at, updated_at, share_id";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -34,6 +34,8 @@ public class AgentSessionJdbcRepository implements AgentSessionRepository {
             e.setLastActiveAt(toInstant(rs.getTimestamp("last_active_at")));
             e.setCreatedAt(toInstant(rs.getTimestamp("created_at")));
             e.setUpdatedAt(toInstant(rs.getTimestamp("updated_at")));
+            long shareId = rs.getLong("share_id");
+            e.setShareId(rs.wasNull() ? null : shareId);
             return e;
         }
     };
@@ -87,6 +89,12 @@ public class AgentSessionJdbcRepository implements AgentSessionRepository {
                 "SELECT COUNT(*) FROM agent_session WHERE user_id = ? AND title NOT LIKE ?",
                 Long.class, userId, CHILD_SESSION_PREFIX + '%');
         return n == null ? 0 : n;
+    }
+
+    @Override
+    public int markShare(Long sessionId, Long shareId) {
+        return jdbcTemplate.update(
+                "UPDATE agent_session SET share_id = ? WHERE id = ?", shareId, sessionId);
     }
 
     @Override

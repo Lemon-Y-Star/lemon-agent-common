@@ -22,6 +22,7 @@ import {
 import Switch from '../components/Switch'
 import { useNavigate } from 'react-router-dom'
 import { ToastHost, toast } from '../components/Toast'
+import { getShareConfig, setShareConfig, type ShareConfig } from '../api/share'
 
 /**
  * 我的 Agent（PRD FR-6 最小充分版 + v3.0 三要素）：
@@ -77,6 +78,45 @@ export default function Agents() {
   const [toggling, setToggling] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // v4.6.0 分享卡片：编辑弹窗打开时拉取当前 Agent 的分享配置
+  const [share, setShare] = useState<ShareConfig | null>(null)
+  const [shareEnabled, setShareEnabled] = useState(false)
+  const [shareAccess, setShareAccess] = useState('')
+  const [shareBusy, setShareBusy] = useState(false)
+
+  // 编辑弹窗打开/切换 Agent 时拉取分享配置（v4.6.0）
+  useEffect(() => {
+    if (form?.id) {
+      void getShareConfig(form.id)
+        .then((cfg) => {
+          setShare(cfg)
+          setShareEnabled(cfg.enabled)
+          setShareAccess(cfg.accessCode ?? '')
+        })
+        .catch(() => setShare(null))
+    } else {
+      setShare(null)
+      setShareEnabled(false)
+      setShareAccess('')
+    }
+  }, [form?.id])
+
+  /** 保存分享设置（开关/口令变更）并刷新本地态。 */
+  async function onShareSave(enabled: boolean, access: string) {
+    if (!form?.id) return
+    setShareBusy(true)
+    try {
+      const cfg = await setShareConfig(form.id, enabled, access)
+      setShare(cfg)
+      setShareEnabled(cfg.enabled)
+      setShareAccess(cfg.accessCode ?? '')
+      toast(cfg.enabled ? '分享已开启，链接已生成' : '分享已关闭')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '分享设置失败')
+    } finally {
+      setShareBusy(false)
+    }
+  }
 
   const reload = useCallback(async () => {
     try {
@@ -487,6 +527,48 @@ export default function Agents() {
                   </div>
                 )}
               </div>
+
+              {/* v4.6.0 分享卡片：免登录公开对话页（仅已有 Agent 可分享） */}
+              {form.id !== null && (
+                <div className="field">
+                  <label>
+                    公开分享
+                    <span className="hint">开启后生成免登录对话链接（访客凭链接/口令使用，会话与运行都归你名下可见）</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={shareEnabled}
+                        disabled={shareBusy}
+                        onChange={(e) => void onShareSave(e.target.checked, shareAccess)}
+                      />
+                      开启分享
+                    </label>
+                    <input
+                      value={shareAccess}
+                      placeholder="访问口令（可空）"
+                      maxLength={12}
+                      disabled={shareBusy}
+                      style={{ width: 160 }}
+                      onBlur={() => { if (shareEnabled) void onShareSave(true, shareAccess) }}
+                    />
+                    {shareEnabled && share?.shareCode && (
+                      <button
+                        type="button"
+                        className="btn sm"
+                        disabled={shareBusy}
+                        onClick={() => {
+                          const link = `${window.location.origin}/s/${share.shareCode}`
+                          void navigator.clipboard?.writeText(link).then(() => toast('分享链接已复制'))
+                        }}
+                      >
+                        复制链接（/s/{share.shareCode}）
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="row">
                 <div className="field">

@@ -49,9 +49,10 @@ public class RunFeedbackJdbcRepository implements RunFeedbackRepository {
     @Override
     public int upsert(RunFeedbackEntity e) {
         return jdbcTemplate.update(
-                "INSERT INTO run_feedback (run_id, user_id, rating, comment) VALUES (?,?,?,?) "
-                        + "ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment)",
-                e.getRunId(), e.getUserId(), e.getRating(), e.getComment());
+                "INSERT INTO run_feedback (run_id, user_id, rating, comment, expected_answer) VALUES (?,?,?,?,?) "
+                        + "ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment), "
+                        + "expected_answer = VALUES(expected_answer)",
+                e.getRunId(), e.getUserId(), e.getRating(), e.getComment(), e.getExpectedAnswer());
     }
 
     private static Instant toInstant(Timestamp ts) {

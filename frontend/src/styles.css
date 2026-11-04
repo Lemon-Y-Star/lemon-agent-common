@@ -616,3 +616,16 @@ tr:hover td{background:#fafbfe}
 .kb-detail-body{max-height:52vh;overflow-y:auto;padding-right:8px;border-top:1px solid #eef1f6;padding-top:10px}
 .kb-detail-body::-webkit-scrollbar{width:6px}
 .kb-detail-body::-webkit-scrollbar-thumb{background:#c9cdd6;border-radius:3px}
+
+/* ---------- v4.6.0 公开对话分享页（免登录） ---------- */
+.share-page{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f6fa;padding:20px}
+.share-card{width:100%;max-width:760px;background:#fff;border-radius:12px;padding:22px;box-shadow:0 6px 24px rgba(30,40,70,.08)}
+.share-head{display:flex;align-items:center;gap:10px}
+.share-body{margin-top:14px;max-height:56vh;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:10px}
+.share-body .bubble-row.me{align-self:flex-end}
+.share-body .bubble{max-width:88%;padding:8px 12px;border-radius:10px;background:#f2f4f8;font-size:13.5px;line-height:1.65}
+.share-body .bubble.me{background:var(--primary,#4f46e5);color:#fff}
+.share-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.share-input{display:flex;gap:8px;margin-top:8px}
+.share-input textarea{flex:1;resize:none;border:1px solid #d5d9e2;border-radius:8px;padding:8px 10px;font-size:13.5px;font-family:inherit}
+.share-input textarea:focus{outline:none;border-color:var(--primary,#4f46e5)}

@@ -22,6 +22,8 @@ public class RunFeedbackEntity {
 
     /** 文字反馈 */
     private String comment;
+    /** 标准答案（v4.5.10 差评标注，自动沉淀知识库） */
+    private String expectedAnswer;
 
     /** 创建时间 */
     private Instant createdAt;

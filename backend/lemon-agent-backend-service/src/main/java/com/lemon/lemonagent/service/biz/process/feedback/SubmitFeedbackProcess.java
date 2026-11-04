@@ -27,7 +27,7 @@ public class SubmitFeedbackProcess extends Handler<SubmitFeedbackReq, SubmitFeed
     @Override
     protected void doExecute(SubmitFeedbackReq request, SubmitFeedbackResp response) {
         FeedbackData data = artifactService.submit(request.getUserId(), request.getRunId(),
-                request.getRating(), request.getComment());
+                request.getRating(), request.getComment(), request.getExpectedAnswer());
         response.setData(data);
     }
 

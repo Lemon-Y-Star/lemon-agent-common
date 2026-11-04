@@ -41,6 +41,10 @@ public class RunListItem {
 
     /** 事件序号游标 */
     private long lastSeq;
+    /** 运行角色（v4.5.10）：main = 主运行；child = 工作流子运行（run_wf_* 发起） */
+    private String runKind;
+    /** 父运行 ID（v4.5.10，仅 child 有：从幂等键 wftool_<parentRunId>_... 解析） */
+    private Long parentRunId;
 
     /** 开始时间 */
     private String startedAt;

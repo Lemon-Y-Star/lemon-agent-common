@@ -20,6 +20,7 @@ import Artifacts from './pages/Artifacts'
 import Evals from './pages/Evals'
 import LlmObs from './pages/LlmObs'
 import ApiKeysPage from './pages/ApiKeys'
+import ShareChat from './pages/ShareChat'
 
 /** 工作流独立画布路由：复用执行图画布，加载/保存走工作流端点。 */
 function WorkflowGraphRoute() {
@@ -37,6 +38,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={loggedIn ? <Navigate to="/" replace /> : <Login />} />
+      {/* 公开对话页（v4.6.0）：免登录，不在登录守卫内 */}
+      <Route path="/s/:code" element={<ShareChat />} />
       <Route element={loggedIn ? <Layout /> : <Navigate to="/login" replace />}>
         <Route path="/" element={<Navigate to="/chat" replace />} />
         <Route path="/runs" element={<Runs />} />

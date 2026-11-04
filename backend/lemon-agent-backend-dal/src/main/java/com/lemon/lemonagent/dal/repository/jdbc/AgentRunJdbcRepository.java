@@ -116,6 +116,12 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     }
 
     @Override
+    public AgentRunEntity findById(Long id) {
+        List<AgentRunEntity> list = jdbcTemplate.query(
+                "SELECT " + COLUMNS + " FROM agent_run WHERE id = ?", mapper, id);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
     public AgentRunEntity findByIdAndUser(Long id, Long userId) {
         List<AgentRunEntity> list = jdbcTemplate.query(
                 "SELECT " + COLUMNS + " FROM agent_run WHERE id = ? AND user_id = ?",
