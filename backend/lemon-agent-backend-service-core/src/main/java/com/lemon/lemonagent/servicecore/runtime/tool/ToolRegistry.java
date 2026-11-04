@@ -595,6 +595,8 @@ public class ToolRegistry {
             result.add(searchDocsTool.spec);
         }
         result.add(fixedTools.get("create_ticket").spec);
+        // v4.5.9：工作流子运行跟进工具（与 run_wf_* 配套——目录/授权/下发三处都要登记）
+        result.add(fixedTools.get("check_workflow_run").spec);
         if (runPythonTool != null) {
             result.add(runPythonTool.spec);
         }
@@ -639,6 +641,8 @@ public class ToolRegistry {
         list.add(withLabel(toInfo(fixedTools.get("current_time"), true), "当前时间"));
         list.add(withLabel(toInfo(searchDocsTool, true), "知识库检索"));
         list.add(withLabel(toInfo(fixedTools.get("create_ticket"), true), "创建工单（演示写操作）"));
+        // v4.5.9：工作流子运行跟进工具（目录登记，Agent 编辑页可勾选授权）
+        list.add(withLabel(toInfo(fixedTools.get("check_workflow_run"), true), "工作流子运行跟进（阻塞等待产出）"));
         if (runPythonTool != null) {
             list.add(withLabel(toInfo(runPythonTool, true), "Python 代码执行（沙箱）"));
         }
