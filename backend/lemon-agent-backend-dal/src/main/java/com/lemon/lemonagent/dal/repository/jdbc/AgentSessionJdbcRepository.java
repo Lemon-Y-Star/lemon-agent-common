@@ -76,10 +76,12 @@ public class AgentSessionJdbcRepository implements AgentSessionRepository {
 
     @Override
     public List<AgentSessionEntity> search(Long userId, String keyword, int offset, int limit) {
-        // 标题或消息内容命中（LEFT JOIN agent_message 后 DISTINCT 去重）；个人会话量级，LIKE 够用
+        // 标题或消息内容命中（LEFT JOIN agent_message 后 DISTINCT 去重）；个人会话量级，LIKE 够用。
+        // 字段列表必须带 s. 前缀：m 表同名列（id 等）不加限定会报 ambiguous
         String like = "%" + keyword + "%";
         return jdbcTemplate.query(
-                "SELECT DISTINCT " + COLUMNS + " FROM agent_session s LEFT JOIN agent_message m "
+                "SELECT DISTINCT s.id, s.user_id, s.title, s.last_active_at, s.created_at, s.updated_at, s.share_id "
+                        + "FROM agent_session s LEFT JOIN agent_message m "
                         + "ON m.session_id = s.id "
                         + "WHERE s.user_id = ? AND (s.title LIKE ? OR m.content LIKE ?) "
                         + "ORDER BY s.last_active_at DESC LIMIT ? OFFSET ?",
