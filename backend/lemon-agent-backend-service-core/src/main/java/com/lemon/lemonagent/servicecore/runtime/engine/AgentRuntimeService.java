@@ -475,10 +475,11 @@ public class AgentRuntimeService {
         graph.setVersion(wfVersion.getVersion());
         String graphSnapshot = GraphCodec.encodeGraph(graph);
 
-        // 独立会话（懒创建，标题标注来源）；不参与宿主会话互斥
+        // 独立会话（懒创建，标题标注来源；列表端按 CHILD_SESSION_PREFIX 过滤，不进用户侧栏）
         AgentSessionEntity session = new AgentSessionEntity();
         session.setUserId(userId);
-        String childTitle = "工具子运行 · " + (input.length() > TITLE_FROM_INPUT_LENGTH
+        String childTitle = AgentSessionRepository.CHILD_SESSION_PREFIX
+                + (input.length() > TITLE_FROM_INPUT_LENGTH
                 ? input.substring(0, TITLE_FROM_INPUT_LENGTH) : input);
         session.setTitle(childTitle);
         sessionRepository.insert(session);

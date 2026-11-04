@@ -60,6 +60,9 @@ function check(name, cond, detail = '') {
   // 工具芯片（瘦卡片：tool-call-card slim）
   const chips = await page.locator('.tool-call-card.slim').count()
   check('工具调用芯片已渲染', chips >= 1, `chips=${chips}`)
+  // v4.5.8：子运行联动链接
+  const childLinks = await page.locator('text=/子运行 #\\d+/').count()
+  check('子运行详情链接渲染', childLinks >= 1, `links=${childLinks}`)
 
   check('无 JS 报错', jsErrors.length === 0, jsErrors.slice(0, 2).join('; '))
   await browser.close()

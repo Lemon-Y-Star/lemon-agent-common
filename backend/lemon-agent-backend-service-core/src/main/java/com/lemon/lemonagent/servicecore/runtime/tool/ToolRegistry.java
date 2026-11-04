@@ -425,6 +425,11 @@ public class ToolRegistry {
         if (parent == null || parent.getAgentId() == null) {
             return Map.of("error", "无法确定宿主 Agent");
         }
+        // v4.5.7 嵌套硬防护：子运行（clientRequestId 前缀 wftool_）里再调 run_wf_* 一律拒绝——
+        // 工作流 A 里放 run_wf_B 节点会形成 A→B→A 无限递归，120s 超时层层堆积；提示词软限制不可靠
+        if (parent.getClientRequestId() != null && parent.getClientRequestId().startsWith("wftool_")) {
+            return Map.of("error", "工作流工具不支持嵌套调用：当前已在子工作流内，请先完成本工作流");
+        }
         String input = String.valueOf(args.getOrDefault("input", ""));
         String clientRequestId = "wftool_" + parentRunId + "_" + UUID.randomUUID().toString().substring(0, 8);
         // v4.5.7 主 Agent 协同：按目标工作流的生效版本直接起子运行（工具名与执行目标对齐），
@@ -467,6 +472,11 @@ public class ToolRegistry {
         result.put("runId", childRunId);
         result.put("status", done.getStatus());
         result.put("output", output);
+        // v4.5.7：审批门挂起时给主 Agent 明确的处置指引，而不是让它对着 BLOCKED 状态码猜
+        if ("BLOCKED".equals(done.getStatus())) {
+            result.put("note", "子运行在审批门挂起（工作流含审批节点），需要用户在对话页批准后才能继续；"
+                    + "请告知用户前往对话页处理该审批，当前先基于已有信息给出阶段性结论。");
+        }
         if (done.getErrorCode() != null) {
             result.put("errorCode", done.getErrorCode());
         }

@@ -1659,11 +1659,16 @@ public class RunExecutor {
         long start = System.currentTimeMillis();
         String resultBrief;
         boolean ok;
+        long childRunId = 0;
         List<String> refs = List.of();
         List<String> images = List.of();
         List<Map<String, Object>> artifactMetas = new ArrayList<>();
         try {
             Map<String, Object> result = new java.util.LinkedHashMap<>(handler.execute(args));
+            // v4.5.7 主 Agent 协同可观测：工作流工具的子运行 ID 先提取到方法作用域（payload 段用）
+            if (result.get("runId") instanceof Number childRid && result.get("workflow") != null) {
+                childRunId = childRid.longValue();
+            }
             // 图片旁路（v4.4.3）：data URI 只进 tool_result 事件给前端渲染，绝不进模型上下文（notes/结果回注）
             Object imgObj = result.remove("images");
             if (imgObj instanceof List<?> list) {
@@ -1686,8 +1691,11 @@ public class RunExecutor {
                 }
             }
             ok = true;
-            resultBrief = result.values().stream().map(String::valueOf)
+            // v4.5.7：芯片摘要只留一行——run_wf 的 result 含 4000 字 output，全文拼 brief 会
+            // 把瘦芯片撑爆（模型侧的 notes 仍带完整结果，不受影响）
+            String joinedBrief = result.values().stream().map(String::valueOf)
                     .reduce((a, b) -> a + " / " + b).orElse("done");
+            resultBrief = joinedBrief.length() > 200 ? joinedBrief.substring(0, 200) + "…" : joinedBrief;
             String imgNote = images.isEmpty() ? "" : "（另外已生成 " + images.size()
                     + " 张图表并直接展示给用户，无需重复描述图片内容）";
             String fileNote = artifactMetas.isEmpty() ? "" : "（已生成 " + artifactMetas.size()
@@ -1713,6 +1721,11 @@ public class RunExecutor {
         payload.put("durationMs", System.currentTimeMillis() - start);
         payload.put("resultBrief", resultBrief);
         payload.put("resultChars", resultBrief.length());
+        // v4.5.7 主 Agent 协同可观测：工作流工具的子运行 ID 随 tool_result 透出，
+        // 前端芯片渲染「查看子运行」入口（打开运行详情弹窗看子工作流的节点瀑布）
+        if (childRunId > 0) {
+            payload.put("childRunId", childRunId);
+        }
         if (!images.isEmpty()) {
             payload.put("images", images);
         }

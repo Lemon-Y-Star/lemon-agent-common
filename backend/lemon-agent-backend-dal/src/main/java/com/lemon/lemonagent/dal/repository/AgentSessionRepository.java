@@ -7,6 +7,10 @@ import java.util.List;
 /** 对话会话仓储端口。 */
 public interface AgentSessionRepository {
 
+    /** 工作流子运行会话的标题前缀（v4.5.7）：写入端（createWorkflowChildRun）与列表过滤共用。
+     *  子运行产出经工具结果回传主运行，独立会话只是运行归属载体，不进用户会话侧栏。 */
+    String CHILD_SESSION_PREFIX = "工具子运行 · ";
+
     /**
      * 插入会话，回填自增主键。
      *

@@ -74,15 +74,18 @@ public class AgentSessionJdbcRepository implements AgentSessionRepository {
 
     @Override
     public List<AgentSessionEntity> findByUser(Long userId, int offset, int limit) {
+        // v4.5.7：子运行会话（工具子运行 · 前缀）对用户侧栏隐藏——产出经工具结果回传主运行
         return jdbcTemplate.query(
-                "SELECT " + COLUMNS + " FROM agent_session WHERE user_id = ? ORDER BY last_active_at DESC LIMIT ? OFFSET ?",
-                mapper, userId, limit, offset);
+                "SELECT " + COLUMNS + " FROM agent_session WHERE user_id = ? "
+                        + "AND title NOT LIKE ? ORDER BY last_active_at DESC LIMIT ? OFFSET ?",
+                mapper, userId, CHILD_SESSION_PREFIX + '%', limit, offset);
     }
 
     @Override
     public long countByUser(Long userId) {
         Long n = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM agent_session WHERE user_id = ?", Long.class, userId);
+                "SELECT COUNT(*) FROM agent_session WHERE user_id = ? AND title NOT LIKE ?",
+                Long.class, userId, CHILD_SESSION_PREFIX + '%');
         return n == null ? 0 : n;
     }
 

@@ -61,6 +61,8 @@ interface Bubble {
   resultDone?: boolean
   /** 工具执行耗时（tool_result 事件 durationMs，芯片行展示） */
   resultMs?: number
+  /** 子运行 ID（v4.5.7 主 Agent 协同）：工作流工具透传，芯片渲染「查看子运行」入口 */
+  childRunId?: number
   /** 沙箱图表（v4.4.3，data URI）：tool_result 旁路，不进模型上下文，直接渲染 */
   images?: string[]
   /** 运行文件产物（v4.4.4）：落库后的下载元数据 */
@@ -432,10 +434,12 @@ export default function Chat() {
         } else if (ev.type === 'tool_result') {
           const callId = String(ev.payload.callId ?? '')
           const refs = Array.isArray(ev.payload.refs) ? (ev.payload.refs as string[]) : undefined
+          const childRunId = Number(ev.payload.childRunId ?? 0) || undefined
           setBubbles((prev) => prev.map((b) => (
             b.kind === 'tool' && b.callId === callId
               ? { ...b, resultBrief: String(ev.payload.resultBrief ?? ''), resultOk: !!ev.payload.ok,
                   resultDone: true, resultMs: Number(ev.payload.durationMs ?? 0) || undefined,
+                  childRunId,
                   images: Array.isArray(ev.payload.images) ? (ev.payload.images as string[]) : undefined,
                   artifacts: Array.isArray(ev.payload.artifacts) ? (ev.payload.artifacts as { id: number; name: string; contentType: string; sizeBytes: number }[]) : undefined,
                   refs: refs && refs.length > 0 ? refs : undefined }
@@ -821,6 +825,13 @@ export default function Chat() {
             </summary>
             <div className="tcc-args">{detail}</div>
             {b.resultDone && <div className="tcc-res">{b.resultOk ? '✅ ' : '❌ '}{b.resultBrief}</div>}
+            {/* v4.5.7 主 Agent 协同可观测：子工作流的运行详情一键直达 */}
+            {b.childRunId != null && (
+              <div className="tcc-res">
+                🔗 子运行 <a href="#detail" onClick={(e) => { e.preventDefault(); setDetailRunId(b.childRunId!) }}>#{b.childRunId}</a>
+                {' '}——点开看子工作流的节点瀑布与各步产出
+              </div>
+            )}
           </details>
           {b.refs && b.refs.length > 0 && <div className="tcc-res">📚 命中：{b.refs.join('｜')}</div>}
           {b.artifacts && b.artifacts.length > 0 && (

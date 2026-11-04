@@ -32,7 +32,8 @@ LemonAgent 平台 · 通用基座。基于 `architecture` 框架（`com.lemon:ar
 | v4.5.5（本版） | 时区显示修复：API 输出 UTC ISO 带 Z（存储链路本就正确——MySQL 容器 SYSTEM 时区=东八、JDBC `serverTimezone=Asia/Shanghai`、实体 `Instant`），此前前端用 `slice()` 把 UTC 字面当本地时间显示（东八差 8h）。新增 `utils/fmtLocal`（new Date 解析转本地，解析失败退回截取），替换会话列表/运行列表与详情/评测/API Key/产物/Agent 日志 6 处显示点；按天统计分桶改 `DATE_FORMAT` SQL 端直出字符串（绕开 `java.sql.Date.toString()` 按 JVM 时区解释的部署隐患），`UsageService` 业务日界固定东八（`LocalDate.now(EAST8)` 防御容器 JVM=UTC） | ✅ |
 | v4.5.6（本版） | 知识库运营补全：**文档详情**（`GET /workspace/knowledge/{docId}`，归属校验不通过按不存在处理；页面「详情」按钮弹窗 Markdown 全文渲染，多模态图链随文显示）· **文档列表分页**（page/size + total，此前 LIMIT 200 全量）· **未命中队列分页**（此前 Top N）· 文档/检索命中/未命中三个容器内置滚动（max-height + 细滚动条，数据多不再无限拉长页面） | ✅ |
 | v4.5.7（本版） | **主 Agent 协同（多工作流编排）**：`run_wf_<id>` 修复为真正的工具语义——按**目标工作流当前生效版本**的图快照直接起子运行（`createWorkflowChildRun`），不再复用宿主 Agent 的 custom 图源；此前实现跑的是宿主挂载的那一个工作流，同一宿主的多个 run_wf_* 实际都跑同一张图，多工作流协同不成立。子运行语义=工具调用：独立会话（不占宿主会话互斥）、独立 traceId、忽略 START 表单、agentId 落宿主（授权装配与运营日志跟宿主走）。配套：子运行产出剥 `<think>` 再截断（此前思考原文挤占 4000 字额度导致正文截断）。演示场景「线上故障指挥室」：主 Agent 35（auto）协同 WF12 诊断流水线 + WF13 处置预案流水线（LLM 处置决策 + CODE 优先级评分），auto ReAct 自主编排产出《故障指挥报告》 | ✅ |
-| 待排期 | （无——PRD 明确「不做」的除外：插件市场 / 多租户 / A2A / 触发器 / 7 类节点中的 branch+http 等规格项） | — |
+| v4.5.8（本版） | 协同运营打磨：**子运行会话不再污染用户侧栏**（`CHILD_SESSION_PREFIX` 统一写入与列表过滤，`findByUser`/`countByUser` 排除）· **工具芯片可观测**：resultBrief 截断 200 字（此前 run_wf 全文 4000 字塞进芯片）+ `childRunId` 随 tool_result 透出，芯片渲染「子运行 #xxx」一键打开运行详情看子工作流节点瀑布 · **嵌套调用硬防护**：子运行（`wftool_` 前缀）内再调 `run_wf_*` 直接拒绝（A→B→A 无限递归，提示词软限制不可靠）· **审批挂起指引**：子运行 BLOCKED 时返回明确处置说明（告知用户到对话页批准），主 Agent 不再对着状态码猜 · 指挥官绑定 SRE 知识库（协同间自主检索手册） | ✅ |
+| 待排期 | run_wf 120s 同步等待可配 + RUNNING 异步跟进（复杂子工作流会撞上限，目前返回 RUNNING 提示去运行历史看）· （无——PRD 明确「不做」的除外：插件市场 / 多租户 / A2A / 触发器 / 7 类节点中的 branch+http 等规格项） | — |
 
 ## 结构
 
