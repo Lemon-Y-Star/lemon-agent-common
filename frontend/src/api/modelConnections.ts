@@ -62,3 +62,24 @@ export function runHealthCheck(): Promise<{ id: number; name: string; healthStat
   return post<{ id: number; name: string; healthStatus: string; healthLatencyMs: number | null }[]>(
     '/workspace/model-connections/health-check', {})
 }
+
+/** 多模型对比单项结果（v4.8）：失败时 error 带原因、content 为 null。 */
+export interface ModelCompareItem {
+  connectionId: number
+  name: string
+  model: string
+  content: string | null
+  latencyMs: number | null
+  inputTokens: number
+  outputTokens: number
+  error: string | null
+}
+
+/** 多模型对比（v4.8）：同一问题并发发给选中连接，结果按传入顺序返回。 */
+export function compareModels(query: string, connectionIds: number[], systemPrompt?: string): Promise<ModelCompareItem[]> {
+  return post<ModelCompareItem[]>('/workspace/model-connections/compare', {
+    query,
+    connectionIds,
+    systemPrompt: systemPrompt?.trim() || undefined,
+  })
+}

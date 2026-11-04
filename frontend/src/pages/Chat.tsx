@@ -18,6 +18,7 @@ import {
 import { fetchAgents, type AgentConfig } from '../api/agents'
 import { fetchGraph, type GraphFormField } from '../api/graph'
 import { submitFeedback } from '../api/artifacts'
+import { fetchModelConnections, compareModels, type ModelConnection, type ModelCompareItem } from '../api/modelConnections'
 import { ApiError } from '../api/client'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
@@ -143,6 +144,14 @@ export default function Chat() {
   const [fbAsk, setFbAsk] = useState<{ runId: number; comment: string; expectedAnswer: string } | null>(null)
   /** 已提交过反馈的 runId 集合（防重复，本会话内） */
   const fbDoneRef = useRef<Set<number>>(new Set())
+  /** 多模型对比（v4.8）：同一问题并发发给多个连接并排比较 */
+  const [cmpOpen, setCmpOpen] = useState(false)
+  const [cmpConnections, setCmpConnections] = useState<ModelConnection[]>([])
+  const [cmpSelected, setCmpSelected] = useState<number[]>([])
+  const [cmpQuery, setCmpQuery] = useState('')
+  const [cmpSys, setCmpSys] = useState('')
+  const [cmpLoading, setCmpLoading] = useState(false)
+  const [cmpResults, setCmpResults] = useState<ModelCompareItem[] | null>(null)
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
@@ -201,6 +210,37 @@ export default function Chat() {
       toast(err instanceof ApiError ? err.message : '会话搜索失败')
     }
   }, [])
+
+  /** 多模型对比（v4.8）：打开弹窗拉连接列表，默认全选启用连接。 */
+  async function openCompare() {
+    setCmpResults(null)
+    setCmpOpen(true)
+    try {
+      const page = await fetchModelConnections()
+      const list = page.connections ?? []
+      setCmpConnections(list)
+      setCmpSelected(list.filter((c) => c.enabled).map((c) => c.id))
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '模型连接加载失败')
+    }
+  }
+
+  function toggleConn(id: number) {
+    setCmpSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  async function runCompare() {
+    if (!cmpQuery.trim() || cmpSelected.length === 0) return
+    setCmpLoading(true)
+    try {
+      const items = await compareModels(cmpQuery.trim(), cmpSelected, cmpSys)
+      setCmpResults(items)
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : '对比失败')
+    } finally {
+      setCmpLoading(false)
+    }
+  }
 
   // Agent 列表（对话页顶部可切换；默认选平台第一个启用的）
   const reloadAgents = useCallback(async () => {
@@ -1080,6 +1120,14 @@ export default function Chat() {
             </select>
             <span className={`tag ${streaming ? 'ok' : 'gray'}`}>{streaming ? '已连接 · SSE' : '空闲'}</span>
             <span style={{ marginLeft: 'auto' }} />
+            <button
+              className="btn sm"
+              disabled={streaming}
+              title="同一问题并发发给多个模型连接，并排比较回答质量与耗时"
+              onClick={() => void openCompare()}
+            >
+              ⚖️ 模型对比
+            </button>
             {streaming && activeRunId && (
               <button className="btn sm danger" onClick={onCancel}>
                 取消运行
@@ -1327,6 +1375,136 @@ export default function Chat() {
               <button type="submit" className="btn primary">提交标注</button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* 多模型对比（v4.8）：同一问题并发发给多个连接，并排比较回答/耗时/token */}
+      {cmpOpen && (
+        <Modal title="多模型对比" wide onClose={() => setCmpOpen(false)}>
+          <p className="note gray" style={{ marginTop: 0 }}>
+            同一问题并发发给选中的模型连接（不带 Agent 工具与知识库，纯模型能力对比），并排看回答质量、耗时与 token 用量。
+          </p>
+          {cmpResults === null ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                void runCompare()
+              }}
+            >
+              <div className="field">
+                <label>对比问题 <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <textarea
+                  rows={3}
+                  value={cmpQuery}
+                  onChange={(e) => setCmpQuery(e.target.value)}
+                  placeholder="例如：用通俗的语言解释什么是幂等性，并举一个工程实例"
+                  maxLength={2000}
+                />
+              </div>
+              <div className="field">
+                <label>参与对比的模型连接（已选 {cmpSelected.length} 个，最多 4 个）</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {cmpConnections.map((c) => (
+                    <label
+                      key={c.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontWeight: 400,
+                        cursor: c.enabled ? 'pointer' : 'not-allowed',
+                        opacity: c.enabled ? 1 : 0.55,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={!c.enabled}
+                        checked={cmpSelected.includes(c.id)}
+                        onChange={() => toggleConn(c.id)}
+                      />
+                      <b>{c.name}</b>
+                      <span className="hint">
+                        {c.models[0] ?? c.provider}
+                        {c.healthStatus === 'ok' ? ' · 健康' : c.healthStatus === 'fail' ? ' · 最近探测失败' : ''}
+                        {!c.enabled ? ' · 已停用' : ''}
+                      </span>
+                    </label>
+                  ))}
+                  {cmpConnections.length === 0 && (
+                    <span className="note gray">还没有模型连接——先到「模型连接」页创建并启用</span>
+                  )}
+                </div>
+              </div>
+              <div className="field">
+                <label>
+                  系统提示词（可选）
+                  <span className="hint">留空用默认「你是 AI 助手，简洁准确地回答用户问题。」——所有模型同一起跑线</span>
+                </label>
+                <input
+                  value={cmpSys}
+                  onChange={(e) => setCmpSys(e.target.value)}
+                  placeholder="可选"
+                  maxLength={500}
+                />
+              </div>
+              <div className="modal-btns">
+                <button type="button" className="btn" onClick={() => setCmpOpen(false)}>取消</button>
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={cmpLoading || !cmpQuery.trim() || cmpSelected.length === 0}
+                >
+                  {cmpLoading ? '对比中…（最长约 2 分钟）' : `开始对比（${cmpSelected.length} 个模型）`}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+                  gap: 10,
+                }}
+              >
+                {cmpResults.map((r) => (
+                  <div
+                    key={r.connectionId}
+                    style={{
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      minHeight: 120,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <b>{r.name}</b>
+                      <span className="hint">{r.model}</span>
+                      {!r.error && (
+                        <span className="note gray" style={{ marginLeft: 'auto' }}>
+                          ⏱ {((r.latencyMs ?? 0) / 1000).toFixed(1)}s · in {r.inputTokens} / out {r.outputTokens} tok
+                        </span>
+                      )}
+                    </div>
+                    {r.error ? (
+                      <div style={{ color: 'var(--danger)', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>❌ {r.error}</div>
+                    ) : (
+                      <div className="md-bubble" style={{ fontSize: 13 }}>
+                        <Markdown text={r.content ?? ''} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="modal-btns">
+                <button className="btn" onClick={() => setCmpResults(null)}>再比一次</button>
+                <button className="btn primary" onClick={() => setCmpOpen(false)}>完成</button>
+              </div>
+            </>
+          )}
         </Modal>
       )}
     </>

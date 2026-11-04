@@ -4,10 +4,13 @@ import com.lemon.lemonagent.model.modelconn.CreateModelConnectionReq;
 import com.lemon.lemonagent.model.modelconn.CreateModelConnectionResp;
 import com.lemon.lemonagent.model.modelconn.DeleteModelConnectionReq;
 import com.lemon.lemonagent.model.modelconn.DeleteModelConnectionResp;
+import com.lemon.lemonagent.model.modelconn.ModelCompareReq;
 import com.lemon.lemonagent.model.modelconn.ModelConnectionsData;
 import com.lemon.lemonagent.model.modelconn.UpdateModelConnectionReq;
 import com.lemon.lemonagent.model.modelconn.UpdateModelConnectionResp;
+import com.lemon.lemonagent.model.modelconn.ModelCompareItemData;
 import com.lemon.lemonagent.servicecore.conn.ModelConnectionService;
+import com.lemon.lemonagent.servicecore.runtime.agent.ModelCompareService;
 import com.lemon.architecture.model.BaseResult;
 import com.lemon.lemonagent.model.runtime.ModelHealthCheckReq;
 import com.lemon.lemonagent.model.runtime.ModelHealthCheckResp;
@@ -46,6 +49,10 @@ public class ModelConnectionController {
     /** 模型连接领域服务。 */
     @Resource
     private ModelConnectionService modelConnectionService;
+
+    /** 多模型对比服务（v4.8）。 */
+    @Resource
+    private ModelCompareService modelCompareService;
 
     /**
      * 连接列表（含平台侧配置：主机白名单、辅助用途说明）。
@@ -137,5 +144,19 @@ public class ModelConnectionController {
         request.setUserId(userId);
         request.fillRoute(source);
         return optUtil.exec(request, new ModelHealthCheckResp(), req -> { });
+    }
+
+    /**
+     * 多模型对比（v4.8）：同一问题并发发给选中的启用连接，并排返回回答/耗时/token。
+     *
+     * @param request 对比请求（问题 + 连接 ID + 可选系统提示词）
+     * @param userId  归属用户
+     * @return 逐连接结果（按请求顺序）
+     */
+    @PostMapping("/compare")
+    public BaseResult<List<ModelCompareItemData>> compare(@RequestBody ModelCompareReq request,
+                                                          @RequestAttribute("lemon.userId") Long userId) {
+        return BaseResult.success(modelCompareService.compare(
+                userId, request.getQuery(), request.getConnectionIds(), request.getSystemPrompt()));
     }
 }
