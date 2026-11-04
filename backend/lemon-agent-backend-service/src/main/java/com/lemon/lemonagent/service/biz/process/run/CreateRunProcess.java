@@ -37,7 +37,8 @@ public class CreateRunProcess extends Handler<CreateRunReq, CreateRunResp> {
         try {
             RunData data = agentRuntimeService.createRun(request.getUserId(), request.getSessionId(),
                     request.getAgentId(), request.getInput(), request.getStrategy(),
-                    request.getClientRequestId(), request.getThinking(), request.getFormValues());
+                    request.getClientRequestId(), request.getThinking(), request.getFormValues(),
+                    request.getImages());
             response.setData(data);
             log.info("运行已创建 userId:{} runId:{} traceId:{}",
                     request.getUserId(), data.getRunId(), data.getTraceId());

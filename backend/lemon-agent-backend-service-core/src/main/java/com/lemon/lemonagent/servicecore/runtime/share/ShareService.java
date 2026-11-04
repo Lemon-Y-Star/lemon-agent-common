@@ -131,7 +131,7 @@ public class ShareService {
         sessionRepository.insert(session);
         sessionRepository.markShare(session.getId(), share.getId());
         var run = agentRuntimeService.createRun(ownerId, session.getId(), share.getAgentId(),
-                message, null, "share_" + java.util.UUID.randomUUID(), null, null);
+                message, null, "share_" + java.util.UUID.randomUUID(), null, null, null);
         return Map.of("runId", run.getRunId(), "sessionId", run.getSessionId());
     }
 

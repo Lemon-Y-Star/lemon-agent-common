@@ -31,6 +31,7 @@ public class AgentMessageJdbcRepository implements AgentMessageRepository {
             e.setUserId(rs.getLong("user_id"));
             e.setRole(rs.getString("role"));
             e.setContent(rs.getString("content"));
+            e.setImagesJson(rs.getString("images_json"));
             long runId = rs.getLong("run_id");
             e.setRunId(rs.wasNull() ? null : runId);
             e.setCreatedAt(toInstant(rs.getTimestamp("created_at")));
@@ -48,18 +49,23 @@ public class AgentMessageJdbcRepository implements AgentMessageRepository {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO agent_message (session_id, user_id, role, content, run_id, created_at) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO agent_message (session_id, user_id, role, content, images_json, run_id, created_at) VALUES (?,?,?,?,?,?,?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setLong(1, e.getSessionId());
             ps.setLong(2, e.getUserId());
             ps.setString(3, e.getRole());
             ps.setString(4, e.getContent());
-            if (e.getRunId() == null) {
-                ps.setNull(5, java.sql.Types.BIGINT);
+            if (e.getImagesJson() == null) {
+                ps.setNull(5, java.sql.Types.VARCHAR);
             } else {
-                ps.setLong(5, e.getRunId());
+                ps.setString(5, e.getImagesJson());
             }
-            ps.setTimestamp(6, Timestamp.from(now));
+            if (e.getRunId() == null) {
+                ps.setNull(6, java.sql.Types.BIGINT);
+            } else {
+                ps.setLong(6, e.getRunId());
+            }
+            ps.setTimestamp(7, Timestamp.from(now));
             return ps;
         }, keys);
         e.setId(keys.getKey().longValue());
@@ -70,7 +76,7 @@ public class AgentMessageJdbcRepository implements AgentMessageRepository {
     @Override
     public List<AgentMessageEntity> findBySession(Long sessionId, Long userId) {
         return jdbcTemplate.query(
-                "SELECT id, session_id, user_id, role, content, run_id, created_at FROM agent_message "
+                "SELECT id, session_id, user_id, role, content, images_json, run_id, created_at FROM agent_message "
                         + "WHERE session_id = ? AND user_id = ? ORDER BY id",
                 mapper, sessionId, userId);
     }

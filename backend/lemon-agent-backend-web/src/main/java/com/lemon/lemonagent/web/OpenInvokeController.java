@@ -76,7 +76,7 @@ public class OpenInvokeController {
         int waitSeconds = request.waitSeconds() == null ? 60 : Math.min(Math.max(request.waitSeconds(), 1), 120);
 
         var run = agentRuntimeService.createRun(key.getUserId(), null, agentId, input, strategy,
-                "open_" + UUID.randomUUID(), request.thinking(), null);
+                "open_" + UUID.randomUUID(), request.thinking(), null, null);
         AgentRunEntity entity = waitTerminal(key.getUserId(), run.getRunId(), waitSeconds);
         return BaseResult.success(toResult(entity));
     }

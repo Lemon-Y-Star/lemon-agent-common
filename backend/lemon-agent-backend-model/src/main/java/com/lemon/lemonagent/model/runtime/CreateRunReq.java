@@ -35,6 +35,9 @@ public class CreateRunReq extends BaseReq {
     /** 开始节点表单值（v4.5.4，{字段名: 值}）；仅图 START 配置了表单时有效 */
     private java.util.Map<String, String> formValues;
 
+    /** 本轮输入附图（v4.9 多模态，data:image/*;base64 URL 列表，≤4 张单张 ≤2MB）；纯文本时为空 */
+    private java.util.List<String> images;
+
     /** 填充路由三元组。 */
     public void fillRoute(String source) {
         PlatformRoute.fill(this, source, Operations.RUN_CREATE);

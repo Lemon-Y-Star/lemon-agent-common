@@ -23,6 +23,9 @@ public class AgentMessageEntity {
     /** 正文 */
     private String content;
 
+    /** 消息附图（v4.9 多模态，data URL JSON 数组）；纯文本消息为 null */
+    private String imagesJson;
+
     /** ASSISTANT 消息关联的运行 */
     private Long runId;
 

@@ -138,8 +138,8 @@ export default function Chat() {
   const [detailRunId, setDetailRunId] = useState<number | null>(null)
   /** START 输入表单（v4.5.4）：custom Agent 图里 START 配了 formSchema 时，发送前先弹表单收集 */
   const [startForm, setStartForm] = useState<GraphFormField[]>([])
-  /** 表单收集弹窗：待发送的输入文本 + 思考开关 + 已填的表单值 */
-  const [formAsk, setFormAsk] = useState<{ text: string; thinking: boolean; values: Record<string, string> } | null>(null)
+  /** 表单收集弹窗：待发送的输入文本 + 思考开关 + 已填的表单值 + 附图（v4.9） */
+  const [formAsk, setFormAsk] = useState<{ text: string; thinking: boolean; values: Record<string, string>; images?: string[] } | null>(null)
   /** 差评标注弹窗（v4.5.10 标注回复闭环）：可选填标准答案，自动沉淀知识库 */
   const [fbAsk, setFbAsk] = useState<{ runId: number; comment: string; expectedAnswer: string } | null>(null)
   /** 已提交过反馈的 runId 集合（防重复，本会话内） */
@@ -152,6 +152,11 @@ export default function Chat() {
   const [cmpSys, setCmpSys] = useState('')
   const [cmpLoading, setCmpLoading] = useState(false)
   const [cmpResults, setCmpResults] = useState<ModelCompareItem[] | null>(null)
+  /** 输入附图（v4.9 多模态）：data URL 列表，随下一轮消息发送 */
+  const [pendingImages, setPendingImages] = useState<string[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  /** 重试记录（v3.9.1）：原图一并重试 */
+  const lastMetaRef = useRef<{ input: string; thinking: boolean; images?: string[] }>({ input: '', thinking: false })
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<{ abort: () => void } | null>(null)
@@ -159,8 +164,7 @@ export default function Chat() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   /** 图运行元信息（runId → 条件路由判定节点的 stepIndex 集合）：这类节点的输出是路由信号，不生成气泡。 */
   const graphMetaRef = useRef<Record<number, { branch: Set<number> }>>({})
-  /** 最近一次发送的元信息（失败重试时重放输入 / 思考开关）。 */
-  const lastMetaRef = useRef<{ input: string; thinking: boolean }>({ input: '', thinking: false })
+  /** 最近一次发送的元信息（失败重试时重放输入 / 思考开关 / 附图）——定义见 v4.9 多模态区块。 */
 
   // custom 策略的前置校验：选中的 Agent 既没有执行图也没挂工作流时，直接提示而不是发一个必败的请求
   const selectedAgent = agents.find((a) => a.id === agentId) ?? null
@@ -288,6 +292,7 @@ export default function Chat() {
           kind: 'msg' as const,
           role: m.role,
           content: m.content,
+          images: m.images ?? undefined,
           runId: m.runId ?? undefined,
           traceId: run?.traceId,
           durationMs: run?.durationMs ?? undefined,
@@ -705,24 +710,25 @@ export default function Chat() {
     }
   }, [deleting, activeSession, reloadSessions, navigate])
 
-  /** 发送本体：输入文本 + 是否深度思考 + START 表单值（v4.5.4）。普通发送与失败重试共用（v3.9.1）。 */
-  const doSend = useCallback(async (text: string, thinking: boolean, formValues?: Record<string, string>) => {
-    if (!text || streaming) return
+  /** 发送本体：输入文本 + 是否深度思考 + START 表单值（v4.5.4）+ 附图（v4.9）。普通发送与失败重试共用（v3.9.1）。 */
+  const doSend = useCallback(async (text: string, thinking: boolean, formValues?: Record<string, string>, images?: string[]) => {
+    if ((!text && !(images && images.length)) || streaming) return
     if (customNotReady) {
       pushNotice(activeSession ?? undefined, '该 Agent 还没有执行图、也没挂载工作流，custom 模式跑不了——先画一张执行图或挂载工作流')
       return
     }
-    lastMetaRef.current = { input: text, thinking }
+    lastMetaRef.current = { input: text, thinking, images }
     setStreaming(true)
-    setBubbles((prev) => [...prev, { kind: 'msg', role: 'USER', content: text }])
+    setBubbles((prev) => [...prev, { kind: 'msg', role: 'USER', content: text, images }])
     try {
       const run = await createRun({
         sessionId: activeSession ?? undefined,
         agentId: agentId ?? undefined,
-        input: text,
+        input: text || '（仅图片）',
         strategy,
         thinking: thinking || undefined,
         formValues: formValues && Object.keys(formValues).length > 0 ? formValues : undefined,
+        images: images && images.length > 0 ? images : undefined,
         clientRequestId: crypto.randomUUID(),
       })
       if (!activeSession) {
@@ -749,22 +755,50 @@ export default function Chat() {
     }
   }, [streaming, customNotReady, activeSession, strategy, agentId, subscribe, reloadSessions, navigate])
 
+  /** 附图文件 → data URL（v4.9 多模态）：image/* 限 2MB、最多 4 张，校验通过入列 */
+  function addImageFiles(files: FileList | File[]) {
+    const remain = 4 - pendingImages.length
+    if (remain <= 0) {
+      toast('最多带 4 张图')
+      return
+    }
+    const list = Array.from(files).slice(0, remain)
+    for (const f of list) {
+      if (!f.type.startsWith('image/')) {
+        toast(`「${f.name}」不是图片`)
+        continue
+      }
+      if (f.size > 2 * 1024 * 1024) {
+        toast(`「${f.name}」超过 2MB，请压缩后再传`)
+        continue
+      }
+      const reader = new FileReader()
+      reader.onload = () => {
+        setPendingImages((prev) => (prev.length >= 4 ? prev : [...prev, String(reader.result)]))
+      }
+      reader.readAsDataURL(f)
+    }
+  }
+
   const onSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || streaming) return
+    if ((!text && pendingImages.length === 0) || streaming) return
+    const images = pendingImages.length > 0 ? [...pendingImages] : undefined
     if (startForm.length > 0) {
       // START 配了表单（v4.5.4）：先弹表单收集（默认值预填），提交后才真正发送
       const defaults: Record<string, string> = {}
       for (const f of startForm) {
         if (f.defaultValue != null && f.defaultValue !== '') defaults[f.name] = f.defaultValue
       }
-      setFormAsk({ text, thinking: thinkingOn, values: defaults })
+      setFormAsk({ text: text || '（仅图片）', thinking: thinkingOn, values: defaults, images })
       setInput('')
+      setPendingImages([])
       return
     }
     setInput('')
-    await doSend(text, thinkingOn)
-  }, [input, streaming, thinkingOn, doSend, startForm])
+    setPendingImages([])
+    await doSend(text, thinkingOn, undefined, images)
+  }, [input, pendingImages, streaming, thinkingOn, doSend, startForm])
 
   const onNewSession = useCallback(async () => {
     if (streaming) {
@@ -802,8 +836,8 @@ export default function Chat() {
     }
     for (let k = index - 1; k >= 0; k--) {
       const prev = bubbles[k]
-      if (prev.kind === 'msg' && prev.role === 'USER' && prev.content) {
-        void doSend(prev.content, thinkingOn)
+      if (prev.kind === 'msg' && prev.role === 'USER' && (prev.content || prev.images?.length)) {
+        void doSend(prev.content ?? '', thinkingOn, undefined, prev.images)
         return
       }
     }
@@ -977,6 +1011,19 @@ export default function Chat() {
               <div className="tcc-imgs">
                 {b.answerImages.map((src, k) => (
                   <img key={k} src={src} alt={`图表 ${k + 1}`} onClick={() => setImgPreview(src)} />
+                ))}
+              </div>
+            )}
+            {b.role === 'USER' && b.images && b.images.length > 0 && (
+              <div className="msg-imgs">
+                {b.images.map((src, k) => (
+                  <img
+                    key={k}
+                    src={src}
+                    alt={`附图 ${k + 1}`}
+                    className="msg-img"
+                    onClick={() => setImgPreview(src)}
+                  />
                 ))}
               </div>
             )}
@@ -1176,12 +1223,36 @@ export default function Chat() {
             {bubbles.map((b, i) => renderBubble(b, i))}
           </div>
           <div className="chat-input">
+            {pendingImages.length > 0 && (
+              <div className="pending-imgs">
+                {pendingImages.map((src, k) => (
+                  <span key={k} className="pending-img">
+                    <img src={src} alt={`待发送附图 ${k + 1}`} onClick={() => setImgPreview(src)} />
+                    <button
+                      className="pending-img-x"
+                      title="移除"
+                      onClick={() => setPendingImages((prev) => prev.filter((_, idx) => idx !== k))}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                <span className="note gray">随下一条消息发送</span>
+              </div>
+            )}
             <div className="rowline">
               <textarea
-                placeholder="输入消息，Enter 发送（Shift+Enter 换行）"
+                placeholder="输入消息，Enter 发送（Shift+Enter 换行）；可附图（📷 / 粘贴截图）"
                 value={input}
                 disabled={streaming}
                 onChange={(e) => setInput(e.target.value)}
+                onPaste={(e) => {
+                  const files = Array.from(e.clipboardData?.files ?? [])
+                  if (files.length > 0) {
+                    e.preventDefault()
+                    addImageFiles(files)
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
@@ -1189,7 +1260,30 @@ export default function Chat() {
                   }
                 }}
               />
-              <button className="btn primary" disabled={streaming || !input.trim()} onClick={onSend}>
+              <button
+                className="btn sm"
+                title="附图（≤4 张，单张 ≤2MB；支持 png/jpg/webp/gif）"
+                disabled={streaming || pendingImages.length >= 4}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                📷
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => {
+                  if (e.target.files?.length) addImageFiles(e.target.files)
+                  e.target.value = ''
+                }}
+              />
+              <button
+                className="btn primary"
+                disabled={streaming || (!input.trim() && pendingImages.length === 0)}
+                onClick={onSend}
+              >
                 发送
               </button>
             </div>
@@ -1299,8 +1393,9 @@ export default function Chat() {
               }
               const text = formAsk.text
               const thinking = formAsk.thinking
+              const images = formAsk.images
               setFormAsk(null)
-              void doSend(text, thinking, values)
+              void doSend(text, thinking, values, images)
             }}
           >
             <p className="note gray" style={{ marginTop: 0 }}>

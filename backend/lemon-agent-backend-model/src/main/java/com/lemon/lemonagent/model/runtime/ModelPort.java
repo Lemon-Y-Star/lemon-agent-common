@@ -33,10 +33,24 @@ public interface ModelPort {
      * @param history      历史消息（按时间升序，role: USER/ASSISTANT）
      * @param userInput    本轮用户输入
      * @param tools        可用工具清单（可空 = 纯对话）
+     * @param userImages   本轮用户输入附图（data URL 列表，可空 = 纯文本；v4.9 多模态）
      */
     record ModelRequest(String baseUrl, String apiKey, String model,
                         String systemPrompt, List<Msg> history, String userInput,
-                        List<ToolSpec> tools) {
+                        List<ToolSpec> tools, List<String> userImages) {
+
+        public ModelRequest {
+            if (userImages == null) {
+                userImages = List.of();
+            }
+        }
+
+        /** 便捷构造：纯文本请求（不带图）。 */
+        public ModelRequest(String baseUrl, String apiKey, String model,
+                            String systemPrompt, List<Msg> history, String userInput,
+                            List<ToolSpec> tools) {
+            this(baseUrl, apiKey, model, systemPrompt, history, userInput, tools, List.of());
+        }
     }
 
     /**

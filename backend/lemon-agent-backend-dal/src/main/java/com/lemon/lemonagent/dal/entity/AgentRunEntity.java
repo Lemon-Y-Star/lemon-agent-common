@@ -74,6 +74,9 @@ public class AgentRunEntity {
     /** 开始节点表单值（v4.5.4，JSON {字段: 值}）；无表单运行时为 null */
     private String formValuesJson;
 
+    /** 本轮用户输入附图（v4.9 多模态，data URL JSON 数组）；纯文本运行时为 null */
+    private String imagesJson;
+
     /** 输入 tokens */
     private Integer inputTokens;
 

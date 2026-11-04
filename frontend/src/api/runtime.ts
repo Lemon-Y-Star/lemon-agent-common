@@ -23,6 +23,8 @@ export interface MessageItem {
   messageId: number
   role: 'USER' | 'ASSISTANT'
   content: string
+  /** 消息附图（v4.9 多模态，data URL 列表；纯文本消息为 null） */
+  images?: string[] | null
   runId?: number | null
   createdAt: string | null
 }
@@ -88,6 +90,8 @@ export async function createRun(params: {
   thinking?: boolean
   /** START 节点表单值（v4.5.4）：{字段名: 值}，custom 策略 + 图配了表单时提交 */
   formValues?: Record<string, string>
+  /** 输入附图（v4.9 多模态）：data:image/*;base64 data URL 列表，≤4 张单张 ≤2MB */
+  images?: string[]
   clientRequestId: string
 }): Promise<RunData> {
   const { post } = await import('./client')

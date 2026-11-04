@@ -122,6 +122,9 @@ public class RunExecutor {
     /** runId → 取消标志（取消接口置位，onChunk 回调检查后中断模型流）。 */
     private final Map<Long, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
 
+    /** 附图已消耗的 runId 集合（v4.9 多模态）：图只发给 run 的首个 LLM 调用，防工具循环/并行节点重发。 */
+    private final java.util.Set<Long> imagesConsumed = ConcurrentHashMap.newKeySet();
+
     /** Agent 配置仓储：每轮循环按 run.agent_id 回查，挂起恢复后语义不变（无内存态依赖）。 */
     private final AgentConfigRepository agentConfigRepository;
 
@@ -619,10 +622,11 @@ public class RunExecutor {
      */
     private TurnResult streamTurn(Long runId, ModelConnectionEntity conn, String systemPrompt,
                                   List<ModelPort.Msg> context, String userInput,
-                                  List<ModelPort.ToolSpec> tools, int stepIndex, boolean emitTokens) {
+                                  List<ModelPort.ToolSpec> tools, int stepIndex, boolean emitTokens,
+                                  List<String> userImages) {
         String apiKey = CryptoUtil.decrypt(conn.getApiKeyCipher());
         ModelPort.ModelRequest request = new ModelPort.ModelRequest(
-                conn.getBaseUrl(), apiKey, resolveModel(conn), systemPrompt, context, userInput, tools);
+                conn.getBaseUrl(), apiKey, resolveModel(conn), systemPrompt, context, userInput, tools, userImages);
 
         StringBuilder fullOutput = new StringBuilder();
         StringBuilder tokenBuf = new StringBuilder();
@@ -718,6 +722,8 @@ public class RunExecutor {
         if (candidates.isEmpty()) {
             return new TurnResult("", null, 0, 0, false);
         }
+        // 附图只跟「本轮对话的第一个 LLM 调用」：消耗后不再重发（工具循环/并行节点/恢复续跑不重复烧 token）
+        List<String> images = takePendingImages(run);
         TurnResult turn = null;
         for (int i = 0; i < candidates.size(); i++) {
             ModelConnectionEntity attempt = candidates.get(i);
@@ -731,12 +737,35 @@ public class RunExecutor {
                     runRepository.saveModelInfo(run.getId(), run.getModelName(), attempt.getId());
                 }
             }
-            turn = streamTurn(run.getId(), attempt, systemPrompt, context, userInput, tools, stepIndex, emitTokens);
+            turn = streamTurn(run.getId(), attempt, systemPrompt, context, userInput, tools, stepIndex, emitTokens, images);
             if (turn.completed() || turn.toolCalls() != null || (turn.text() != null && !turn.text().isEmpty())) {
                 return turn;
             }
         }
         return turn;
+    }
+
+    /**
+     * 原子取走 run 的待发附图（v4.9）：首个 LLM 调用拿到，其余调用拿 null。
+     * runId 级一次性标记——工具循环后续轮、并行节点、恢复续跑都不重发图。
+     */
+    private List<String> takePendingImages(AgentRunEntity run) {
+        if (run.getImagesJson() == null || run.getImagesJson().isBlank()) {
+            return List.of();
+        }
+        if (!imagesConsumed.add(run.getId())) {
+            return List.of();
+        }
+        try {
+            List<?> raw = objectMapper.readValue(run.getImagesJson(), List.class);
+            List<String> images = raw == null ? List.of()
+                    : raw.stream().map(String::valueOf).toList();
+            log.info("run {} 附图 {} 张（发给首个 LLM 调用）", run.getId(), images.size());
+            return images;
+        } catch (Exception e) {
+            log.warn("run {} 附图 JSON 解析失败，按纯文本继续: {}", run.getId(), e.getMessage());
+            return List.of();
+        }
     }
 
     /** 挂载 Agent（按 run.agent_id 回查；日志留一条，排障入口）。 */

@@ -8,14 +8,17 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.stereotype.Component;
+import org.springframework.util.MimeTypeUtils;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
 /**
@@ -74,7 +77,7 @@ public class SpringAiModelPort implements ModelPort {
                     messages.add(new UserMessage(msg.content()));
                 }
             }
-            messages.add(new UserMessage(request.userInput()));
+            messages.add(buildUserMessage(request.userInput(), request.userImages()));
 
             List<AssistantMessage.ToolCall> pendingCalls = new ArrayList<>();
             // 原生思考透出（v4.1）：DeepSeek 等模型在 delta 里带 reasoning_content 字段。
@@ -185,6 +188,55 @@ public class SpringAiModelPort implements ModelPort {
         }
         emitted.append(reasoning);
         return reasoning;
+    }
+
+    /**
+     * 构造用户消息（v4.9 多模态）：带图时用 data URL 解出 mimeType + base64 字节
+     * 构造 Spring AI Media（OpenAI 兼容端点收到的是 image_url 数据）；非图/解析失败回退纯文本。
+     */
+    private UserMessage buildUserMessage(String text, List<String> imageUrls) {
+        if (imageUrls == null || imageUrls.isEmpty()) {
+            return new UserMessage(text);
+        }
+        List<Media> mediaList = new ArrayList<>();
+        for (String url : imageUrls) {
+            Media media = parseDataUrl(url);
+            if (media != null) {
+                mediaList.add(media);
+            }
+        }
+        if (mediaList.isEmpty()) {
+            log.warn("多模态附图全部解析失败（{} 张），回退纯文本", imageUrls.size());
+            return new UserMessage(text);
+        }
+        return UserMessage.builder().text(text).media(mediaList).build();
+    }
+
+    /** 解析 data URL（data:image/png;base64,xxx）→ Media；格式非法返回 null 并告警。 */
+    private Media parseDataUrl(String url) {
+        if (url == null || !url.startsWith("data:")) {
+            log.warn("多模态输入只支持 data URL 附图，忽略非法值（前缀={}）",
+                    url == null ? "null" : url.substring(0, Math.min(16, url.length())));
+            return null;
+        }
+        int comma = url.indexOf(',');
+        if (comma < 0) {
+            return null;
+        }
+        String header = url.substring(5, comma);
+        // header 形如 image/png;base64（前端 FileReader 产出恒带 ;base64，非 base64 编码不支持）
+        int semi = header.indexOf(';');
+        String mime = semi > 0 ? header.substring(0, semi) : header;
+        String base64 = url.substring(comma + 1);
+        try {
+            byte[] bytes = Base64.getDecoder().decode(base64);
+            // Spring Framework 7 的 MimeType(String) 单参构造只当 primary type（subtype 通配），
+            // 传完整 "image/png" 会报 Invalid token——必须用 parseMimeType 解析完整串
+            return Media.builder().mimeType(MimeTypeUtils.parseMimeType(mime)).data(bytes).build();
+        } catch (IllegalArgumentException e) {
+            log.warn("附图解析失败，已忽略该图: {}", e.getMessage());
+            return null;
+        }
     }
 
     /** 壳回调：只提供工具定义给模型，call() 永远不该被调（执行由 RunExecutor 决策）。 */

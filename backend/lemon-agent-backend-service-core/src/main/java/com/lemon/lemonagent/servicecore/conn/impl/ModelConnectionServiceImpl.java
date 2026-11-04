@@ -77,7 +77,8 @@ public class ModelConnectionServiceImpl implements ModelConnectionService {
     @Override
     public ModelConnectionData update(Long userId, Long id, String name, String provider, String baseUrl,
                                       String apiKey, List<String> models, Boolean allowAuxiliary, Boolean enabled) {
-        validate(name, provider, baseUrl, apiKey);
+        // apiKey 可空 = 保留原密钥（v4.9 修复：此前误按创建口径校验，改名/停启用被迫重填密钥）
+        validate(name, provider, baseUrl, apiKey, false);
         ModelConnectionEntity entity = requireOwned(userId, id);
         entity.setName(name.trim());
         entity.setProvider(provider.trim());
@@ -112,8 +113,16 @@ public class ModelConnectionServiceImpl implements ModelConnectionService {
     }
 
     private void validate(String name, String provider, String baseUrl, String apiKey) {
-        if (isBlank(name) || isBlank(provider) || isBlank(baseUrl) || isBlank(apiKey)) {
-            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "名称、提供方、端点与 API 密钥均为必填");
+        validate(name, provider, baseUrl, apiKey, true);
+    }
+
+    /** apiKeyRequired=false 用于更新（空 = 保留原密钥，与 Javadoc 口径一致）。 */
+    private void validate(String name, String provider, String baseUrl, String apiKey, boolean apiKeyRequired) {
+        if (isBlank(name) || isBlank(provider) || isBlank(baseUrl)) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "名称、提供方与端点均为必填");
+        }
+        if (apiKeyRequired && isBlank(apiKey)) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "API 密钥不能为空");
         }
         String host = extractHost(baseUrl);
         if (host == null) {

@@ -62,6 +62,10 @@ public class AgentRuntimeService {
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_INSTANT;
     private static final int MAX_INPUT_LENGTH = 4000;
     private static final int TITLE_FROM_INPUT_LENGTH = 20;
+    /** 多模态附图（v4.9）：最多 4 张，单张 data URL ≤ 280 万字符（约 2MB 原图） */
+    private static final int MAX_IMAGES = 4;
+    private static final int MAX_IMAGE_DATA_URL_LENGTH = 2_800_000;
+    private static final String IMAGE_DATA_URL_PREFIX = "data:image/";
 
     private final AgentSessionRepository sessionRepository;
 
@@ -171,6 +175,7 @@ public class AgentRuntimeService {
                     item.setMessageId(m.getId());
                     item.setRole(m.getRole());
                     item.setContent(m.getContent());
+                    item.setImages(parseImages(m.getImagesJson()));
                     item.setRunId(m.getRunId());
                     item.setCreatedAt(format(m.getCreatedAt()));
                     return item;
@@ -233,10 +238,13 @@ public class AgentRuntimeService {
      * @return 出参：运行数据（duplicated=true 时为原 run）
      */
     public RunData createRun(Long userId, Long sessionId, Long agentId, String input, String strategyRaw,
-                             String clientRequestId, Boolean thinking, java.util.Map<String, String> formValues) {
+                             String clientRequestId, Boolean thinking, java.util.Map<String, String> formValues,
+                             java.util.List<String> images) {
         if (input == null || input.isBlank() || input.length() > MAX_INPUT_LENGTH) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "输入不能为空且不超过 4000 字符");
         }
+        // 附图校验（v4.9 多模态）：data URL 形态/张数/单张大小，防超大请求打爆内存与库
+        String imagesJson = validateImages(images);
         // 敏感词输入拦截（v3.9.2）：命中即拒绝，不做替换——输入是用户的意图，改写有风险
         java.util.List<String> sensitiveHits = sensitiveWords.hits(input);
         if (!sensitiveHits.isEmpty()) {
@@ -327,6 +335,7 @@ public class AgentRuntimeService {
         run.setStrategy(strategy.wireName());
         run.setInput(input);
         run.setFormValuesJson(formValuesJson);
+        run.setImagesJson(imagesJson);
         run.setTraceId(newTraceId());
         run.setLastSeq(0);
         runRepository.insert(run);
@@ -341,6 +350,7 @@ public class AgentRuntimeService {
         userMessage.setUserId(userId);
         userMessage.setRole("USER");
         userMessage.setContent(input);
+        userMessage.setImagesJson(imagesJson);
         messageRepository.insert(userMessage);
         sessionRepository.touch(session.getId());
 
@@ -398,6 +408,48 @@ public class AgentRuntimeService {
     }
 
     /**
+     * 附图校验（v4.9 多模态）：≤4 张、必须 data:image/*;base64 前缀、单张 ≤280 万字符。
+     *
+     * @param images 入参：data URL 列表（null/空 = 无图）
+     * @return 出参：序列化 JSON（无图时 null）
+     */
+    private String validateImages(java.util.List<String> images) {
+        if (images == null || images.isEmpty()) {
+            return null;
+        }
+        if (images.size() > MAX_IMAGES) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "最多上传 " + MAX_IMAGES + " 张图片");
+        }
+        for (String url : images) {
+            if (url == null || !url.startsWith(IMAGE_DATA_URL_PREFIX) || !url.contains(";base64,")) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR, "附图必须是 data:image/*;base64 格式");
+            }
+            if (url.length() > MAX_IMAGE_DATA_URL_LENGTH) {
+                throw new BusinessException(ResultCodes.VALIDATION_ERROR, "单张图片过大（原图 ≤2MB）");
+            }
+        }
+        try {
+            return objectMapper.writeValueAsString(images);
+        } catch (Exception e) {
+            throw new BusinessException(ResultCodes.SYSTEM_ERROR, "附图序列化失败：" + e.getMessage());
+        }
+    }
+
+    /** 附图 JSON → List（null/空/解析失败返回 null，前端按无图渲染）。 */
+    private java.util.List<String> parseImages(String imagesJson) {
+        if (imagesJson == null || imagesJson.isBlank()) {
+            return null;
+        }
+        try {
+            java.util.List<?> raw = objectMapper.readValue(imagesJson, java.util.List.class);
+            return raw == null ? null : raw.stream().map(String::valueOf).toList();
+        } catch (Exception e) {
+            log.warn("附图 JSON 解析失败，按无图处理: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * 重试失败运行（v3.9.1）：复用原始输入 / 策略 / 深度思考 / Agent，在**原会话**里发起新运行——
      * 会话上下文不丢，多轮对话可以接着聊。仅 FAILED / TIMEOUT 可重试（幂等键独立生成，与原 run 无关）。
      *
@@ -418,11 +470,13 @@ public class AgentRuntimeService {
         if (origin.getInput() == null || origin.getInput().isBlank()) {
             throw new BusinessException(ResultCodes.VALIDATION_ERROR, "该运行没有记录原始输入（旧数据），无法重试");
         }
-        // v4.5.4：重试时回放原运行的表单值（再走一遍 resolveFormValues 校验，口径与首次提交一致）
+        // v4.5.4：重试时回放原运行的表单值（再走一遍 resolveFormValues 校验，口径与首次提交一致）；
+        // v4.9：重试时回放原运行的附图（同一输入重试，图不丢）
         return createRun(userId, origin.getSessionId(), origin.getAgentId(), origin.getInput(),
                 origin.getStrategy(), "retry_" + runId + "_" + UUID.randomUUID().toString().substring(0, 8),
                 origin.getThinking() != null && origin.getThinking() == 1,
-                parseFormValues(origin.getFormValuesJson()));
+                parseFormValues(origin.getFormValuesJson()),
+                parseImages(origin.getImagesJson()));
     }
 
     /**

@@ -25,7 +25,7 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     private static final String COLUMNS =
             "id, session_id, agent_id, user_id, client_request_id, status, strategy, input, trace_id, last_seq, "
                     + "output_text, error_code, error_msg, pending_approval_json, plan_json, plan_step, "
-                    + "graph_json, graph_state_json, form_values_json, model_name, model_conn_id, thinking, "
+                    + "graph_json, graph_state_json, form_values_json, images_json, model_name, model_conn_id, thinking, "
                     + "input_tokens, output_tokens, started_at, ended_at, created_at, updated_at";
 
     private final JdbcTemplate jdbcTemplate;
@@ -54,6 +54,7 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
             e.setGraphJson(rs.getString("graph_json"));
             e.setGraphStateJson(rs.getString("graph_state_json"));
             e.setFormValuesJson(rs.getString("form_values_json"));
+            e.setImagesJson(rs.getString("images_json"));
             e.setModelName(rs.getString("model_name"));
             long modelConnId = rs.getLong("model_conn_id");
             e.setModelConnId(rs.wasNull() ? null : modelConnId);
@@ -76,11 +77,11 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
     public int insert(AgentRunEntity e) {
         Instant now = Instant.now();
         KeyHolder keys = new GeneratedKeyHolder();
-        jdbcTemplate.update(con -> {
-            PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO agent_run (session_id, agent_id, user_id, client_request_id, status, strategy, "
-                            + "input, trace_id, last_seq, form_values_json, started_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    Statement.RETURN_GENERATED_KEYS);
+            jdbcTemplate.update(con -> {
+                PreparedStatement ps = con.prepareStatement(
+                        "INSERT INTO agent_run (session_id, agent_id, user_id, client_request_id, status, strategy, "
+                                + "input, trace_id, last_seq, form_values_json, images_json, started_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                        Statement.RETURN_GENERATED_KEYS);
             ps.setLong(1, e.getSessionId());
             if (e.getAgentId() == null) {
                 ps.setNull(2, Types.BIGINT);
@@ -99,7 +100,12 @@ public class AgentRunJdbcRepository implements AgentRunRepository {
             } else {
                 ps.setString(10, e.getFormValuesJson());
             }
-            ps.setTimestamp(11, Timestamp.from(now));
+            if (e.getImagesJson() == null) {
+                ps.setNull(11, Types.VARCHAR);
+            } else {
+                ps.setString(11, e.getImagesJson());
+            }
+            ps.setTimestamp(12, Timestamp.from(now));
             return ps;
         }, keys);
         e.setId(keys.getKey().longValue());

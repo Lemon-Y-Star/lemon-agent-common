@@ -133,6 +133,14 @@ tr:hover td{background:#fafbfe}
 .chat-input .rowline{display:flex;gap:8px;align-items:flex-end}
 .chat-input textarea{flex:1;border:1px solid #d5d9e2;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;resize:none;height:38px}
 .chat-input textarea:focus{outline:none;border-color:var(--primary)}
+
+/* 附图（v4.9 多模态）：输入区待发送预览条 + 气泡内缩略图 */
+.pending-imgs{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.pending-img{position:relative;display:inline-block}
+.pending-img img{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;background:#fff}
+.pending-img-x{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#6b7280;color:#fff;font-size:10px;line-height:18px;padding:0;cursor:pointer}
+.msg-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+.msg-img{max-width:200px;max-height:150px;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;background:#fff}
 .side-panel{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:12px;overflow-y:auto;max-height:660px}
 .side-panel h4{font-size:13px;margin:6px 0 10px;display:flex;align-items:center;justify-content:space-between}
 .sess-item{padding:8px 10px;border-radius:8px;font-size:12.5px;cursor:pointer;margin-bottom:2px;border:1px solid transparent}
