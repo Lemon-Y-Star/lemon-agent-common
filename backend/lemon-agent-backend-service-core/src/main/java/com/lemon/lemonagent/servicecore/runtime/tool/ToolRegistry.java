@@ -300,6 +300,20 @@ public class ToolRegistry {
     }
 
     /**
+     * 启动回放（v4.5.7）：全部启用中的工作流重新注册为 run_wf_* 工具——
+     * 此前 bindWorkflow 只在创建时执行，后端重启后工作流工具全部失效
+     * （主 Agent 授权里还挂着工具名但目录里没有定义），必须与 MCP 同款启动回放。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void bindAllWorkflow() {
+        Thread.ofVirtual().name("wf-bind").start(() -> {
+            for (WorkflowEntity wf : workflowRepository.findAllEnabled()) {
+                bindWorkflow(wf);
+            }
+        });
+    }
+
+    /**
      * 把一条 MCP 连接注册为工具：tools/list 探测成功 → 逐个注册
      * {@code mcp<connId>_<tool>}；失败 → 写 unavailable_reason（连接页可见，不抛异常）。
      *
