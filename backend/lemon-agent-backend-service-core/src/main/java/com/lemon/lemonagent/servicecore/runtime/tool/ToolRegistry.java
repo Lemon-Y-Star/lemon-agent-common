@@ -413,8 +413,10 @@ public class ToolRegistry {
         }
         String input = String.valueOf(args.getOrDefault("input", ""));
         String clientRequestId = "wftool_" + parentRunId + "_" + UUID.randomUUID().toString().substring(0, 8);
-        var child = agentRuntimeProvider.getObject().createRun(userId, null, parent.getAgentId(),
-                input, "custom", clientRequestId, null, null);
+        // v4.5.7 主 Agent 协同：按目标工作流的生效版本直接起子运行（工具名与执行目标对齐），
+        // 不再复用宿主 Agent 的 custom 图源——同一宿主可协同多个 run_wf_* 工具各跑各的工作流
+        var child = agentRuntimeProvider.getObject().createWorkflowChildRun(userId, parent.getAgentId(),
+                workflowId, input, clientRequestId);
         long childRunId = child.getRunId();
         long deadline = System.currentTimeMillis() + 120_000L;
         AgentRunEntity done = null;
@@ -436,6 +438,13 @@ public class ToolRegistry {
                     "note", "工作流仍在执行（超过 120s），可在运行历史查看后续产出");
         }
         String output = done.getOutputText() == null ? "" : done.getOutputText();
+        // v4.5.7：子运行产出先剥 <think> 块再截断——思考原文挤占工具结果额度，导致正文被截
+        // （运行 228 实测：诊断报告 4000 字额度被 think 吃掉，正文断在半句）
+        int thinkStart = output.indexOf("<think>");
+        if (thinkStart >= 0) {
+            int thinkEnd = output.indexOf("</think>");
+            output = (thinkEnd >= 0 ? output.substring(thinkEnd + "</think>".length()) : "").trim();
+        }
         if (output.length() > 4000) {
             output = output.substring(0, 4000) + "…（已截断）";
         }

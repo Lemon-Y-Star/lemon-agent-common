@@ -421,6 +421,108 @@ public class AgentRuntimeService {
     }
 
     /**
+     * 工作流工具子运行（v4.5.7 主 Agent 协同）：按**目标工作流当前生效版本**的图快照直接建 run。
+     *
+     * <p>此前 run_wf 子运行复用宿主 Agent 的 custom 图源（挂载的工作流或自己的执行图），
+     * 导致同一宿主上的多个 run_wf_* 工具实际都跑同一张图——多工作流协同不成立。
+     * 现在工具名与执行目标对齐：run_wf_1 / run_wf_2 各跑各自的工作流生效版本。</p>
+     *
+     * <p>子运行语义 = 工具调用：独立会话（懒创建，不占宿主会话互斥）、独立 traceId、
+     * 忽略 START 表单（无表单交互，input 文本即任务描述）、深度思考不透传（custom 不消费）。
+     * agentId 落宿主 Agent（授权装配与运营日志都跟宿主走）。</p>
+     *
+     * @param userId          入参：调用方用户
+     * @param hostAgentId     入参：宿主 Agent（授权装配 / 运营归属；须存在）
+     * @param workflowId      入参：目标工作流（归属由调用方校验）
+     * @param input           入参：任务描述（START 无表单时即 START 产出）
+     * @param clientRequestId 入参：幂等键
+     * @return 出参：子运行数据
+     */
+    public RunData createWorkflowChildRun(Long userId, Long hostAgentId, Long workflowId,
+                                          String input, String clientRequestId) {
+        if (input == null || input.isBlank() || input.length() > MAX_INPUT_LENGTH) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "输入不能为空且不超过 4000 字符");
+        }
+        java.util.List<String> sensitiveHits = sensitiveWords.hits(input);
+        if (!sensitiveHits.isEmpty()) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                    "输入包含敏感词：" + String.join("、", sensitiveHits) + "，请修改后重试");
+        }
+        if (clientRequestId == null || clientRequestId.isBlank() || clientRequestId.length() > 64) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR, "clientRequestId 必须为不超过 64 位的幂等键");
+        }
+        AgentRunEntity existing = runRepository.findByClientRequestId(userId, clientRequestId);
+        if (existing != null) {
+            return toRunData(existing, true);
+        }
+        AgentConfigEntity hostAgent = resolveAgent(userId, hostAgentId);
+
+        com.lemon.lemonagent.dal.entity.WorkflowVersionEntity wfVersion =
+                workflowService.resolveVersion(workflowId, null);
+        if (wfVersion == null) {
+            throw new BusinessException(ResultCodes.VALIDATION_ERROR,
+                    "目标工作流没有可用版本，请先在「工作流」画布保存版本");
+        }
+        com.lemon.lemonagent.model.runtime.AgentGraphData graph =
+                GraphCodec.decodeGraph(wfVersion.getGraphJson());
+        // 工具调用没有表单交互：工作流 START 配置的表单在子运行中忽略（input 文本即任务描述）
+        graph.getNodes().forEach(n -> {
+            if ("START".equals(n.getType())) {
+                n.setFormSchema(null);
+            }
+        });
+        GraphValidator.validate(graph, toolRegistry);
+        graph.setVersion(wfVersion.getVersion());
+        String graphSnapshot = GraphCodec.encodeGraph(graph);
+
+        // 独立会话（懒创建，标题标注来源）；不参与宿主会话互斥
+        AgentSessionEntity session = new AgentSessionEntity();
+        session.setUserId(userId);
+        String childTitle = "工具子运行 · " + (input.length() > TITLE_FROM_INPUT_LENGTH
+                ? input.substring(0, TITLE_FROM_INPUT_LENGTH) : input);
+        session.setTitle(childTitle);
+        sessionRepository.insert(session);
+
+        AgentRunEntity run = new AgentRunEntity();
+        run.setSessionId(session.getId());
+        run.setUserId(userId);
+        run.setAgentId(hostAgent.getId());
+        run.setGraphJson(graphSnapshot);
+        run.setGraphStateJson(GraphCodec.encodeState(new com.lemon.lemonagent.model.runtime.GraphStateData()));
+        run.setClientRequestId(clientRequestId);
+        run.setStatus(RunStatus.RUNNING.name());
+        run.setStrategy(Strategy.CUSTOM.wireName());
+        run.setInput(input);
+        run.setTraceId(newTraceId());
+        run.setLastSeq(0);
+        runRepository.insert(run);
+        runRepository.saveGraph(run.getId(), graphSnapshot, run.getGraphStateJson());
+        eventPublisher.initCounter(run.getId(), 0);
+
+        AgentMessageEntity userMessage = new AgentMessageEntity();
+        userMessage.setSessionId(session.getId());
+        userMessage.setUserId(userId);
+        userMessage.setRole("USER");
+        userMessage.setContent(input);
+        messageRepository.insert(userMessage);
+        sessionRepository.touch(session.getId());
+
+        run.setThinking(0);
+        runRepository.saveThinking(run.getId(), 0);
+        long startedSeq = eventPublisher.append(run.getId(), RuntimeEventType.RUN_STARTED.wireName(),
+                objectMapper.writeValueAsString(Map.of(
+                        "runId", run.getId(),
+                        "sessionId", run.getSessionId(),
+                        "traceId", run.getTraceId(),
+                        "strategy", run.getStrategy(),
+                        "thinking", false,
+                        "ts", System.currentTimeMillis())));
+        run.setLastSeq(startedSeq);
+        runExecutor.submit(run);
+        return toRunData(run, false);
+    }
+
+    /**
      * 表单值 JSON 反序列化（v4.5.4）：重试路径复用原运行的 {字段名: 值}。
      *
      * @param json 入参：agent_run.form_values_json（可空）
